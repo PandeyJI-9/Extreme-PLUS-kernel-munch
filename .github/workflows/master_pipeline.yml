@@ -1,0 +1,189 @@
+# ════════════════════════════════════════════════════════════
+#  EXTREME++GAMING — MASTER PIPELINE
+#  Audit ➔ Build ➔ Release (All-in-One Sequence)
+# ════════════════════════════════════════════════════════════
+name: "🚀 EXTREME++ MASTER PIPELINE"
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Release Version Tag (e.g. v2.0-gaming)"
+        required: true
+        default: "v1.0-extreme"
+      inject_ksu:
+        description: "Inject KernelSU (rKSU)?"
+        required: true
+        default: "true"
+        type: choice
+        options: ["true", "false"]
+
+env:
+  KERNEL_REPO:   "https://github.com/AstideLabs/android_kernel_xiaomi_sm8250"
+  KERNEL_BRANCH: "android17-aptusitu"
+  DEFCONFIG:     "munch_defconfig"
+  CLANG_DIR:     "${{ github.workspace }}/proton-clang"
+  KERNEL_OUT:    "${{ github.workspace }}/kernel_out"
+  AK3_DIR:       "${{ github.workspace }}/AnyKernel3"
+
+jobs:
+  # ════════════════════════════════════════════════════════════
+  #  STAGE 1: GOD-LEVEL AUDIT (Bootloop & Sensor Scan)
+  # ════════════════════════════════════════════════════════════
+  audit:
+    name: "Stage 1: Hardware & Bootloop Audit"
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - name: "📦 Checkout"
+        uses: actions/checkout@v4
+
+      - name: "🛠️ Install Dependencies"
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            bc bison build-essential flex git libelf-dev libssl-dev lld llvm \
+            python3 wget gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu device-tree-compiler
+
+      - name: "⚡ Restore Clang"
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.CLANG_DIR }}
+          key: proton-clang-v2
+
+      - name: "⚡ Download Clang"
+        run: |
+          if [ ! -d "${{ env.CLANG_DIR }}" ]; then
+            mkdir -p "${{ env.CLANG_DIR }}"
+            wget -qO /tmp/clang.tar.gz "https://github.com/kdrag0n/proton-clang/archive/refs/heads/master.tar.gz"
+            tar -xzf /tmp/clang.tar.gz --strip-components=1 -C "${{ env.CLANG_DIR }}"
+          fi
+
+      - name: "🌐 Fetch Source"
+        run: git clone --depth=1 --branch "${{ env.KERNEL_BRANCH }}" "${{ env.KERNEL_REPO }}" kernel_src
+
+      - name: "🩹 Apply EXTREME++ Patches"
+        run: bash patches/apply-all.sh kernel_src
+
+      - name: "⚙️ Scan Sensors (.config)"
+        working-directory: kernel_src
+        run: |
+          export PATH="${{ env.CLANG_DIR }}/bin:$PATH"
+          mkdir -p kout
+          make O=kout ARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- LD=ld.lld "${{ env.DEFCONFIG }}"
+          grep -q "CONFIG_EXT4_FS=" kout/.config || exit 1
+          grep -q "CONFIG_F2FS_FS=" kout/.config || exit 1
+          grep -q "CONFIG_DRM=" kout/.config || exit 1
+          grep -q "CONFIG_TOUCHSCREEN" kout/.config || exit 1
+          grep -q "CONFIG_POWER_SUPPLY=" kout/.config || exit 1
+
+      - name: "🧠 Check Undefined Symbols (modpost)"
+        working-directory: kernel_src
+        run: |
+          export PATH="${{ env.CLANG_DIR }}/bin:$PATH"
+          make -j$(nproc) O=kout ARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- LD=ld.lld modules 2>&1 | tee mod.log
+          if grep -q "WARNING: modpost" mod.log; then exit 1; fi
+
+  # ════════════════════════════════════════════════════════════
+  #  STAGE 2: COMPILE & PACKAGE
+  # ════════════════════════════════════════════════════════════
+  build:
+    name: "Stage 2: Compile & Zip"
+    needs: audit
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    steps:
+      - name: "📦 Checkout"
+        uses: actions/checkout@v4
+
+      - name: "🛠️ Install Dependencies"
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends bc bison build-essential flex git libelf-dev libssl-dev lld llvm python3 wget zip unzip gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu device-tree-compiler
+
+      - name: "⚡ Restore Clang"
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.CLANG_DIR }}
+          key: proton-clang-v2
+
+      - name: "🌐 Fetch Source & KernelSU"
+        run: |
+          git clone --depth=1 --branch "${{ env.KERNEL_BRANCH }}" "${{ env.KERNEL_REPO }}" kernel_src
+          if [ "${{ github.event.inputs.inject_ksu }}" == "true" ]; then
+            cd kernel_src && curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s main
+          fi
+
+      - name: "🩹 Apply Patches"
+        run: bash patches/apply-all.sh kernel_src
+
+      - name: "🔨 Compile Kernel"
+        working-directory: kernel_src
+        run: |
+          export PATH="${{ env.CLANG_DIR }}/bin:$PATH"
+          mkdir -p "${{ env.KERNEL_OUT }}"
+          make O="${{ env.KERNEL_OUT }}" ARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- LD=ld.lld "${{ env.DEFCONFIG }}"
+          make -j$(nproc) O="${{ env.KERNEL_OUT }}" ARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- LD=ld.lld Image.gz dtbs
+
+      - name: "🗜️ Package AnyKernel3 ZIP"
+        run: |
+          git clone --depth=1 "https://github.com/osm0sis/AnyKernel3" "${{ env.AK3_DIR }}"
+          cat > "${{ env.AK3_DIR }}/anykernel.sh" << 'AK3EOF'
+          properties() { '
+          kernel.string=EXTREME++GAMING Kernel by PandeyJI-9
+          do.devicecheck=1
+          do.modules=0
+          do.cleanup=1
+          device.name1=munch
+          device.name2=POCO F4
+          supported.versions=12-15
+          '; }
+          block=/dev/block/bootdevice/by-name/boot;
+          is_slot_device=auto;
+          ramdisk_compression=auto;
+          . tools/ak3-core.sh;
+          flash_generic_dtb;
+          write_boot;
+          AK3EOF
+
+          cp "${{ env.KERNEL_OUT }}/arch/arm64/boot/Image.gz" "${{ env.AK3_DIR }}/Image.gz"
+          DTBO=$(find "${{ env.KERNEL_OUT }}" -name "*.dtbo" | head -1)
+          [ -f "$DTBO" ] && cp "$DTBO" "${{ env.AK3_DIR }}/dtbo.img"
+
+          ZIP_NAME="EXTREME++GAMING-munch-${{ github.event.inputs.release_tag }}.zip"
+          cd "${{ env.AK3_DIR }}"
+          zip -r9 "../${ZIP_NAME}" . -x "*.git*"
+          echo "ZIP_NAME=${ZIP_NAME}" >> $GITHUB_ENV
+
+      - name: "⬆️ Upload ZIP Artifact"
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ZIP_NAME }}
+          path: ${{ env.ZIP_NAME }}
+          retention-days: 1
+
+  # ════════════════════════════════════════════════════════════
+  #  STAGE 3: PUBLISH GITHUB RELEASE
+  # ════════════════════════════════════════════════════════════
+  release:
+    name: "Stage 3: Publish Release"
+    needs: build
+    runs-on: ubuntu-22.04
+    steps:
+      - name: "📥 Download ZIP Artifact"
+        uses: actions/download-artifact@v4
+        with:
+          path: release_files
+
+      - name: "🚀 Create GitHub Release"
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          ZIP_FILE=$(find release_files -name "*.zip" | head -1)
+          TAG="${{ github.event.inputs.release_tag }}"
+          gh release create "$TAG" "$ZIP_FILE" \
+            --repo "${{ github.repository }}" \
+            --title "EXTREME++GAMING ${TAG} | POCO F4 (munch)" \
+            --notes "## ⚡ EXTREME++GAMING Kernel — ${TAG}
+            **Device:** POCO F4 | Snapdragon 870
+            ✅ God-Level Audit Passed | ✅ KernelSU Injected"

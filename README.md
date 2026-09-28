@@ -5,7 +5,7 @@
 # ⚡ EXTREME++GAMING Kernel
 ### POCO F4 / Redmi K40S — Snapdragon 870 (SM8250-AC)
 
-[![Build](https://github.com/PandeyJI-9/Extreme-PLUS-kernel-munch/actions/workflows/builder.yml/badge.svg)](https://github.com/PandeyJI-9/Extreme-PLUS-kernel-munch/actions)
+[![Build](https://github.com/PandeyJI-9/Extreme-PLUS-kernel-munch/actions/workflows/master_pipeline.yml/badge.svg)](https://github.com/PandeyJI-9/Extreme-PLUS-kernel-munch/actions)
 [![KernelSU](https://img.shields.io/badge/KernelSU-Supported-success?logo=android)](https://kernelsu.org/)
 [![Proton Clang](https://img.shields.io/badge/Toolchain-Proton_Clang-blue?logo=llvm)](https://github.com/kdrag0n/proton-clang)
 [![License](https://img.shields.io/badge/License-GPL_v2-red.svg)](https://www.gnu.org/licenses/old-licenses/gpl-2.0.en.html)
