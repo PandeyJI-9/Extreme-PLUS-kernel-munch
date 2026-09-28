@@ -6,6 +6,10 @@ name: "🚀 Release + Upstream Sync"
 
 on:
   workflow_dispatch:
+  workflow_run:
+    workflows: ["🔨 Build EXTREME++GAMING Kernel"]
+    types: [completed]
+
     inputs:
       tag:
         description: "Release tag (e.g. v2.0-gaming)"
@@ -29,6 +33,7 @@ env:
 
 jobs:
   release:
+    if: ${{ github.event.workflow_run.conclusion == \'success\' || github.event_name == \'workflow_dispatch\' }}
     name: "Sync → Build → Release"
     runs-on: ubuntu-22.04
     timeout-minutes: 240
@@ -182,3 +187,20 @@ jobs:
           name: "build-failure-log"
           path: /tmp/build.log
           retention-days: 7
+
+      - name: "📢 Send Telegram Update"
+        if: success()
+        env:
+          BOT_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          if [ -n "$BOT_TOKEN" ] && [ -n "$CHAT_ID" ]; then
+            MESSAGE="🔥 *New EXTREME++GAMING Kernel Built!* 🔥%0A%0A📱 *Device:* POCO F4 (munch)%0A⚡ *Update:* \`${{ env.UPSTREAM_SHA }}\`%0A📦 *Download:* [GitHub Releases](https://github.com/${{ github.repository }}/releases)%0A%0A_God-Level Audit Passed ✅_"
+            curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+              -d chat_id="${CHAT_ID}" \
+              -d parse_mode="Markdown" \
+              -d text="${MESSAGE}"
+            echo "✅ Telegram update sent!"
+          else
+            echo "⚠️ Telegram secrets not set. Skipping notification."
+          fi
