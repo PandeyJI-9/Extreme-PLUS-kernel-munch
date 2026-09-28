@@ -1,25 +1,21 @@
-# ============================================================
-# Extreme-PLUS Kernel — tester.yml
-# Fast CI sanity check: defconfig + DTB compile only
-# ============================================================
+# ════════════════════════════════════════════════════════════
+#  EXTREME++GAMING — Fast CI Test (defconfig + DTB only)
+#  MANUAL DISPATCH ONLY
+# ════════════════════════════════════════════════════════════
 name: "🧪 Fast CI Test (defconfig + DTB)"
 
 on:
-  pull_request:
-    branches: [ main ]
-  push:
-    branches: [ main ]
   workflow_dispatch:
 
 env:
-  KERNEL_REPO:    "https://github.com/AstideLabs/android_kernel_xiaomi_sm8250"
-  KERNEL_BRANCH:  "android17-aptusitu"
-  DEFCONFIG:      "munch_defconfig"
-  CLANG_DIR:      "${{ github.workspace }}/proton-clang"
+  KERNEL_REPO:   "https://github.com/AstideLabs/android_kernel_xiaomi_sm8250"
+  KERNEL_BRANCH: "android17-aptusitu"
+  DEFCONFIG:     "munch_defconfig"
+  CLANG_DIR:     "${{ github.workspace }}/proton-clang"
 
 jobs:
-  test-defconfig-dtb:
-    name: "defconfig + DTB test"
+  test:
+    name: "defconfig + DTB sanity check"
     runs-on: ubuntu-22.04
     timeout-minutes: 60
 
@@ -27,110 +23,59 @@ jobs:
       - name: "📦 Checkout build repo"
         uses: actions/checkout@v4
 
-      - name: "🛠️ Install minimal dependencies"
+      - name: "🛠️ Install dependencies"
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends \
-            bc bison build-essential ca-certificates curl flex git \
-            libelf-dev libssl-dev lld llvm python3 wget \
-            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi \
-            binutils-aarch64-linux-gnu binutils-arm-linux-gnueabi \
-            device-tree-compiler
+            bc bison build-essential flex git libelf-dev libssl-dev \
+            lld llvm python3 wget gcc-aarch64-linux-gnu \
+            binutils-aarch64-linux-gnu device-tree-compiler
 
-      - name: "⚡ Fetch Proton Clang (cached)"
-        id: cache-clang
+      - name: "⚡ Restore Clang cache"
+        id: clang-cache
         uses: actions/cache@v4
         with:
           path: ${{ env.CLANG_DIR }}
-          key: proton-clang-v1
+          key: proton-clang-v2
 
-      - name: "⚡ Download Proton Clang (if not cached)"
-        if: steps.cache-clang.outputs.cache-hit != 'true'
+      - name: "⚡ Download Clang"
+        if: steps.clang-cache.outputs.cache-hit != 'true'
         run: |
           mkdir -p "${{ env.CLANG_DIR }}"
           wget -qO /tmp/clang.tar.gz \
             "https://github.com/kdrag0n/proton-clang/archive/refs/heads/master.tar.gz"
           tar -xzf /tmp/clang.tar.gz --strip-components=1 -C "${{ env.CLANG_DIR }}"
 
-      - name: "🌐 Shallow clone kernel source"
+      - name: "🌐 Fetch kernel source"
         run: |
           git clone --depth=1 --branch "${{ env.KERNEL_BRANCH }}" \
             "${{ env.KERNEL_REPO }}" kernel_src
 
-      - name: "🎮 Apply GPU 150MHz patch"
-        working-directory: kernel_src
+      - name: "🩹 Apply patches"
         run: |
-          GPU_DTSI="arch/arm64/boot/dts/vendor/qcom/kona-gpu.dtsi"
-          python3 - "$GPU_DTSI" << 'PYEOF'
-          import sys
-          path = sys.argv[1]
-          text = open(path).read()
-          if '150000000' in text:
-              print("Already patched — skip")
-              sys.exit(0)
-          marker = '\t\topp-290000000 {'
-          if marker not in text:
-              print(f"ERROR: marker not found", file=sys.stderr)
-              sys.exit(1)
-          new_opp = "\n\t\topp-150000000 {\n\t\t\topp-hz = /bits/ 64 <150000000>;\n\t\t\topp-microvolt = <RPMH_REGULATOR_LEVEL_MIN_SVS>;\n\t\t};\n\n"
-          text = text.replace(marker, new_opp + marker, 1)
-          open(path, 'w').write(text)
-          print("✅ GPU 150MHz OPP inserted")
-          PYEOF
-
-      - name: "🏎️ Apply CPU Prime Core 3.0GHz patch"
-        working-directory: kernel_src
-        run: |
-          CPU_DTSI="arch/arm64/boot/dts/vendor/qcom/kona.dtsi"
-          python3 - "$CPU_DTSI" << 'PYEOF'
-          import sys
-          path = sys.argv[1]
-          text = open(path).read()
-          if 'qcom,freq-domain-max-freq' in text:
-              print("Already patched — skip")
-              sys.exit(0)
-          for marker in ['\t\t\t#freq-domain-cells = <2>;', '\t\t\tqcom,skip-enable-check;']:
-              if marker in text:
-                  new_text = text.replace(marker,
-                      '\t\t\t/* Extreme-PLUS: Cap Prime to 3.0GHz */\n'
-                      '\t\t\tqcom,freq-domain-max-freq = <0 0 3000000>;\n\n' + marker, 1)
-                  open(path, 'w').write(new_text)
-                  print("✅ CPU cap applied")
-                  sys.exit(0)
-          print("ERROR: no marker found", file=sys.stderr)
-          sys.exit(1)
-          PYEOF
+          chmod +x patches/apply-all.sh
+          bash patches/apply-all.sh kernel_src
 
       - name: "⚙️ Test: make defconfig"
         working-directory: kernel_src
         run: |
           export PATH="${{ env.CLANG_DIR }}/bin:$PATH"
           mkdir -p out_test
-          make \
-            O=out_test \
-            ARCH=arm64 \
-            CC=clang \
+          make O=out_test ARCH=arm64 CC=clang \
             CLANG_TRIPLE=aarch64-linux-gnu- \
             CROSS_COMPILE=aarch64-linux-gnu- \
-            LD=ld.lld \
-            "${{ env.DEFCONFIG }}"
-          echo "✅ defconfig succeeded"
+            LD=ld.lld "${{ env.DEFCONFIG }}"
+          echo "✅ defconfig passed"
 
       - name: "🌲 Test: Compile DTBs only"
         working-directory: kernel_src
         run: |
           export PATH="${{ env.CLANG_DIR }}/bin:$PATH"
-          NPROC=$(nproc --all)
-          make \
-            -j"${NPROC}" \
-            O=out_test \
-            ARCH=arm64 \
-            CC=clang \
+          make -j$(nproc) O=out_test ARCH=arm64 CC=clang \
             CLANG_TRIPLE=aarch64-linux-gnu- \
             CROSS_COMPILE=aarch64-linux-gnu- \
-            LD=ld.lld \
-            dtbs 2>&1 | tail -30
-          echo "✅ DTB compilation succeeded"
+            LD=ld.lld dtbs 2>&1 | tail -30
+          echo "✅ DTB compilation passed"
 
-      - name: "✅ CI Result"
+      - name: "✅ Result"
         run: echo "All checks passed — GPU/CPU patches compile cleanly."
