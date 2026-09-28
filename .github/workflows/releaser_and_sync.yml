@@ -144,7 +144,7 @@ jobs:
 
       - name: "🚀 Create GitHub Release"
         env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           KSU_NOTE=""
           [ "${KSU_INJECTED:-}" = "true" ] && KSU_NOTE="🔑 **KernelSU (rKSU)** — root access baked in"
