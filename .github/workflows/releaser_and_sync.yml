@@ -1,26 +1,25 @@
 # ════════════════════════════════════════════════════════════
 #  EXTREME++GAMING — Release + Upstream Sync
-#  MANUAL DISPATCH ONLY
+#  MANUAL DISPATCH OR CHAINED
 # ════════════════════════════════════════════════════════════
 name: "🚀 Release + Upstream Sync"
 
 on:
   workflow_dispatch:
-  workflow_run:
-    workflows: ["🔨 Build EXTREME++GAMING Kernel"]
-    types: [completed]
-
     inputs:
       tag:
-        description: "Release tag (e.g. v2.0-gaming)"
+        description: "Release tag (e.g. v3.0-gaming)"
         required: true
-        default: "v1.0-extreme"
+        default: "v2.0-extreme"
       inject_ksu:
         description: "Inject KernelSU?"
         required: true
         default: "true"
         type: choice
         options: ["true", "false"]
+  workflow_run:
+    workflows: ["🔨 Build EXTREME++GAMING Kernel"]
+    types: [completed]
 
 env:
   KERNEL_REPO:   "https://github.com/AstideLabs/android_kernel_xiaomi_sm8250"
@@ -33,12 +32,23 @@ env:
 
 jobs:
   release:
-    if: ${{ github.event.workflow_run.conclusion == \'success\' || github.event_name == \'workflow_dispatch\' }}
     name: "Sync → Build → Release"
     runs-on: ubuntu-22.04
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
     timeout-minutes: 240
 
     steps:
+      - name: "📢 Telegram: Build Started"
+        env:
+          BOT_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          if [ -n "$BOT_TOKEN" ] && [ -n "$CHAT_ID" ]; then
+            MESSAGE="🚧 *EXTREME++GAMING Kernel Build Started!* 🚧%0A%0A📱 *Device:* POCO F4 (munch)%0A⚡ *Triggered By:* GitHub Actions%0A⏳ *Status:* Compiling Source... Please wait ~40 mins."
+            curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+              -d chat_id="${CHAT_ID}" -d parse_mode="Markdown" -d text="${MESSAGE}"
+          fi
+
       - name: "📦 Checkout"
         uses: actions/checkout@v4
         with:
@@ -47,12 +57,7 @@ jobs:
       - name: "🛠️ Install deps"
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends \
-            bc bison build-essential ca-certificates curl flex git \
-            libelf-dev libssl-dev lld llvm python3 wget zip unzip \
-            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi \
-            binutils-aarch64-linux-gnu binutils-arm-linux-gnueabi \
-            device-tree-compiler
+          sudo apt-get install -y --no-install-recommends bc bison build-essential ca-certificates curl flex git libelf-dev libssl-dev lld llvm python3 wget zip unzip gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi binutils-aarch64-linux-gnu binutils-arm-linux-gnueabi device-tree-compiler
 
       - name: "⚡ Restore Clang cache"
         id: clang-cache
@@ -65,8 +70,7 @@ jobs:
         if: steps.clang-cache.outputs.cache-hit != 'true'
         run: |
           mkdir -p "${{ env.CLANG_DIR }}"
-          wget -qO /tmp/clang.tar.gz \
-            "https://github.com/kdrag0n/proton-clang/archive/refs/heads/master.tar.gz"
+          wget -qO /tmp/clang.tar.gz "https://github.com/kdrag0n/proton-clang/archive/refs/heads/master.tar.gz"
           tar -xzf /tmp/clang.tar.gz --strip-components=1 -C "${{ env.CLANG_DIR }}"
 
       - name: "🔧 Set PATH"
@@ -74,18 +78,15 @@ jobs:
 
       - name: "🌐 Fetch upstream kernel"
         run: |
-          git clone --depth=1 --branch "${{ env.KERNEL_BRANCH }}" \
-            "${{ env.KERNEL_REPO }}" kernel_src
+          git clone --depth=1 --branch "${{ env.KERNEL_BRANCH }}" "${{ env.KERNEL_REPO }}" kernel_src
           UPSTREAM_SHA=$(git -C kernel_src rev-parse --short HEAD)
           echo "UPSTREAM_SHA=${UPSTREAM_SHA}" >> $GITHUB_ENV
 
-      - name: "🔑 Inject KernelSU"
-        if: ${{ github.event.inputs.inject_ksu == 'true' }}
+      - name: "🔑 Inject KernelSU (rKSU)"
+        if: ${{ github.event.inputs.inject_ksu == 'true' || github.event_name == 'workflow_run' }}
         working-directory: kernel_src
         run: |
-          curl -LSs \
-            "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" \
-            | bash -s main
+          curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s main
           echo "KSU_INJECTED=true" >> $GITHUB_ENV
           echo "✅ rKSU injected"
 
@@ -98,26 +99,13 @@ jobs:
         working-directory: kernel_src
         run: |
           mkdir -p "${{ env.KERNEL_OUT }}"
-          make O="${{ env.KERNEL_OUT }}" ARCH=arm64 CC=clang \
-            CLANG_TRIPLE=aarch64-linux-gnu- \
-            CROSS_COMPILE=aarch64-linux-gnu- \
-            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
-            LD=ld.lld AR=llvm-ar NM=llvm-nm \
-            OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump \
-            "${{ env.DEFCONFIG }}"
-          make -j$(nproc) O="${{ env.KERNEL_OUT }}" ARCH=arm64 CC=clang \
-            CLANG_TRIPLE=aarch64-linux-gnu- \
-            CROSS_COMPILE=aarch64-linux-gnu- \
-            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
-            LD=ld.lld AR=llvm-ar NM=llvm-nm \
-            OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump \
-            Image.gz dtbs 2>&1 | tee /tmp/build.log
+          make O="${{ env.KERNEL_OUT }}" ARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump "${{ env.DEFCONFIG }}"
+          make -j$(nproc) O="${{ env.KERNEL_OUT }}" ARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump Image.gz dtbs
 
       - name: "🗜️ Package ZIP"
         run: |
           mkdir -p "${{ env.ZIP_OUT }}"
-          git clone --depth=1 \
-            "https://github.com/osm0sis/AnyKernel3" "${{ env.AK3_DIR }}"
+          git clone --depth=1 "https://github.com/osm0sis/AnyKernel3" "${{ env.AK3_DIR }}"
           cat > "${{ env.AK3_DIR }}/anykernel.sh" << 'AK3EOF'
           properties() { '
           kernel.string=EXTREME++GAMING Kernel by PandeyJI-9
@@ -135,72 +123,52 @@ jobs:
           flash_generic_dtb;
           write_boot;
           AK3EOF
-
-          cp "${{ env.KERNEL_OUT }}/arch/arm64/boot/Image.gz" \
-             "${{ env.AK3_DIR }}/Image.gz"
+          cp "${{ env.KERNEL_OUT }}/arch/arm64/boot/Image.gz" "${{ env.AK3_DIR }}/Image.gz"
           DTBO=$(find "${{ env.KERNEL_OUT }}" -name "*.dtbo" | head -1)
           [ -f "$DTBO" ] && cp "$DTBO" "${{ env.AK3_DIR }}/dtbo.img"
-
-          TAG="${{ github.event.inputs.tag }}"
+          
+          # Handle workflow_run vs workflow_dispatch inputs
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+             TAG="${{ github.event.inputs.tag }}"
+          else
+             TAG="v$(date -u +%Y%m%d-%H%M)-extreme"
+          fi
+          
           KSU_TAG=""
           [ "${KSU_INJECTED:-}" = "true" ] && KSU_TAG="-KSU"
           ZIP_NAME="EXTREME++GAMING-munch-${TAG}${KSU_TAG}.zip"
-
           cd "${{ env.AK3_DIR }}"
           zip -r9 "${{ env.ZIP_OUT }}/${ZIP_NAME}" . -x "*.git*"
           echo "ZIP_NAME=${ZIP_NAME}" >> $GITHUB_ENV
           echo "ZIP_PATH=${{ env.ZIP_OUT }}/${ZIP_NAME}" >> $GITHUB_ENV
+          echo "TAG=${TAG}" >> $GITHUB_ENV
 
       - name: "🚀 Create GitHub Release"
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
-          TAG="${{ github.event.inputs.tag }}"
           KSU_NOTE=""
-          [ "${KSU_INJECTED:-}" = "true" ] && \
-            KSU_NOTE="🔑 **KernelSU (rKSU)** — root access baked in"
-
-          gh release create "$TAG" \
-            "${{ env.ZIP_PATH }}" \
+          [ "${KSU_INJECTED:-}" = "true" ] && KSU_NOTE="🔑 **KernelSU (rKSU)** — root access baked in"
+          gh release create "${{ env.TAG }}" "${{ env.ZIP_PATH }}" \
             --repo "${{ github.repository }}" \
-            --title "EXTREME++GAMING ${TAG} | POCO F4" \
-            --notes "## ⚡ EXTREME++GAMING Kernel — ${TAG}
-
+            --title "EXTREME++GAMING ${{ env.TAG }} | POCO F4" \
+            --notes "## ⚡ EXTREME++GAMING Kernel — ${{ env.TAG }}
           **Device:** POCO F4 (munch) | Snapdragon 870 (SM8250-AC)
           **Upstream:** \`${{ env.UPSTREAM_SHA }}\`
-          **Repo:** [GitHub](https://github.com/PandeyJI-9/Extreme-PLUS-kernel-munch)
           ${KSU_NOTE}
-
           ### GPU (Adreno 650) — 10 Custom OPPs
           \`670 → 587 → 525 → 490 → 441 → 400 → 305 → 250 → 200 → 150 MHz\`
-
           ### CPU (Kryo 585) — Prime Core Capped
-          \`CPU7: 3187 → 3000 MHz\` | Gold & Silver: Stock
+          \`CPU7: 3187 → 3000 MHz\` | Gold & Silver: Stock"
 
-          ### Flash
-          Recovery → Flash ZIP → Wipe Dalvik → Reboot"
-
-      - name: "📋 Build log (failure)"
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: "build-failure-log"
-          path: /tmp/build.log
-          retention-days: 7
-
-      - name: "📢 Send Telegram Update"
-        if: success()
+      - name: "📢 Telegram: Build Successful (With Links)"
         env:
           BOT_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
           if [ -n "$BOT_TOKEN" ] && [ -n "$CHAT_ID" ]; then
-            MESSAGE="🔥 *New EXTREME++GAMING Kernel Built!* 🔥%0A%0A📱 *Device:* POCO F4 (munch)%0A⚡ *Update:* \`${{ env.UPSTREAM_SHA }}\`%0A📦 *Download:* [GitHub Releases](https://github.com/${{ github.repository }}/releases)%0A%0A_God-Level Audit Passed ✅_"
+            DOWNLOAD_LINK="https://github.com/${{ github.repository }}/releases/tag/${{ env.TAG }}"
+            MESSAGE="✅ *Kernel Built Successfully!* ✅%0A%0A📱 *Device:* POCO F4 (munch)%0A🏷 *Version:* \`${{ env.TAG }}\`%0A%0A⬇️ *Download Link & Changelog:*%0A[Click Here to Download](${DOWNLOAD_LINK})"
             curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
-              -d chat_id="${CHAT_ID}" \
-              -d parse_mode="Markdown" \
-              -d text="${MESSAGE}"
-            echo "✅ Telegram update sent!"
-          else
-            echo "⚠️ Telegram secrets not set. Skipping notification."
+              -d chat_id="${CHAT_ID}" -d parse_mode="Markdown" -d text="${MESSAGE}"
           fi
