@@ -1,0 +1,234 @@
+# ════════════════════════════════════════════════════════════
+#  EXTREME++GAMING Kernel — builder.yml
+#  POCO F4 (munch) | SM8250-AC | Adreno 650
+#  Maintainer: PandeyJI-9
+# ════════════════════════════════════════════════════════════
+#  MANUAL DISPATCH ONLY — runs when you press the button.
+# ════════════════════════════════════════════════════════════
+name: "🔨 Build EXTREME++GAMING Kernel"
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Release tag (leave empty for artifact-only build)"
+        required: false
+        default: ""
+      enable_ksu:
+        description: "Inject KernelSU (rKSU)?"
+        required: false
+        default: "false"
+        type: choice
+        options: ["true", "false"]
+
+env:
+  KERNEL_REPO:     "https://github.com/AstideLabs/android_kernel_xiaomi_sm8250"
+  KERNEL_BRANCH:   "android17-aptusitu"
+  DEVICE:          "munch"
+  DEFCONFIG:       "munch_defconfig"
+  CLANG_DIR:       "${{ github.workspace }}/proton-clang"
+  KERNEL_OUT:      "${{ github.workspace }}/kernel_out"
+  AK3_DIR:         "${{ github.workspace }}/AnyKernel3"
+  ZIP_OUT:         "${{ github.workspace }}/release"
+
+jobs:
+  build:
+    name: "EXTREME++GAMING build"
+    runs-on: ubuntu-22.04
+    timeout-minutes: 180
+
+    steps:
+      # ── 0. Checkout this repo (patches + workflows) ──────────
+      - name: "📦 Checkout build repo"
+        uses: actions/checkout@v4
+        with:
+          path: build-repo
+
+      # ── 1. Dependencies ──────────────────────────────────────
+      - name: "🛠️ Install build dependencies"
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            bc bison build-essential ca-certificates curl \
+            flex git gnupg libelf-dev libssl-dev lld llvm \
+            python3 tar wget zip unzip cpio rsync \
+            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi \
+            binutils-aarch64-linux-gnu binutils-arm-linux-gnueabi \
+            libncurses-dev device-tree-compiler
+
+      # ── 2. Proton Clang (cached) ─────────────────────────────
+      - name: "⚡ Restore Proton Clang cache"
+        id: clang-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.CLANG_DIR }}
+          key: proton-clang-v2
+
+      - name: "⚡ Download Proton Clang"
+        if: steps.clang-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p "${{ env.CLANG_DIR }}"
+          wget -qO /tmp/clang.tar.gz \
+            "https://github.com/kdrag0n/proton-clang/archive/refs/heads/master.tar.gz"
+          tar -xzf /tmp/clang.tar.gz --strip-components=1 \
+            -C "${{ env.CLANG_DIR }}"
+
+      - name: "🔧 Set PATH"
+        run: echo "PATH=${{ env.CLANG_DIR }}/bin:$PATH" >> $GITHUB_ENV
+
+      # ── 3. Fetch kernel source ───────────────────────────────
+      - name: "🌐 Fetch kernel source (shallow)"
+        run: |
+          git clone --depth=1 --branch "${{ env.KERNEL_BRANCH }}" \
+            "${{ env.KERNEL_REPO }}" kernel_src
+          echo "✅ Source: $(du -sh kernel_src | cut -f1)"
+
+      # ── 4. KernelSU (optional) ───────────────────────────────
+      - name: "🔑 Inject KernelSU (rKSU)"
+        if: ${{ github.event.inputs.enable_ksu == 'true' }}
+        working-directory: kernel_src
+        run: |
+          curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" \
+            | bash -s main
+          echo "KSU_INJECTED=true" >> $GITHUB_ENV
+          echo "✅ KernelSU injected"
+
+      # ── 5. Apply ALL patches (GPU + CPU + Kernel Name) ───────
+      - name: "🩹 Apply EXTREME++GAMING patches"
+        run: |
+          chmod +x build-repo/patches/apply-all.sh
+          bash build-repo/patches/apply-all.sh kernel_src
+
+      # ── 6. Apply extra .patch files ──────────────────────────
+      - name: "📋 Apply extra .patch files (if any)"
+        working-directory: kernel_src
+        run: |
+          PATCH_DIR="${{ github.workspace }}/build-repo/patches"
+          for p in "$PATCH_DIR"/*.patch 2>/dev/null; do
+            [ -f "$p" ] || continue
+            echo "Applying: $(basename $p)"
+            git apply --ignore-whitespace "$p" || echo "⚠️ $p failed"
+          done
+
+      # ── 7. defconfig ─────────────────────────────────────────
+      - name: "⚙️ Generate .config"
+        working-directory: kernel_src
+        run: |
+          mkdir -p "${{ env.KERNEL_OUT }}"
+          make O="${{ env.KERNEL_OUT }}" ARCH=arm64 \
+            CC=clang CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+            LD=ld.lld AR=llvm-ar NM=llvm-nm \
+            OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump \
+            STRIP=llvm-strip \
+            "${{ env.DEFCONFIG }}"
+
+      # ── 8. Compile ───────────────────────────────────────────
+      - name: "🔨 Compile kernel"
+        working-directory: kernel_src
+        run: |
+          make -j$(nproc) O="${{ env.KERNEL_OUT }}" ARCH=arm64 \
+            CC=clang CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+            LD=ld.lld AR=llvm-ar NM=llvm-nm \
+            OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump \
+            STRIP=llvm-strip \
+            Image.gz dtbs 2>&1 | tee /tmp/build.log
+          echo "✅ Kernel compiled"
+
+      # ── 9. AnyKernel3 ───────────────────────────────────────
+      - name: "📦 Setup AnyKernel3"
+        run: |
+          git clone --depth=1 \
+            "https://github.com/osm0sis/AnyKernel3" "${{ env.AK3_DIR }}"
+
+          cat > "${{ env.AK3_DIR }}/anykernel.sh" << 'AK3EOF'
+          properties() { '
+          kernel.string=EXTREME++GAMING Kernel by PandeyJI-9
+          do.devicecheck=1
+          do.modules=0
+          do.systemless=1
+          do.cleanup=1
+          do.cleanuponabort=0
+          device.name1=munch
+          device.name2=POCO F4
+          device.name3=22021211RG
+          supported.versions=12-15
+          '; }
+          block=/dev/block/bootdevice/by-name/boot;
+          is_slot_device=auto;
+          ramdisk_compression=auto;
+          patch_vbmeta_flag=auto;
+          . tools/ak3-core.sh;
+          flash_generic_dtb;
+          write_boot;
+          AK3EOF
+
+      # ── 10. Package ZIP ──────────────────────────────────────
+      - name: "🗜️ Package flashable ZIP"
+        run: |
+          mkdir -p "${{ env.ZIP_OUT }}"
+          cp "${{ env.KERNEL_OUT }}/arch/arm64/boot/Image.gz" \
+             "${{ env.AK3_DIR }}/Image.gz"
+
+          # DTBO
+          DTBO=$(find "${{ env.KERNEL_OUT }}" -name "*.dtbo" | head -1)
+          [ -f "$DTBO" ] && cp "$DTBO" "${{ env.AK3_DIR }}/dtbo.img"
+
+          BUILD_DATE=$(date -u +"%Y%m%d-%H%M")
+          KSU_TAG=""
+          [ "${KSU_INJECTED:-}" = "true" ] && KSU_TAG="-KSU"
+          ZIP_NAME="EXTREME++GAMING-munch-${BUILD_DATE}${KSU_TAG}.zip"
+
+          cd "${{ env.AK3_DIR }}"
+          zip -r9 "${{ env.ZIP_OUT }}/${ZIP_NAME}" . -x "*.git*"
+
+          echo "ZIP_NAME=${ZIP_NAME}" >> $GITHUB_ENV
+          echo "ZIP_PATH=${{ env.ZIP_OUT }}/${ZIP_NAME}" >> $GITHUB_ENV
+          echo "✅ ZIP ready: ${ZIP_NAME}"
+
+      # ── 11. Upload artifact ──────────────────────────────────
+      - name: "⬆️ Upload ZIP"
+        uses: actions/upload-artifact@v4
+        with:
+          name: "${{ env.ZIP_NAME }}"
+          path: "${{ env.ZIP_PATH }}"
+          retention-days: 14
+
+      # ── 12. Build log on failure ─────────────────────────────
+      - name: "📋 Upload build log (failure)"
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: "build-failure-log"
+          path: /tmp/build.log
+          retention-days: 7
+
+      # ── 13. GitHub Release (optional) ────────────────────────
+      - name: "🚀 Create GitHub Release"
+        if: ${{ github.event.inputs.release_tag != '' }}
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          TAG="${{ github.event.inputs.release_tag }}"
+          gh release create "$TAG" \
+            "${{ env.ZIP_PATH }}" \
+            --repo "${{ github.repository }}" \
+            --title "EXTREME++GAMING ${TAG} | POCO F4 (munch)" \
+            --notes "## ⚡ EXTREME++GAMING Kernel — ${TAG}
+
+          **Device:** POCO F4 (munch) | Snapdragon 870 | Adreno 650
+          **Source:** [AstideLabs kernel](https://github.com/AstideLabs/android_kernel_xiaomi_sm8250)
+          **Repo:** [EXTREME++GAMING](https://github.com/PandeyJI-9/Extreme-PLUS-kernel-munch)
+
+          ### GPU Tuning (Adreno 650)
+          \`670 → 587 → 525 → 490 → 441 → 400 → 305 → 250 → 200 → 150 MHz\`
+          Ultra-low idle states for massive battery savings.
+
+          ### CPU Tuning (Kryo 585)
+          Prime Core capped: \`3187 → 3000 MHz\` | Gold + Silver: Stock
+
+          ### Flash
+          TWRP/OrangeFox → Flash ZIP → Wipe Dalvik → Reboot"
