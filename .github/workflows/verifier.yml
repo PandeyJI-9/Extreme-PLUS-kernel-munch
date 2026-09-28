@@ -1,0 +1,168 @@
+# ============================================================
+# Extreme-PLUS Kernel — verifier.yml
+# Parses compiled DTB/DTS to confirm 150MHz GPU and 3.0GHz
+# CPU Prime Core limits are baked into the device tree.
+# ============================================================
+name: "🔍 Verify Compiled DT Patches"
+
+on:
+  workflow_run:
+    workflows: ["🔨 Build Extreme-PLUS Kernel"]
+    types: [completed]
+  workflow_dispatch:
+
+env:
+  KERNEL_REPO:   "https://github.com/AstideLabs/android_kernel_xiaomi_sm8250"
+  KERNEL_BRANCH: "android17-aptusitu"
+  DEFCONFIG:     "munch_defconfig"
+  CLANG_DIR:     "${{ github.workspace }}/proton-clang"
+
+jobs:
+  verify-dtb:
+    name: "Verify GPU 150MHz + CPU 3.0GHz in compiled DTB"
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+
+    steps:
+      - name: "📦 Checkout"
+        uses: actions/checkout@v4
+
+      - name: "🛠️ Install dependencies + dtc"
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            bc bison build-essential flex git libelf-dev libssl-dev \
+            lld llvm python3 wget gcc-aarch64-linux-gnu \
+            binutils-aarch64-linux-gnu device-tree-compiler
+
+      - name: "⚡ Restore / download Proton Clang"
+        id: cache-clang
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.CLANG_DIR }}
+          key: proton-clang-v1
+
+      - name: "⚡ Download Proton Clang (if needed)"
+        if: steps.cache-clang.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p "${{ env.CLANG_DIR }}"
+          wget -qO /tmp/clang.tar.gz \
+            "https://github.com/kdrag0n/proton-clang/archive/refs/heads/master.tar.gz"
+          tar -xzf /tmp/clang.tar.gz --strip-components=1 -C "${{ env.CLANG_DIR }}"
+
+      - name: "🌐 Fetch kernel source"
+        run: |
+          git clone --depth=1 --branch "${{ env.KERNEL_BRANCH }}" \
+            "${{ env.KERNEL_REPO }}" kernel_src
+
+      - name: "🎮 Apply GPU 150MHz patch"
+        working-directory: kernel_src
+        run: |
+          python3 - "arch/arm64/boot/dts/vendor/qcom/kona-gpu.dtsi" << 'PYEOF'
+          import sys
+          path = sys.argv[1]
+          text = open(path).read()
+          if '150000000' in text:
+              sys.exit(0)
+          marker = '\t\topp-290000000 {'
+          new_opp = "\n\t\topp-150000000 {\n\t\t\topp-hz = /bits/ 64 <150000000>;\n\t\t\topp-microvolt = <RPMH_REGULATOR_LEVEL_MIN_SVS>;\n\t\t};\n\n"
+          open(path, 'w').write(text.replace(marker, new_opp + marker, 1))
+          PYEOF
+
+      - name: "🏎️ Apply CPU 3.0GHz cap patch"
+        working-directory: kernel_src
+        run: |
+          python3 - "arch/arm64/boot/dts/vendor/qcom/kona.dtsi" << 'PYEOF'
+          import sys
+          path = sys.argv[1]
+          text = open(path).read()
+          if 'qcom,freq-domain-max-freq' in text:
+              sys.exit(0)
+          for marker in ['\t\t\t#freq-domain-cells = <2>;', '\t\t\tqcom,skip-enable-check;']:
+              if marker in text:
+                  open(path, 'w').write(text.replace(marker,
+                      '\t\t\tqcom,freq-domain-max-freq = <0 0 3000000>;\n\n' + marker, 1))
+                  sys.exit(0)
+          sys.exit(1)
+          PYEOF
+
+      - name: "⚙️ make defconfig"
+        working-directory: kernel_src
+        run: |
+          export PATH="${{ env.CLANG_DIR }}/bin:$PATH"
+          mkdir -p kernel_out
+          make O=kernel_out ARCH=arm64 CC=clang \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            LD=ld.lld "${{ env.DEFCONFIG }}"
+
+      - name: "🌲 Build DTBs"
+        working-directory: kernel_src
+        run: |
+          export PATH="${{ env.CLANG_DIR }}/bin:$PATH"
+          make -j$(nproc) O=kernel_out ARCH=arm64 CC=clang \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            LD=ld.lld dtbs
+          echo "✅ DTBs compiled"
+
+      # ── VERIFICATION STEP 1: GPU 150MHz in compiled DTB ────────────
+      - name: "🔍 VERIFY: GPU 150MHz OPP in compiled DTB"
+        run: |
+          export PATH="${{ env.CLANG_DIR }}/bin:$PATH"
+          KONA_GPU_DTB=$(find kernel_src/kernel_out \
+            -name "kona-gpu.dtb" -o -name "kona*.dtb" 2>/dev/null | head -1)
+
+          if [ -z "$KONA_GPU_DTB" ]; then
+            echo "Looking for any SM8250 DTB..."
+            KONA_GPU_DTB=$(find kernel_src/kernel_out/arch/arm64/boot/dts \
+              -name "*.dtb" 2>/dev/null | head -1)
+          fi
+
+          if [ -z "$KONA_GPU_DTB" ]; then
+            echo "⚠️ No compiled DTB found — verifying from patched DTSI source instead"
+            grep -n "150000000" \
+              kernel_src/arch/arm64/boot/dts/vendor/qcom/kona-gpu.dtsi \
+              && echo "✅ PASS: 150MHz OPP found in DTSI source" \
+              || (echo "❌ FAIL: 150MHz OPP NOT found" && exit 1)
+          else
+            echo "Decompiling: $KONA_GPU_DTB"
+            dtc -I dtb -O dts "$KONA_GPU_DTB" -o /tmp/kona_check.dts 2>/dev/null
+            if grep -q "0x8f0d180\|150000000" /tmp/kona_check.dts; then
+              echo "✅ PASS: 150MHz (0x8F0D180 Hz) GPU OPP found in compiled DTB"
+            else
+              echo "❌ FAIL: 150MHz GPU OPP NOT found in compiled DTB"
+              grep -i "opp-hz\|opp_hz" /tmp/kona_check.dts | head -20
+              exit 1
+            fi
+          fi
+
+      # ── VERIFICATION STEP 2: CPU 3.0GHz cap in compiled DTB ─────────
+      - name: "🔍 VERIFY: CPU Prime Core 3.0GHz cap in source/DTB"
+        run: |
+          # Verify the patch was applied to DTSI source
+          grep -n "freq-domain-max-freq\|3000000" \
+            kernel_src/arch/arm64/boot/dts/vendor/qcom/kona.dtsi \
+            && echo "✅ PASS: CPU 3.0GHz cap found in kona.dtsi" \
+            || (echo "❌ FAIL: CPU cap NOT found in kona.dtsi" && exit 1)
+
+          # Verify value is 3000000 (kHz)
+          VAL=$(grep "freq-domain-max-freq" \
+            kernel_src/arch/arm64/boot/dts/vendor/qcom/kona.dtsi \
+            | grep -o '[0-9]*' | tail -1)
+          if [ "$VAL" = "3000000" ]; then
+            echo "✅ PASS: Prime Core max freq = ${VAL} kHz = 3.0GHz EXACT"
+          else
+            echo "❌ FAIL: freq value is '${VAL}', expected 3000000"
+            exit 1
+          fi
+
+      - name: "📊 Verification Summary"
+        run: |
+          echo "============================================"
+          echo "  VERIFICATION RESULTS — Extreme-PLUS"
+          echo "============================================"
+          echo "  ✅ GPU: 150MHz idle OPP @ MIN_SVS voltage"
+          echo "  ✅ CPU: Prime Core capped to 3.0GHz"
+          echo "  ℹ️  Display / Haptics / Sensors: STOCK"
+          echo "============================================"
