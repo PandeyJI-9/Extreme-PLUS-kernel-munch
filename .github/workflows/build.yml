@@ -177,7 +177,7 @@ jobs:
           device.name2=POCO F4
           supported.versions=13-17
           '; }
-          block=boot;
+          block=/dev/block/bootdevice/by-name/boot;
           is_slot_device=1;
           ramdisk_compression=auto;
           . tools/ak3-core.sh;
