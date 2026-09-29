@@ -1,4 +1,3 @@
----
 # ╔══════════════════════════════════════════════════════════════╗
 # ║  EXTREME++HyperOS — MASTER BUILD PIPELINE                    ║
 # ║  POCO F4 (munch) | SM8250-AC | Snapdragon 870               ║
@@ -48,7 +47,7 @@ jobs:
           BOT_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
-          [ -z "$BOT_TOKEN" ] || [ -z "$CHAT_ID" ] && exit 0
+          [ -z "$BOT_TOKEN" ] \vert{}\vert{} [ -z "$CHAT_ID" ] && exit 0
           TEXT=$(cat << 'MSGEOF'
           🚧 <b>EXTREME++HyperOS Build Started!</b> 🚧
           
@@ -189,6 +188,12 @@ jobs:
           ui_print " ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ ";
           ui_print " ";
           write_boot;
+          
+          if [ -f dtbo.img ]; then
+            ui_print "- Flashing DTBO for Extreme Frequencies & UV...";
+            flash_dtbo;
+          fi
+          
           AKEOF
 
           cp kernel/out/arch/arm64/boot/Image.gz ak3/
@@ -322,7 +327,7 @@ jobs:
           BOT_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
-          [ -z "$BOT_TOKEN" ] || [ -z "$CHAT_ID" ] && exit 0
+          [ -z "$BOT_TOKEN" ] \vert{}\vert{} [ -z "$CHAT_ID" ] && exit 0
           DL="https://github.com/${{ github.repository }}/releases/tag/${{ inputs.release_tag }}"
           TEXT=$(cat << EOF
           ⚡ <b>EXTREME++HyperOS Kernel</b> — <code>${{ inputs.release_tag }}</code>
@@ -364,7 +369,7 @@ jobs:
           BOT_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
-          [ -z "$BOT_TOKEN" ] || [ -z "$CHAT_ID" ] && exit 0
+          [ -z "$BOT_TOKEN" ] \vert{}\vert{} [ -z "$CHAT_ID" ] && exit 0
           RUN_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           TEXT=$(cat << EOF
           ❌ <b>EXTREME++HyperOS Build Failed</b>
