@@ -177,11 +177,11 @@ jobs:
           device.name2=POCO F4
           supported.versions=13-17
           '; }
-          block=/dev/block/bootdevice/by-name/boot;
-          is_slot_device=1;
-          ramdisk_compression=auto;
+          BLOCK=/dev/block/bootdevice/by-name/boot;
+          IS_SLOT_DEVICE=1;
+          RAMDISK_COMPRESSION=auto;
           . tools/ak3-core.sh;
-          flash_generic_dtb;
+          dump_boot;
           ui_print " ";
           ui_print " ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ ";
           ui_print "    ⚡ EXTREME PLUS GAMING ON HYPER OS ⚡    ";
