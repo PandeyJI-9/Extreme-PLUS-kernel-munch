@@ -123,12 +123,25 @@ jobs:
           fi
           AKEOF
           
-          # The dev script usually outputs the Image.gz to out/arch/arm64/boot/
-          cp kernel/out/arch/arm64/boot/Image.gz ak3/
+          echo "🔍 Searching for compiled kernel image..."
+          IMAGE_PATH=$(find kernel -type f \( -name "Image" -o -name "Image.gz" \) | grep "arch/arm64/boot" | head -n 1)
+          if [ -z "$IMAGE_PATH" ]; then
+            IMAGE_PATH=$(find kernel -type f \( -name "Image" -o -name "Image.gz" \) | head -n 1)
+          fi
           
-          DTBO=$(find kernel/out -name "*.dtbo" -print -quit)
-          if [ -f "$DTBO" ]; then
-            cp "$DTBO" ak3/dtbo.img
+          if [ -n "$IMAGE_PATH" ]; then
+            echo "✅ Found Kernel Image at: $IMAGE_PATH"
+            cp "$IMAGE_PATH" ak3/
+          else
+            echo "❌ ERROR: Kernel Image not found! Build script might have failed."
+            exit 1
+          fi
+          
+          echo "🔍 Searching for dtbo.img..."
+          DTBO_PATH=$(find kernel -type f -name "dtbo.img" | head -n 1)
+          if [ -n "$DTBO_PATH" ]; then
+            echo "✅ Found DTBO at: $DTBO_PATH"
+            cp "$DTBO_PATH" ak3/dtbo.img
           fi
 
           STAG=""
@@ -145,4 +158,42 @@ jobs:
           gh release create "${{ inputs.release_tag }}" "$ZIP_PATH" \
             --repo "${{ github.repository }}" \
             --title "EXTREME++HyperOS ${{ inputs.release_tag }} | POCO F4 (munch)" \
-            --notes "Safe HyperOS 3 Kernel."
+            --notes "Safe HyperOS 3 Kernel with CPU 2.8GHz & GPU 150MHz UV."
+            
+      - name: "📢 Telegram: Build Success"
+        if: success()
+        env:
+          BOT_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          [ -z "$BOT_TOKEN" ] || [ -z "$CHAT_ID" ] && exit 0
+          DL="https://github.com/${{ github.repository }}/releases/tag/${{ inputs.release_tag }}"
+          TEXT=$(cat << EOF
+          ⚡ <b>EXTREME++HyperOS Kernel</b> — <code>${{ inputs.release_tag }}</code>
+
+          📱 Device: POCO F4 (munch)
+          🏷 Base: HyperOS Optimized
+          🎮 GPU: 150–670 MHz (10-step OPP)
+          🏎 CPU: Prime @ 2.84 GHz
+
+          📥 <a href="${DL}">Download ZIP</a>
+          EOF
+          )
+          MSG_RESPONSE=$(curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+            -d chat_id="${CHAT_ID}" -d parse_mode="HTML" \
+            -d text="${TEXT}")
+            
+          MSG_ID=$(echo "$MSG_RESPONSE" | grep -o '"message_id":[0-9]*' | cut -d: -f2)
+          
+          if [ -f "$ZIP_PATH" ] && [ -n "$MSG_ID" ]; then
+            curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendDocument" \
+              -F chat_id="${CHAT_ID}" \
+              -F document=@"$ZIP_PATH" \
+              -F reply_to_message_id="$MSG_ID" \
+              -F caption="📦 Flashable ZIP: ${ZIP_NAME}"
+          elif [ -f "$ZIP_PATH" ]; then
+            curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendDocument" \
+              -F chat_id="${CHAT_ID}" \
+              -F document=@"$ZIP_PATH" \
+              -F caption="📦 Flashable ZIP: ${ZIP_NAME}"
+          fi
