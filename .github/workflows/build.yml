@@ -16,7 +16,7 @@ on:
       release_tag:
         description: "Release tag (e.g. v3.0-extreme)"
         required: true
-        default: "v1.0-extreme"
+        default: "Beta-1.0"
       inject_sukisu:
         description: "Inject SukiSU Ultra (root)?"
         required: true
@@ -42,6 +42,23 @@ jobs:
     timeout-minutes: 120
 
     steps:
+
+      - name: "📢 Telegram: Build Started"
+        env:
+          BOT_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          [ -z "$BOT_TOKEN" ] || [ -z "$CHAT_ID" ] && exit 0
+          TEXT=$(cat << 'MSGEOF'
+          🚧 *EXTREME++GAMING Build Started!* 🚧
+          
+          📱 Device: POCO F4 (munch)
+          🏷 Tag: `${{ inputs.release_tag }}`
+          ⏳ Status: Compiling Source...
+          MSGEOF
+          )
+          curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+            -d chat_id="${CHAT_ID}" -d parse_mode="Markdown" -d text="${TEXT}"
       # ─────────────── SETUP ───────────────
       - name: "📦 Checkout config repo"
         uses: actions/checkout@v4
