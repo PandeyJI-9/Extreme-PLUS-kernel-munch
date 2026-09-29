@@ -183,30 +183,21 @@ jobs:
           PATCH_VBMETA_FLAG=auto;
           . tools/ak3-core.sh;
           dump_boot;
-          write_boot;
-
-          BLOCK=/dev/block/bootdevice/by-name/vendor_boot;
-          IS_SLOT_DEVICE=1;
-          RAMDISK_COMPRESSION=auto;
-          PATCH_VBMETA_FLAG=auto;
-          reset_ak;
-          split_boot;
           ui_print " ";
           ui_print " ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ ";
           ui_print "    ⚡ EXTREME PLUS GAMING ON HYPER OS ⚡    ";
           ui_print " ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ ";
           ui_print " ";
-          flash_boot;
+          write_boot;
           AKEOF
 
           cp kernel/out/arch/arm64/boot/Image.gz ak3/
-          DTB=$(find kernel/out/arch/arm64/boot/dts/vendor -name "*.dtb" -print -quit || find kernel/out/arch/arm64/boot/dts -name "*.dtb" -print -quit)
-          if [ -n "$DTB" ] && [ -f "$DTB" ]; then
-            cp "$DTB" ak3/dtb
-            echo "✅ Included DTB in AnyKernel3"
-          fi
+          
           DTBO=$(find kernel/out -name "*.dtbo" -print -quit)
-          [ -f "$DTBO" ] && cp "$DTBO" ak3/dtbo.img
+          if [ -f "$DTBO" ]; then
+            cp "$DTBO" ak3/dtbo.img
+            echo "✅ Included dtbo.img in AnyKernel3"
+          fi
 
           STAG=""
           [ "${SUKISU:-}" = "true" ] && STAG="-SukiSU"
