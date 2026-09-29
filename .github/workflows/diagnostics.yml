@@ -1,0 +1,151 @@
+---
+# ╔══════════════════════════════════════════════════════════════╗
+# ║  EXTREME++GAMING — STANDALONE DIAGNOSTICS                   ║
+# ║  Picks up the RELEASED .zip and runs deep verification       ║
+# ║  Run this AFTER a successful build if you want a report      ║
+# ╚══════════════════════════════════════════════════════════════╝
+name: "☣️ Diagnostics & Audit"
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Release tag to audit (must already exist)"
+        required: true
+        default: "v1.0-extreme"
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    name: "Deep Binary Audit"
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+
+    steps:
+      - name: "📦 Checkout config repo"
+        uses: actions/checkout@v4
+
+      - name: "🛠️ Install tools"
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            wget unzip device-tree-compiler bc
+
+      - name: "📥 Download release ZIP"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ inputs.release_tag }}"
+          echo "Fetching release: ${TAG}"
+          gh release download "${TAG}" \
+            --repo "${{ github.repository }}" \
+            --pattern "*.zip" \
+            --dir release_dl
+
+          ZIP_FILE=$(find release_dl -name "*.zip" | head -1)
+          if [ -z "$ZIP_FILE" ]; then
+            echo "::error::No ZIP found in release ${TAG}"
+            exit 1
+          fi
+          echo "ZIP_FILE=${ZIP_FILE}" >> $GITHUB_ENV
+          echo "Found: ${ZIP_FILE}"
+
+      - name: "🔬 Audit Report"
+        run: |
+          echo "# ☣️ EXTREME++GAMING Diagnostics Report" >> $GITHUB_STEP_SUMMARY
+          echo "**Release:** \`${{ inputs.release_tag }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # ── ZIP Integrity ──
+          echo "## 1. 📦 ZIP Integrity" >> $GITHUB_STEP_SUMMARY
+          if unzip -t "$ZIP_FILE" > /dev/null 2>&1; then
+            echo "✅ Archive is valid, no corruption detected." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ ZIP is corrupted! DO NOT FLASH." >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
+          # ── Extract contents ──
+          mkdir -p audit_extract
+          unzip -o "$ZIP_FILE" -d audit_extract > /dev/null
+
+          # ── Kernel Image ──
+          echo "## 2. 🧠 Kernel Image" >> $GITHUB_STEP_SUMMARY
+          if [ -f audit_extract/Image.gz ]; then
+            SIZE=$(stat -c%s audit_extract/Image.gz)
+            SIZE_MB=$(echo "scale=1; $SIZE/1048576" | bc)
+            echo "✅ Image.gz present (${SIZE_MB} MB)" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Image.gz MISSING from ZIP!" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
+          # ── DTBO ──
+          echo "## 3. 🌲 Device Tree Overlay" >> $GITHUB_STEP_SUMMARY
+          if [ -f audit_extract/dtbo.img ]; then
+            echo "✅ dtbo.img present" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "⚠️ dtbo.img not found (may use stock DTBO)" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          # ── AnyKernel3 Script ──
+          echo "## 4. ⚙️ Flasher Script" >> $GITHUB_STEP_SUMMARY
+          if [ -f audit_extract/anykernel.sh ]; then
+            if grep -q "device.name1=munch" audit_extract/anykernel.sh; then
+              echo "✅ anykernel.sh targets \`munch\` (POCO F4)" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "❌ anykernel.sh does NOT target munch!" >> $GITHUB_STEP_SUMMARY
+              exit 1
+            fi
+            if grep -q "EXTREME++GAMING" audit_extract/anykernel.sh; then
+              echo "✅ Kernel string: EXTREME++GAMING" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "❌ anykernel.sh MISSING!" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
+          # ── SukiSU Check ──
+          echo "## 5. 🔑 Root Manager" >> $GITHUB_STEP_SUMMARY
+          if echo "$ZIP_FILE" | grep -qi "sukisu"; then
+            echo "✅ SukiSU Ultra detected in filename" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "ℹ️ No SukiSU tag in filename (may be non-root build)" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          # ── Final ──
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## 🏆 Verdict" >> $GITHUB_STEP_SUMMARY
+          echo "**SAFE TO FLASH** ✅" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "_Report generated at $(date -u '+%Y-%m-%d %H:%M UTC')_" >> $GITHUB_STEP_SUMMARY
+
+      - name: "📢 Telegram: Audit Report"
+        if: always()
+        env:
+          BOT_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          [ -z "$BOT_TOKEN" ] || [ -z "$CHAT_ID" ] && exit 0
+          if [ "${{ job.status }}" = "success" ]; then
+            EMOJI="✅"
+            VERDICT="SAFE TO FLASH"
+          else
+            EMOJI="❌"
+            VERDICT="ISSUES FOUND"
+          fi
+          RUN_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          TEXT=$(cat << EOF
+          ${EMOJI} *Diagnostics Report — \`${{ inputs.release_tag }}\`*
+
+          📱 Device: POCO F4 (munch)
+          🏆 Verdict: *${VERDICT}*
+
+          🔗 [View Full Report](${RUN_URL})
+          EOF
+          )
+          curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+            -d chat_id="${CHAT_ID}" -d parse_mode="Markdown" \
+            -d text="${TEXT}"

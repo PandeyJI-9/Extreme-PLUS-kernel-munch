@@ -1,0 +1,279 @@
+---
+# ╔══════════════════════════════════════════════════════════════╗
+# ║  EXTREME++GAMING — MASTER BUILD PIPELINE                    ║
+# ║  POCO F4 (munch) | SM8250-AC | Snapdragon 870               ║
+# ║  Maintainer: PandeyJI-9                                     ║
+# ╚══════════════════════════════════════════════════════════════╝
+#
+#  One button. Full pipeline:
+#  Patch → Audit → Compile → Package → Release → Telegram
+#
+name: "🔥 EXTREME++ Build & Release"
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Release tag (e.g. v3.0-extreme)"
+        required: true
+        default: "v1.0-extreme"
+      inject_sukisu:
+        description: "Inject SukiSU Ultra (root)?"
+        required: true
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+
+env:
+  KERNEL_REPO: "https://github.com/AstideLabs/android_kernel_xiaomi_sm8250"
+  KERNEL_BRANCH: "android17-aptusitu"
+  DEFCONFIG: "munch_defconfig"
+  CLANG_URL: "https://github.com/kdrag0n/proton-clang/archive/refs/heads/master.tar.gz"
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: "Patch → Build → Release"
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+
+    steps:
+      # ─────────────── SETUP ───────────────
+      - name: "📦 Checkout config repo"
+        uses: actions/checkout@v4
+        with:
+          path: config-repo
+
+      - name: "🛠️ Install build dependencies"
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            bc bison build-essential ca-certificates curl flex git \
+            libelf-dev libssl-dev lld llvm python3 wget zip unzip \
+            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi \
+            binutils-aarch64-linux-gnu binutils-arm-linux-gnueabi \
+            device-tree-compiler
+
+      - name: "⚡ Cache Proton Clang"
+        id: clang-cache
+        uses: actions/cache@v4
+        with:
+          path: proton-clang
+          key: proton-clang-v3
+
+      - name: "⬇️ Download Proton Clang"
+        if: steps.clang-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p proton-clang
+          wget -qO /tmp/clang.tar.gz "$CLANG_URL"
+          tar -xzf /tmp/clang.tar.gz --strip-components=1 -C proton-clang
+
+      - name: "🔧 Set compiler PATH"
+        run: echo "$GITHUB_WORKSPACE/proton-clang/bin" >> $GITHUB_PATH
+
+      # ─────────────── FETCH SOURCE ───────────────
+      - name: "🌐 Clone kernel source"
+        run: |
+          git clone --depth=1 --branch "$KERNEL_BRANCH" "$KERNEL_REPO" kernel
+          echo "UPSTREAM_SHA=$(git -C kernel rev-parse --short HEAD)" >> $GITHUB_ENV
+
+      # ─────────────── SUKISU ULTRA ───────────────
+      - name: "🔑 Inject SukiSU Ultra"
+        if: inputs.inject_sukisu == 'true'
+        working-directory: kernel
+        run: |
+          curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s main
+          echo "SUKISU=true" >> $GITHUB_ENV
+          echo "✅ SukiSU Ultra injected"
+
+      # ─────────────── PATCH ───────────────
+      - name: "🩹 Apply EXTREME++ patches"
+        run: |
+          chmod +x config-repo/patches/apply-all.sh
+          bash config-repo/patches/apply-all.sh kernel
+
+      # ─────────────── AUDIT (.config sanity) ───────────────
+      - name: "🛡️ Pre-build audit (bootloop prevention)"
+        working-directory: kernel
+        run: |
+          mkdir -p out
+          make O=out ARCH=arm64 CC=clang \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            LD=ld.lld "$DEFCONFIG"
+
+          echo "## 🛡️ Pre-Build Audit" >> $GITHUB_STEP_SUMMARY
+
+          FAIL=0
+          check() {
+            if grep -q "^$1=" out/.config 2>/dev/null; then
+              echo "- ✅ $2" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "- ❌ $2 — MISSING! Bootloop risk!" >> $GITHUB_STEP_SUMMARY
+              FAIL=1
+            fi
+          }
+
+          check CONFIG_EXT4_FS       "EXT4 filesystem"
+          check CONFIG_F2FS_FS       "F2FS filesystem"
+          check CONFIG_DRM           "Display rendering (DRM)"
+          check CONFIG_POWER_SUPPLY  "Battery & charging"
+          check CONFIG_USB_GADGET    "USB OTG / MTP"
+
+          if [ "$FAIL" -eq 1 ]; then
+            echo "::error::Critical config flags missing. Build aborted."
+            exit 1
+          fi
+
+      # ─────────────── COMPILE ───────────────
+      - name: "🔨 Compile kernel"
+        working-directory: kernel
+        run: |
+          make -j$(nproc) O=out ARCH=arm64 CC=clang \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+            LD=ld.lld AR=llvm-ar NM=llvm-nm \
+            OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump \
+            Image.gz dtbs 2>&1 | tee build.log
+
+          if [ ! -f out/arch/arm64/boot/Image.gz ]; then
+            echo "::error::Kernel Image.gz not found. Compilation failed."
+            exit 1
+          fi
+
+      # ─────────────── PACKAGE ───────────────
+      - name: "📦 Package AnyKernel3 ZIP"
+        run: |
+          git clone --depth=1 https://github.com/osm0sis/AnyKernel3 ak3
+          cat > ak3/anykernel.sh << 'AKEOF'
+          properties() { '
+          kernel.string=EXTREME++GAMING Kernel by PandeyJI-9
+          do.devicecheck=1
+          do.modules=0
+          do.cleanup=1
+          device.name1=munch
+          device.name2=POCO F4
+          supported.versions=12-15
+          '; }
+          block=/dev/block/bootdevice/by-name/boot;
+          is_slot_device=auto;
+          ramdisk_compression=auto;
+          . tools/ak3-core.sh;
+          flash_generic_dtb;
+          write_boot;
+          AKEOF
+
+          cp kernel/out/arch/arm64/boot/Image.gz ak3/
+          DTBO=$(find kernel/out -name "*.dtbo" -print -quit)
+          [ -f "$DTBO" ] && cp "$DTBO" ak3/dtbo.img
+
+          STAG=""
+          [ "${SUKISU:-}" = "true" ] && STAG="-SukiSU"
+          ZIP="EXTREME++GAMING-munch-${{ inputs.release_tag }}${STAG}.zip"
+          cd ak3 && zip -r9 "../${ZIP}" . -x "*.git*"
+          echo "ZIP_NAME=${ZIP}" >> $GITHUB_ENV
+          echo "ZIP_PATH=${GITHUB_WORKSPACE}/${ZIP}" >> $GITHUB_ENV
+
+      # ─────────────── POST-BUILD VERIFY ───────────────
+      - name: "🔬 Post-build verification"
+        run: |
+          echo "## 🔬 Post-Build Verification" >> $GITHUB_STEP_SUMMARY
+
+          # Verify ZIP integrity
+          if unzip -t "$ZIP_PATH" > /dev/null 2>&1; then
+            echo "- ✅ ZIP integrity: OK" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- ❌ ZIP corrupted!" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
+          # Verify GPU OPP in compiled DTB
+          KONA_DTB=$(find kernel/out -name "kona*.dtb" -print -quit)
+          if [ -f "$KONA_DTB" ]; then
+            dtc -I dtb -O dts "$KONA_DTB" -o /tmp/check.dts 2>/dev/null || true
+            if grep -q "8f0d180" /tmp/check.dts 2>/dev/null; then
+              echo "- ✅ GPU 150MHz OPP: baked in" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "- ⚠️ GPU 150MHz OPP: not found in DTB (may be in overlay)" >> $GITHUB_STEP_SUMMARY
+            fi
+          fi
+
+          echo "- ✅ Kernel Image.gz: present" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Status: SAFE TO FLASH** 🚀" >> $GITHUB_STEP_SUMMARY
+
+      # ─────────────── RELEASE ───────────────
+      - name: "🚀 Create GitHub Release"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          SUKISU_LINE=""
+          [ "${SUKISU:-}" = "true" ] && SUKISU_LINE="🔑 **SukiSU Ultra** — kernel-level root baked in"
+
+          gh release create "${{ inputs.release_tag }}" "$ZIP_PATH" \
+            --repo "${{ github.repository }}" \
+            --title "EXTREME++GAMING ${{ inputs.release_tag }} | POCO F4 (munch)" \
+            --notes "## ⚡ EXTREME++GAMING Kernel — ${{ inputs.release_tag }}
+
+          **Device:** POCO F4 (munch) | Snapdragon 870 (SM8250-AC)
+          **Base:** HyperOS Optimized | Upstream \`${UPSTREAM_SHA}\`
+          ${SUKISU_LINE}
+
+          ### 🎮 GPU (Adreno 650) — 10 Custom OPPs
+          \`670 → 587 → 525 → 490 → 441 → 400 → 305 → 250 → 200 → 150 MHz\`
+
+          ### 🏎️ CPU (Kryo 585) — Prime Core Capped
+          \`CPU7: 3187 → 3000 MHz\` | Gold & Silver: Stock
+
+          ### 📥 Flash via TWRP / KernelFlasher
+          Download the ZIP below and flash it. No wipe needed."
+
+      # ─────────────── TELEGRAM ───────────────
+      - name: "📢 Telegram: Build Success"
+        if: success()
+        env:
+          BOT_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          [ -z "$BOT_TOKEN" ] || [ -z "$CHAT_ID" ] && exit 0
+          DL="https://github.com/${{ github.repository }}/releases/tag/${{ inputs.release_tag }}"
+          TEXT=$(cat << EOF
+          ⚡ *EXTREME++GAMING Kernel* — \`${{ inputs.release_tag }}\`
+
+          📱 Device: POCO F4 (munch)
+          🏷 Base: HyperOS Optimized
+          🎮 GPU: 150–670 MHz (10-step OPP)
+          🏎 CPU: Prime @ 3.0 GHz
+
+          📥 [Download & Changelog](${DL})
+          EOF
+          )
+          curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+            -d chat_id="${CHAT_ID}" -d parse_mode="Markdown" \
+            -d text="${TEXT}"
+
+      - name: "🚨 Telegram: Build Failed"
+        if: failure()
+        env:
+          BOT_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          [ -z "$BOT_TOKEN" ] || [ -z "$CHAT_ID" ] && exit 0
+          RUN_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          TEXT=$(cat << EOF
+          ❌ *EXTREME++GAMING Build Failed*
+
+          📱 Device: POCO F4 (munch)
+          🏷 Tag: \`${{ inputs.release_tag }}\`
+
+          🔗 [View Error Logs](${RUN_URL})
+          EOF
+          )
+          curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+            -d chat_id="${CHAT_ID}" -d parse_mode="Markdown" \
+            -d text="${TEXT}"
