@@ -180,6 +180,7 @@ jobs:
           BLOCK=/dev/block/bootdevice/by-name/boot;
           IS_SLOT_DEVICE=1;
           RAMDISK_COMPRESSION=auto;
+          PATCH_VBMETA_FLAG=auto;
           . tools/ak3-core.sh;
           dump_boot;
           write_boot;
@@ -187,14 +188,15 @@ jobs:
           BLOCK=/dev/block/bootdevice/by-name/vendor_boot;
           IS_SLOT_DEVICE=1;
           RAMDISK_COMPRESSION=auto;
+          PATCH_VBMETA_FLAG=auto;
           reset_ak;
-          dump_boot;
+          split_boot;
           ui_print " ";
           ui_print " ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ ";
           ui_print "    ⚡ EXTREME PLUS GAMING ON HYPER OS ⚡    ";
           ui_print " ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ ";
           ui_print " ";
-          write_boot;
+          flash_boot;
           AKEOF
 
           cp kernel/out/arch/arm64/boot/Image.gz ak3/
