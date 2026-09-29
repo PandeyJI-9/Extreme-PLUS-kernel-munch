@@ -63,43 +63,43 @@ GPU_OPP_TABLE = """\tgpu_opp_table: gpu-opp-table {
 \t\t/* ═══ PEAK 3D: Intensive gaming, sustained max FPS ═══ */
 \t\topp-670000000 {
 \t\t\topp-hz = /bits/ 64 <670000000>;
-\t\t\topp-microvolt = <RPMH_REGULATOR_LEVEL_NOM>;
+			opp-microvolt = <RPMH_REGULATOR_LEVEL_SVS_L2>; /* FakeDreamer UV */
 \t\t};
 
 \t\t/* ═══ HEAVY 3D: Camera viewfinder, 3D transitions ═══ */
 \t\topp-587000000 {
 \t\t\topp-hz = /bits/ 64 <587000000>;
-\t\t\topp-microvolt = <RPMH_REGULATOR_LEVEL_SVS_L2>;
+			opp-microvolt = <RPMH_REGULATOR_LEVEL_SVS_L1>; /* FakeDreamer UV */
 \t\t};
 
 \t\t/* ═══ MODERATE 3D: Medium gaming, live wallpapers ═══ */
 \t\topp-525000000 {
 \t\t\topp-hz = /bits/ 64 <525000000>;
-\t\t\topp-microvolt = <RPMH_REGULATOR_LEVEL_SVS_L1>;
+			opp-microvolt = <RPMH_REGULATOR_LEVEL_SVS>; /* FakeDreamer UV */
 \t\t};
 
 \t\t/* ═══ ENHANCED 2D: Heavy UI compositor transitions ═══ */
 \t\topp-490000000 {
 \t\t\topp-hz = /bits/ 64 <490000000>;
-\t\t\topp-microvolt = <RPMH_REGULATOR_LEVEL_SVS_L1>;
+			opp-microvolt = <RPMH_REGULATOR_LEVEL_SVS>; /* FakeDreamer UV */
 \t\t};
 
 \t\t/* ═══ SMOOTH 120HZ: Fluid scrolling, video playback ═══ */
 \t\topp-441000000 {
 \t\t\topp-hz = /bits/ 64 <441000000>;
-\t\t\topp-microvolt = <RPMH_REGULATOR_LEVEL_SVS>;
+			opp-microvolt = <RPMH_REGULATOR_LEVEL_LOW_SVS>; /* FakeDreamer UV */
 \t\t};
 
 \t\t/* ═══ STANDARD UI: 120Hz frame pacing, light 2D apps ═══ */
 \t\topp-400000000 {
 \t\t\topp-hz = /bits/ 64 <400000000>;
-\t\t\topp-microvolt = <RPMH_REGULATOR_LEVEL_SVS>;
+			opp-microvolt = <RPMH_REGULATOR_LEVEL_LOW_SVS>; /* FakeDreamer UV */
 \t\t};
 
 \t\t/* ═══ LIGHT UI: Basic scrolling, 1080p/4K video ═══ */
 \t\topp-305000000 {
 \t\t\topp-hz = /bits/ 64 <305000000>;
-\t\t\topp-microvolt = <RPMH_REGULATOR_LEVEL_LOW_SVS>;
+			opp-microvolt = <RPMH_REGULATOR_LEVEL_MIN_SVS>; /* FakeDreamer UV */
 \t\t};
 
 \t\t/* ═══ LOW POWER: Static reading, basic 60Hz idle ═══ */
