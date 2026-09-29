@@ -182,6 +182,11 @@ jobs:
           ramdisk_compression=auto;
           . tools/ak3-core.sh;
           flash_generic_dtb;
+          ui_print " ";
+          ui_print " ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ ";
+          ui_print "    ⚡ EXTREME PLUS GAMING ON HYPER OS ⚡    ";
+          ui_print " ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ ";
+          ui_print " ";
           write_boot;
           AKEOF
 
