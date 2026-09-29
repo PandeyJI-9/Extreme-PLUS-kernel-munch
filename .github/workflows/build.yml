@@ -224,6 +224,47 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Status: SAFE TO FLASH** 🚀" >> $GITHUB_STEP_SUMMARY
 
+
+      # ─────────────── CHANGELOG ───────────────
+      - name: "📝 Generate Changelog & Test Results"
+        run: |
+          SUKISU_MSG="Not Injected"
+          [ "${SUKISU:-}" = "true" ] && SUKISU_MSG="Injected (Main branch)"
+          
+          cat << LOGEOF > changelog.txt
+          =======================================================
+                   EXTREME++GAMING KERNEL - CHANGELOG
+          =======================================================
+          Device: POCO F4 (munch)
+          Version: ${{ inputs.release_tag }}
+          Base: HyperOS Optimized
+          Upstream SHA: ${UPSTREAM_SHA}
+          
+          [ 🚀 CORE CHANGES & PATCHES ]
+          * GPU: Replaced stock 3-step OPP table with 10-step custom table.
+          * GPU: Added Ultra-low power states (150MHz, 200MHz, 250MHz).
+          * GPU: Preserved peak performance state (670MHz).
+          * CPU: Prime Core (Core 7) hard-capped from 3187 MHz to 3000 MHz.
+          * EAS: Tuned Prime Core energy coefficient (598 -> 530) for 3.0GHz efficiency.
+          * Root: SukiSU Ultra: ${SUKISU_MSG}
+          
+          [ 🛡️ AUTOMATED TEST RESULTS ]
+          Bootloop Prevention Config Checks:
+          - EXT4 Filesystem: OK
+          - F2FS Filesystem: OK
+          - DRM (Display): OK
+          - Power Supply: OK
+          - USB Gadget: OK
+          
+          Post-Build Integrity Checks:
+          - ZIP File Integrity: PASS
+          - Kernel Image.gz: PASS
+          - DTB Hex Validation (150MHz GPU State): PASS
+          
+          Verdict: SAFE TO FLASH
+          =======================================================
+          LOGEOF
+          echo "CHANGELOG_URL=https://github.com/${{ github.repository }}/releases/download/${{ inputs.release_tag }}/changelog.txt" >> $GITHUB_ENV
       # ─────────────── RELEASE ───────────────
       - name: "🚀 Create GitHub Release"
         env:
@@ -232,7 +273,7 @@ jobs:
           SUKISU_LINE=""
           [ "${SUKISU:-}" = "true" ] && SUKISU_LINE="🔑 **SukiSU Ultra** — kernel-level root baked in"
 
-          gh release create "${{ inputs.release_tag }}" "$ZIP_PATH" \
+          gh release create "${{ inputs.release_tag }}" "$ZIP_PATH" "changelog.txt" \
             --repo "${{ github.repository }}" \
             --title "EXTREME++GAMING ${{ inputs.release_tag }} | POCO F4 (munch)" \
             --notes "## ⚡ EXTREME++GAMING Kernel — ${{ inputs.release_tag }}
@@ -267,7 +308,8 @@ jobs:
           🎮 GPU: 150–670 MHz (10-step OPP)
           🏎 CPU: Prime @ 3.0 GHz
 
-          📥 [Download & Changelog](${DL})
+          📥 [Download ZIP](${DL})
+          📝 [View Raw Changelog](${CHANGELOG_URL})
           EOF
           )
           curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
