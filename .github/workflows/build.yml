@@ -175,7 +175,7 @@ jobs:
           do.cleanup=1
           device.name1=munch
           device.name2=POCO F4
-          supported.versions=12-15
+          supported.versions=11-17
           '; }
           block=/dev/block/bootdevice/by-name/boot;
           is_slot_device=auto;
@@ -264,7 +264,20 @@ jobs:
           Verdict: SAFE TO FLASH
           =======================================================
           LOGEOF
-          echo "CHANGELOG_URL=https://github.com/${{ github.repository }}/releases/download/${{ inputs.release_tag }}/changelog.txt" >> $GITHUB_ENV
+          
+          mkdir -p config-repo/changelogs
+          cp changelog.txt config-repo/changelogs/munch.txt
+          
+          cd config-repo
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add changelogs/munch.txt
+          git commit -m "docs: update raw changelog for ${{ inputs.release_tag }}" || true
+          git push origin main || true
+          cd ..
+          
+          echo "CHANGELOG_URL=https://raw.githubusercontent.com/${{ github.repository }}/refs/heads/main/changelogs/munch.txt" >> $GITHUB_ENV
+
       # ─────────────── RELEASE ───────────────
       - name: "🚀 Create GitHub Release"
         env:
