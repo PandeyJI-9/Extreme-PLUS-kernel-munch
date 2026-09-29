@@ -1,6 +1,6 @@
 ---
 # ╔══════════════════════════════════════════════════════════════╗
-# ║  EXTREME++GAMING — STANDALONE DIAGNOSTICS                   ║
+# ║  EXTREME++HyperOS — STANDALONE DIAGNOSTICS                   ║
 # ║  Picks up the RELEASED .zip and runs deep verification       ║
 # ║  Run this AFTER a successful build if you want a report      ║
 # ╚══════════════════════════════════════════════════════════════╝
@@ -54,7 +54,7 @@ jobs:
 
       - name: "🔬 Audit Report"
         run: |
-          echo "# ☣️ EXTREME++GAMING Diagnostics Report" >> $GITHUB_STEP_SUMMARY
+          echo "# ☣️ EXTREME++HyperOS Diagnostics Report" >> $GITHUB_STEP_SUMMARY
           echo "**Release:** \`${{ inputs.release_tag }}\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
@@ -99,8 +99,8 @@ jobs:
               echo "❌ anykernel.sh does NOT target munch!" >> $GITHUB_STEP_SUMMARY
               exit 1
             fi
-            if grep -q "EXTREME++GAMING" audit_extract/anykernel.sh; then
-              echo "✅ Kernel string: EXTREME++GAMING" >> $GITHUB_STEP_SUMMARY
+            if grep -q "EXTREME++HyperOS" audit_extract/anykernel.sh; then
+              echo "✅ Kernel string: EXTREME++HyperOS" >> $GITHUB_STEP_SUMMARY
             fi
           else
             echo "❌ anykernel.sh MISSING!" >> $GITHUB_STEP_SUMMARY

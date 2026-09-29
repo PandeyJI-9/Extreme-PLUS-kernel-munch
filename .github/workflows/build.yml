@@ -1,6 +1,6 @@
 ---
 # ╔══════════════════════════════════════════════════════════════╗
-# ║  EXTREME++GAMING — MASTER BUILD PIPELINE                    ║
+# ║  EXTREME++HyperOS — MASTER BUILD PIPELINE                    ║
 # ║  POCO F4 (munch) | SM8250-AC | Snapdragon 870               ║
 # ║  Maintainer: PandeyJI-9                                     ║
 # ╚══════════════════════════════════════════════════════════════╝
@@ -50,7 +50,7 @@ jobs:
         run: |
           [ -z "$BOT_TOKEN" ] || [ -z "$CHAT_ID" ] && exit 0
           TEXT=$(cat << 'MSGEOF'
-          🚧 <b>EXTREME++GAMING Build Started!</b> 🚧
+          🚧 <b>EXTREME++HyperOS Build Started!</b> 🚧
           
           📱 Device: POCO F4 (munch)
           🏷 Tag: <code>${{ inputs.release_tag }}</code>
@@ -169,13 +169,13 @@ jobs:
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3 ak3
           cat > ak3/anykernel.sh << 'AKEOF'
           properties() { '
-          kernel.string=EXTREME++GAMING Kernel by PandeyJI-9
+          kernel.string=EXTREME++HyperOS Kernel by PandeyJI-9
           do.devicecheck=1
           do.modules=0
           do.cleanup=1
           device.name1=munch
           device.name2=POCO F4
-          supported.versions=11-17
+          supported.versions=13-17
           '; }
           block=/dev/block/bootdevice/by-name/boot;
           is_slot_device=auto;
@@ -191,7 +191,7 @@ jobs:
 
           STAG=""
           [ "${SUKISU:-}" = "true" ] && STAG="-SukiSU"
-          ZIP="EXTREME++GAMING-munch-${{ inputs.release_tag }}${STAG}.zip"
+          ZIP="EXTREME++HyperOS-munch-${{ inputs.release_tag }}${STAG}.zip"
           cd ak3 && zip -r9 "../${ZIP}" . -x "*.git*"
           echo "ZIP_NAME=${ZIP}" >> $GITHUB_ENV
           echo "ZIP_PATH=${GITHUB_WORKSPACE}/${ZIP}" >> $GITHUB_ENV
@@ -233,7 +233,7 @@ jobs:
           
           cat << LOGEOF > changelog.txt
           =======================================================
-                   EXTREME++GAMING KERNEL - CHANGELOG
+                   EXTREME++HyperOS KERNEL - CHANGELOG
           =======================================================
           Device: POCO F4 (munch)
           Version: ${{ inputs.release_tag }}
@@ -288,8 +288,8 @@ jobs:
 
           gh release create "${{ inputs.release_tag }}" "$ZIP_PATH" "changelog.txt" \
             --repo "${{ github.repository }}" \
-            --title "EXTREME++GAMING ${{ inputs.release_tag }} | POCO F4 (munch)" \
-            --notes "## ⚡ EXTREME++GAMING Kernel — ${{ inputs.release_tag }}
+            --title "EXTREME++HyperOS ${{ inputs.release_tag }} | POCO F4 (munch)" \
+            --notes "## ⚡ EXTREME++HyperOS Kernel — ${{ inputs.release_tag }}
 
           **Device:** POCO F4 (munch) | Snapdragon 870 (SM8250-AC)
           **Base:** HyperOS Optimized | Upstream \`${UPSTREAM_SHA}\`
@@ -314,7 +314,7 @@ jobs:
           [ -z "$BOT_TOKEN" ] || [ -z "$CHAT_ID" ] && exit 0
           DL="https://github.com/${{ github.repository }}/releases/tag/${{ inputs.release_tag }}"
           TEXT=$(cat << EOF
-          ⚡ <b>EXTREME++GAMING Kernel</b> — <code>${{ inputs.release_tag }}</code>
+          ⚡ <b>EXTREME++HyperOS Kernel</b> — <code>${{ inputs.release_tag }}</code>
 
           📱 Device: POCO F4 (munch)
           🏷 Base: HyperOS Optimized
@@ -338,7 +338,7 @@ jobs:
           [ -z "$BOT_TOKEN" ] || [ -z "$CHAT_ID" ] && exit 0
           RUN_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           TEXT=$(cat << EOF
-          ❌ <b>EXTREME++GAMING Build Failed</b>
+          ❌ <b>EXTREME++HyperOS Build Failed</b>
 
           📱 Device: POCO F4 (munch)
           🏷 Tag: \`${{ inputs.release_tag }}\`

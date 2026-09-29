@@ -19,9 +19,9 @@ echo "━━━ [4/4] Setting kernel version string ━━━"
 DEFCONFIG="${KERNEL_SRC}/arch/arm64/configs/munch_defconfig"
 if [ -f "$DEFCONFIG" ]; then
   if grep -q "CONFIG_LOCALVERSION=" "$DEFCONFIG"; then
-    sed -i 's/CONFIG_LOCALVERSION=.*/CONFIG_LOCALVERSION="-EXTREME++GAMING"/' "$DEFCONFIG"
+    sed -i 's/CONFIG_LOCALVERSION=.*/CONFIG_LOCALVERSION="-EXTREME++HyperOS"/' "$DEFCONFIG"
   else
-    echo 'CONFIG_LOCALVERSION="-EXTREME++GAMING"' >> "$DEFCONFIG"
+    echo 'CONFIG_LOCALVERSION="-EXTREME++HyperOS"' >> "$DEFCONFIG"
   fi
-  echo "✅ Kernel name set: EXTREME++GAMING"
+  echo "✅ Kernel name set: EXTREME++HyperOS"
 fi
