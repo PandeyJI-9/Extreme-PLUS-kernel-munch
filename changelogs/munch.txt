@@ -2,7 +2,7 @@
          EXTREME++HyperOS KERNEL - CHANGELOG
 =======================================================
 Device: POCO F4 (munch)
-Version: beta_testing1.03_Safe
+Version: beta_testing1.06_FINAL
 Base: HyperOS Optimized
 Upstream SHA: 33d88af64
 
