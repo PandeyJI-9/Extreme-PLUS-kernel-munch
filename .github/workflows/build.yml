@@ -182,6 +182,13 @@ jobs:
           RAMDISK_COMPRESSION=auto;
           . tools/ak3-core.sh;
           dump_boot;
+          write_boot;
+
+          BLOCK=/dev/block/bootdevice/by-name/vendor_boot;
+          IS_SLOT_DEVICE=1;
+          RAMDISK_COMPRESSION=auto;
+          reset_ak;
+          dump_boot;
           ui_print " ";
           ui_print " ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ ";
           ui_print "    ⚡ EXTREME PLUS GAMING ON HYPER OS ⚡    ";
@@ -191,6 +198,11 @@ jobs:
           AKEOF
 
           cp kernel/out/arch/arm64/boot/Image.gz ak3/
+          DTB=$(find kernel/out/arch/arm64/boot/dts/vendor -name "*.dtb" -print -quit || find kernel/out/arch/arm64/boot/dts -name "*.dtb" -print -quit)
+          if [ -n "$DTB" ] && [ -f "$DTB" ]; then
+            cp "$DTB" ak3/dtb
+            echo "✅ Included DTB in AnyKernel3"
+          fi
           DTBO=$(find kernel/out -name "*.dtbo" -print -quit)
           [ -f "$DTBO" ] && cp "$DTBO" ak3/dtbo.img
 
