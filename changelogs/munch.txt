@@ -2,15 +2,16 @@
          EXTREME++HyperOS KERNEL - CHANGELOG
 =======================================================
 Device: POCO F4 (munch)
-Version: beta_testing1.02
+Version: beta_testing1.03_Safe
 Base: HyperOS Optimized
 Upstream SHA: 33d88af64
 
 [ 🚀 CORE CHANGES & PATCHES ]
+* GPU: FakeDreamer style Safe Undervolt (UV) applied to all states.
 * GPU: Replaced stock 3-step OPP table with 10-step custom table.
 * GPU: Added Ultra-low power states (150MHz, 200MHz, 250MHz).
 * GPU: Preserved peak performance state (670MHz).
-* CPU: Prime Core (Core 7) hard-capped from 3187 MHz to 3000 MHz.
+* CPU: Prime Core (Core 7) safely locked at 2841 MHz (2.84 GHz).
 * EAS: Tuned Prime Core energy coefficient (598 -> 530) for 3.0GHz efficiency.
 * Root: SukiSU Ultra: Injected (Main branch)
 
