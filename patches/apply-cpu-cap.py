@@ -18,7 +18,7 @@
    CPU7    Kryo 585 Gold+ (PRIME)    freq-domain2  → CAP 3000MHz
 
  Prime Core stock max: 3187 MHz (3.187 GHz)
- Prime Core patched:   3000 MHz (3.0 GHz)
+ Prime Core patched:   2841 MHz (2.84 GHz)
 
  Silver and Gold clusters are left completely untouched.
 ═══════════════════════════════════════════════════════════════
@@ -42,14 +42,14 @@ def patch(path):
     for marker in markers:
         if marker in text:
             insert = (
-                '\t\t\t/* EXTREME++GAMING: Cap Prime Core (CPU7) to 3.0 GHz     */\n'
+                '\t\t\t/* EXTREME++GAMING: Cap Prime Core (CPU7) to 2.84 GHz     */\n'
                 '\t\t\t/* Domain 2 = Kryo 585 Gold Plus — reduces peak heat      */\n'
-                '\t\t\t/* Stock: 3187 MHz → Patched: 3000 MHz                    */\n'
-                '\t\t\tqcom,freq-domain-max-freq = <0 0 3000000>;\n\n'
+                '\t\t\t/* Stock: 3187 MHz → Patched: 2841 MHz                    */\n'
+                '\t\t\tqcom,freq-domain-max-freq = <0 0 2841600>;\n\n'
             )
             text = text.replace(marker, insert + marker, 1)
             open(path, 'w').write(text)
-            print("✅ CPU Prime Core (CPU7) capped: 3187 → 3000 MHz")
+            print("✅ CPU Prime Core (CPU7) capped: 3187 → 2841 MHz")
             return True
 
     print("ERROR: No suitable marker found in cpufreq_hw node", file=sys.stderr)

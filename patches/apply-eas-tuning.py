@@ -5,7 +5,7 @@
  SM8250-AC (Snapdragon 870) | POCO F4 (munch)
 ═══════════════════════════════════════════════════════════════
  Adjusts the EAS (Energy Aware Scheduling) energy model
- capacity margins to reflect the new 3000 MHz ceiling on Core 7.
+ capacity margins to reflect the new 2841 MHz ceiling on Core 7.
 """
 import sys
 
@@ -27,13 +27,13 @@ def patch(path):
         return False
 
     # Replace dynamic-power-coefficient = <598> with <530>
-    # Since 3.0GHz uses significantly less voltage than 3.187GHz,
+    # Since 2.84GHz uses significantly less voltage than 3.187GHz,
     # the energy cost is lower. This tells the EAS scheduler to
     # utilize the Prime core more efficiently instead of avoiding it.
     
     old_power = 'dynamic-power-coefficient = <598>;'
     new_power = (
-        '/* EXTREME++ EAS: Lower energy cost due to 3.0GHz cap */\n'
+        '/* EXTREME++ EAS: Lower energy cost due to 2.84GHz cap */\n'
         '\t\t\tdynamic-power-coefficient = <530>;'
     )
     
