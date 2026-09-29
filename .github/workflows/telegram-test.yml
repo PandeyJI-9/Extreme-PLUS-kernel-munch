@@ -21,7 +21,7 @@ jobs:
           echo "🚀 Testing bot server... No spamming 😂"
           
           # Hardcoded Chat ID as you requested
-          CHAT_ID="-5168285620"
+          CHAT_ID="-1004490898266"
           
           end_time=$((SECONDS + 60))
           counter=1
