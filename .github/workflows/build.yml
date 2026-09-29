@@ -36,6 +36,21 @@ jobs:
     timeout-minutes: 120
 
     steps:
+      - name: "📢 Telegram: Build Started"
+        env:
+          BOT_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          [ -z "$BOT_TOKEN" ] || [ -z "$CHAT_ID" ] && exit 0
+          TEXT=$(cat << 'MSGEOF'
+          🚧 <b>EXTREME++HyperOS Build Started!</b> 🚧
+          📱 Device: POCO F4 (munch)
+          🏷 Tag: <code>${{ inputs.release_tag }}</code>
+          MSGEOF
+          )
+          curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+            -d chat_id="${CHAT_ID}" -d parse_mode="HTML" -d text="${TEXT}"
+
       - name: "📦 Checkout config repo"
         uses: actions/checkout@v4
         with:
@@ -81,7 +96,7 @@ jobs:
           # Passing 'ksu' explicitly to the developer's script to enable KernelSU support!
           if [ "${{ inputs.inject_sukisu }}" == "true" ]; then
             echo "Compiling with SukiSU enabled..."
-            ./build_kernel.sh munch miui ksu
+            ./build_kernel.sh munch ksu miui
           else
             echo "Compiling without Root..."
             ./build_kernel.sh munch miui
@@ -110,14 +125,14 @@ jobs:
           dump_boot;
           write_boot;
           
-          # Explicitly set correct path for DTBO on POCO F4 (munch) to avoid Error 1
+          # Explicitly flash dtbo if present
           if [ -f dtbo.img ]; then
             ui_print "- Flashing DTBO for Extreme Frequencies & UV...";
             flash_dtbo;
           fi
           AKEOF
           
-          # Force AnyKernel to use the correct dtbo partition path via script modification
+          # Force AnyKernel to use the correct dtbo partition path via script modification to avoid TWRP Error 1
           sed -i 's/flash_dtbo;/block=\/dev\/block\/bootdevice\/by-name\/dtbo;\n  flash_dtbo;/g' ak3/anykernel.sh
           
           echo "🔍 Searching for compiled kernel image..."
@@ -156,3 +171,42 @@ jobs:
             --repo "${{ github.repository }}" \
             --title "EXTREME++HyperOS ${{ inputs.release_tag }} | POCO F4 (munch)" \
             --notes "Safe HyperOS 3 Kernel with CPU 2.8GHz, GPU 150MHz UV, and SukiSU."
+
+      - name: "📢 Telegram: Build Success"
+        if: success()
+        env:
+          BOT_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          [ -z "$BOT_TOKEN" ] || [ -z "$CHAT_ID" ] && exit 0
+          DL="https://github.com/${{ github.repository }}/releases/tag/${{ inputs.release_tag }}"
+          TEXT=$(cat << EOF
+          ⚡ <b>EXTREME++HyperOS Kernel</b> — <code>${{ inputs.release_tag }}</code>
+
+          📱 Device: POCO F4 (munch)
+          🏷 Base: HyperOS 3
+          🎮 GPU: Extreme Frequencies + UV
+          🏎 CPU: Capped
+          🔑 Root: SukiSU Ultra
+
+          📥 <a href="${DL}">Download ZIP</a>
+          EOF
+          )
+          MSG_RESPONSE=$(curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+            -d chat_id="${CHAT_ID}" -d parse_mode="HTML" \
+            -d text="${TEXT}")
+            
+          MSG_ID=$(echo "$MSG_RESPONSE" | grep -o '"message_id":[0-9]*' | cut -d: -f2)
+          
+          if [ -f "$ZIP_PATH" ] && [ -n "$MSG_ID" ]; then
+            curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendDocument" \
+              -F chat_id="${CHAT_ID}" \
+              -F document=@"$ZIP_PATH" \
+              -F reply_to_message_id="$MSG_ID" \
+              -F caption="📦 Flashable ZIP: ${ZIP_NAME}"
+          elif [ -f "$ZIP_PATH" ]; then
+            curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendDocument" \
+              -F chat_id="${CHAT_ID}" \
+              -F document=@"$ZIP_PATH" \
+              -F caption="📦 Flashable ZIP: ${ZIP_NAME}"
+          fi
