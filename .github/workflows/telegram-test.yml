@@ -1,0 +1,43 @@
+name: "🚀 Telegram Bot Stress Test"
+
+on:
+  workflow_dispatch:
+
+jobs:
+  spam-test:
+    name: "Spamming Telegram"
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: "🚀 Start Telegram Spam Test (1 Minute)"
+        env:
+          BOT_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          if [ -z "$BOT_TOKEN" ] || [ -z "$CHAT_ID" ]; then
+            echo "❌ Bot Token ya Chat ID gayab hai!"
+            exit 1
+          fi
+
+          echo "🚀 Testing bot server... No spamming 😂"
+          
+          # End time set for 1 minute from now
+          end_time=$((SECONDS + 60))
+          counter=1
+
+          while [ $SECONDS -lt $end_time ]; do
+            TEXT="Testing bot server only no spamming 😂 (Message #$counter)"
+            
+            # Send message and ignore errors to keep spamming
+            curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+              -d chat_id="${CHAT_ID}" -d text="${TEXT}" > /dev/null
+              
+            echo "Sent message #$counter"
+            counter=$((counter+1))
+            
+            # Sleep for 1.5 seconds to avoid Telegram API rate limits (Too Many Requests error)
+            # You can reduce this to 1 for more aggressive spam, but Telegram might block it temporarily.
+            sleep 1.5
+          done
+          
+          echo "✅ Test Complete!"
