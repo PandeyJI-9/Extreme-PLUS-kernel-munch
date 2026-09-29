@@ -177,8 +177,8 @@ jobs:
           device.name2=POCO F4
           supported.versions=13-17
           '; }
-          block=/dev/block/bootdevice/by-name/boot;
-          is_slot_device=auto;
+          block=boot;
+          is_slot_device=1;
           ramdisk_compression=auto;
           . tools/ak3-core.sh;
           flash_generic_dtb;
@@ -325,9 +325,27 @@ jobs:
           📝 <a href="${CHANGELOG_URL}">View Raw Changelog</a>
           EOF
           )
-          curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+          # Send Text Message First
+          MSG_RESPONSE=$(curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
             -d chat_id="${CHAT_ID}" -d parse_mode="HTML" \
-            -d text="${TEXT}"
+            -d text="${TEXT}")
+            
+          # Extract Message ID to reply to it with the ZIP file
+          MSG_ID=$(echo "$MSG_RESPONSE" | grep -o '"message_id":[0-9]*' | cut -d: -f2)
+          
+          # Send ZIP Document
+          if [ -f "$ZIP_PATH" ] && [ -n "$MSG_ID" ]; then
+            curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendDocument" \
+              -F chat_id="${CHAT_ID}" \
+              -F document=@"$ZIP_PATH" \
+              -F reply_to_message_id="$MSG_ID" \
+              -F caption="📦 Flashable ZIP: ${ZIP_NAME}"
+          elif [ -f "$ZIP_PATH" ]; then
+            curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendDocument" \
+              -F chat_id="${CHAT_ID}" \
+              -F document=@"$ZIP_PATH" \
+              -F caption="📦 Flashable ZIP: ${ZIP_NAME}"
+          fi
 
       - name: "🚨 Telegram: Build Failed"
         if: failure()
@@ -346,6 +364,24 @@ jobs:
           🔗 <a href="${RUN_URL}">View Error Logs</a>
           EOF
           )
-          curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+          # Send Text Message First
+          MSG_RESPONSE=$(curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
             -d chat_id="${CHAT_ID}" -d parse_mode="HTML" \
-            -d text="${TEXT}"
+            -d text="${TEXT}")
+            
+          # Extract Message ID to reply to it with the ZIP file
+          MSG_ID=$(echo "$MSG_RESPONSE" | grep -o '"message_id":[0-9]*' | cut -d: -f2)
+          
+          # Send ZIP Document
+          if [ -f "$ZIP_PATH" ] && [ -n "$MSG_ID" ]; then
+            curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendDocument" \
+              -F chat_id="${CHAT_ID}" \
+              -F document=@"$ZIP_PATH" \
+              -F reply_to_message_id="$MSG_ID" \
+              -F caption="📦 Flashable ZIP: ${ZIP_NAME}"
+          elif [ -f "$ZIP_PATH" ]; then
+            curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendDocument" \
+              -F chat_id="${CHAT_ID}" \
+              -F document=@"$ZIP_PATH" \
+              -F caption="📦 Flashable ZIP: ${ZIP_NAME}"
+          fi

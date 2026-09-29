@@ -1,0 +1,35 @@
+===========================================================
+📱 POCO F4 (munch) / Redmi K40S - HARDWARE & PARTITION INFO
+===========================================================
+[ 🛠️ HARDWARE OVERVIEW ]
+• SoC: Qualcomm Snapdragon 870 5G (SM8250-AC)
+• CPU Architecture: 1x 3.2GHz (Kryo 585 Prime), 3x 2.42GHz (Kryo 585 Gold), 4x 1.8GHz (Kryo 585 Silver)
+• GPU: Adreno 650 (Standard max 670MHz)
+• RAM: LPDDR5
+• Storage: UFS 3.1
+• Display: 120Hz AMOLED (E4)
+
+[ 💾 PARTITION ARCHITECTURE ]
+• Scheme: Virtual A/B (VAB) / Dynamic Partitions
+• A/B Slots: Yes (suffix _a and _b)
+• Recovery: Recovery is bundled inside the 'boot' partition (there is no dedicated 'recovery' partition).
+• Bootloader: UFS-based Qualcomm boot chain (xbl, abl, tz, etc.)
+• Magisk/Root: Patches the 'boot' partition directly.
+
+[ 📦 CRITICAL BLOCKS & PATHS (Android 12 - 17) ]
+• Boot Partition: `/dev/block/by-name/boot_a` or `boot_b`
+  (Never hardcode 'bootdevice', always rely on 'boot' directly so AnyKernel3's find_block() can dynamically locate the active slot).
+• Vendor Boot: Not heavily used for kernel modifications on SM8250, but exists.
+• System/Vendor/Product: Housed inside the "super" partition (Dynamic Partition). Read-only by default (EROFS/EXT4).
+
+[ ⚙️ ANYKERNEL3 CONFIGURATION FOR MUNCH ]
+To properly flash on POCO F4 via TWRP/KernelFlasher:
+• block=boot; (AnyKernel3 will auto-resolve to by-name/boot_a or boot_b)
+• is_slot_device=1; (Forces slot detection for Virtual A/B)
+• ramdisk_compression=auto;
+• flash_generic_dtb or write_boot can be used.
+
+[ ⚠️ COMMON FLASHING ERRORS ]
+1. "Unable to determine partition" -> Occurs when block=/dev/block/bootdevice/by-name/boot is hardcoded and the recovery environment lacks the 'bootdevice' symlink. Using block=boot; fixes this.
+2. "Unsupported Android Version" -> Fixed by expanding supported.versions to 13-17.
+===========================================================
