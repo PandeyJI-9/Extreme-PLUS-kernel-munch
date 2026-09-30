@@ -56,7 +56,7 @@ if ! grep -q "selinux,baseband_guard" security/Kconfig; then
 fi
 
 # ------------------------------------------
-# 2. SukiSU Ultra (Root) Script
+# 2. SukiSU Ultra (Root) Script Download
 # ------------------------------------------
 if [ "$ENABLE_KSU" -eq 1 ]; then
     echo "[*] Injecting SukiSU Ultra Source..."
@@ -66,47 +66,18 @@ if [ "$ENABLE_KSU" -eq 1 ]; then
     fi
 fi
 
-# ------------------------------------------
-# 3. HyperOS Display Optimizations
-# ------------------------------------------
-DTS_SOURCE="arch/arm64/boot/dts/vendor/qcom"
-echo "[*] Applying HyperOS Display Optimizations..."
-sed -i 's/<154>/<1537>/g' ${DTS_SOURCE}/dsi-panel-j1s* 2>/dev/null || true
-sed -i 's/<154>/<1537>/g' ${DTS_SOURCE}/dsi-panel-j2* 2>/dev/null || true
-sed -i 's/<155>/<1544>/g' ${DTS_SOURCE}/dsi-panel-j3s-37-02-0a-dsc-video.dtsi 2>/dev/null || true
-sed -i 's/<155>/<1545>/g' ${DTS_SOURCE}/dsi-panel-j11-38-08-0a-fhd-cmd.dtsi 2>/dev/null || true
-sed -i 's/<70>/<695>/g' ${DTS_SOURCE}/dsi-panel-j11-38-08-0a-fhd-cmd.dtsi 2>/dev/null || true
-sed -i 's/<71>/<710>/g' ${DTS_SOURCE}/dsi-panel-j1s* 2>/dev/null || true
-sed -i 's/120 90 60/120 90 60 50 30/g' ${DTS_SOURCE}/dsi-panel-g7a-36-02-0c-dsc-video.dtsi 2>/dev/null || true
+# ==========================================
+# (TOUCH BUG FIXED: HATA DIYA DISPLAY PATCHES KA KACHRA!)
+# ==========================================
 
 # ------------------------------------------
-# 4. CONFIG GENERATION & AGGRESSIVE INJECTION
+# 3. AGGRESSIVE CONFIG INJECTION
 # ------------------------------------------
-MAKE_OPTS=(
-    -j"$(nproc --all)"
-    O="${OUT_DIR}"
-    ARCH="${ARCH}"
-    SUBARCH="${SUBARCH}"
-    LLVM=1
-    LLVM_IAS=1
-    CC="ccache clang"
-    HOSTCC="ccache clang"
-    CROSS_COMPILE="${CROSS_COMPILE}"
-    CROSS_COMPILE_ARM32="${CROSS_COMPILE_ARM32}"
-)
-
-echo "[*] Generating Initial Defconfig (${DEFCONFIG})..."
-make "${MAKE_OPTS[@]}" "${DEFCONFIG}"
-
-echo "[*] Force-Injecting configs directly into generated .config..."
-# Ensure .config exists before appending
-if [ ! -f "${OUT_DIR}/.config" ]; then
-    echo "❌ [ERROR] .config failed to generate! Defconfig might be missing or wrong."
-    exit 1
-fi
+echo "[*] Force-Injecting configs directly into source defconfig..."
 
 if [ "$ENABLE_KSU" -eq 1 ]; then
-    cat << 'EOF' >> "${OUT_DIR}/.config"
+    # [FIX] Added KPROBES explicitly so SukiSU works!
+    cat << 'EOF' >> "arch/arm64/configs/${DEFCONFIG}"
 CONFIG_KSU=y
 CONFIG_KSU_SUSFS=y
 CONFIG_KPROBES=y
@@ -115,7 +86,7 @@ CONFIG_KPROBE_EVENTS=y
 EOF
 fi
 
-cat << 'EOF' >> "${OUT_DIR}/.config"
+cat << 'EOF' >> "arch/arm64/configs/${DEFCONFIG}"
 CONFIG_PERF_CRITICAL_RT_TASK=y
 CONFIG_SF_BINDER=y
 CONFIG_OVERLAY_FS=y
@@ -131,11 +102,24 @@ CONFIG_LTO_NONE=y
 # CONFIG_SHADOW_CALL_STACK is not set
 EOF
 
-echo "[*] Regenerating olddefconfig to apply injected rules..."
-make "${MAKE_OPTS[@]}" olddefconfig
+MAKE_OPTS=(
+    -j"$(nproc --all)"
+    O="${OUT_DIR}"
+    ARCH="${ARCH}"
+    SUBARCH="${SUBARCH}"
+    LLVM=1
+    LLVM_IAS=1
+    CC="ccache clang"
+    HOSTCC="ccache clang"
+    CROSS_COMPILE="${CROSS_COMPILE}"
+    CROSS_COMPILE_ARM32="${CROSS_COMPILE_ARM32}"
+)
+
+echo "[*] Generating Defconfig (${DEFCONFIG})..."
+make "${MAKE_OPTS[@]}" "${DEFCONFIG}"
 
 # ------------------------------------------
-# 5. Build Kernel Image, DTB & DTBO
+# 4. Build Kernel Image, DTB & DTBO
 # ------------------------------------------
 echo "[*] Compiling Kernel Image..."
 make "${MAKE_OPTS[@]}" Image
@@ -144,7 +128,7 @@ echo "[*] Compiling DTBs & DTBO (For CPU & GPU patches)..."
 make "${MAKE_OPTS[@]}" dtbs
 
 # ------------------------------------------
-# 6. AnyKernel3 Setup
+# 5. AnyKernel3 Setup
 # ------------------------------------------
 echo "[*] Cloning Pure AnyKernel3..."
 git clone --depth=1 https://github.com/osm0sis/AnyKernel3 anykernel
@@ -187,11 +171,10 @@ fi
 EOF
 
 # ------------------------------------------
-# 7. Packaging: Image, DTB (CPU/GPU), & DTBO
+# 6. Packaging: DTB, DTBO, & Image (THE ROOT & CLOCK FIX)
 # ------------------------------------------
 echo "[*] Verifying compiled files..."
 
-# Image
 if [ ! -f "${OUT_DIR}/arch/arm64/boot/Image" ]; then
     echo "❌ [ERROR] Kernel Image did NOT compile!"
     exit 1
@@ -199,27 +182,19 @@ fi
 cp "${OUT_DIR}/arch/arm64/boot/Image" anykernel/
 echo "[+] Kernel Image copied."
 
-# main DTB (Crucial for 2.8GHz & GPU UV)
-if [ -f "${OUT_DIR}/arch/arm64/boot/dtb" ]; then
-    cp "${OUT_DIR}/arch/arm64/boot/dtb" anykernel/
-    echo "[+] Main DTB Image copied directly."
+# Main DTB for CPU/GPU Frequencies
+echo "[*] Copying main DTB for CPU/GPU Frequencies..."
+cat ${OUT_DIR}/arch/arm64/boot/dts/vendor/qcom/*.dtb > anykernel/dtb
+if [ -s anykernel/dtb ]; then
+    echo "[+] DTB successfully packed."
 else
-    echo "⚠️ dtb not found directly. Packing from .dtb files..."
-    cat ${OUT_DIR}/arch/arm64/boot/dts/vendor/qcom/*.dtb > anykernel/dtb 2>/dev/null || true
-    if [ -s anykernel/dtb ]; then
-        echo "[+] DTB successfully packed from fragments."
-    else
-        echo "❌ [ERROR] Failed to find or generate main DTB! CPU/GPU patches will fail."
-        exit 1
-    fi
+    echo "❌ [ERROR] Failed to compile main DTB!"
+    exit 1
 fi
 
-# DTBO
-if [ -f "${OUT_DIR}/arch/arm64/boot/dtbo.img" ]; then
-    cp "${OUT_DIR}/arch/arm64/boot/dtbo.img" anykernel/
-    echo "[+] DTBO Image copied directly."
-else
-    echo "⚠️ dtbo.img not found directly. Packing from .dtbo files..."
+# DTBO File Tool Fix
+if [ ! -f "${OUT_DIR}/arch/arm64/boot/dtbo.img" ]; then
+    echo "⚠️ dtbo.img not found. Packing from .dtbo files..."
     if [ ! -f "scripts/dtc/libfdt/mkdtboimg.py" ]; then
         echo "[*] Downloading missing mkdtboimg.py tool..."
         mkdir -p scripts/dtc/libfdt/
@@ -233,10 +208,13 @@ else
         echo "❌ [ERROR] No .dtbo fragments found!"
         exit 1
     fi
+else
+    cp "${OUT_DIR}/arch/arm64/boot/dtbo.img" anykernel/
+    echo "[+] DTBO Image copied directly."
 fi
 
 # ------------------------------------------
-# 8. Final Zip Creation
+# 7. Final Zip Creation
 # ------------------------------------------
 echo "[*] Zipping EXTREME++ Kernel..."
 cd anykernel
