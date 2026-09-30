@@ -1,5 +1,5 @@
 # ╔══════════════════════════════════════════════════════════════╗
-# ║  EXTREME++HyperOS — MASTER BUILD PIPELINE                    ║
+# ║  EXTREME++HyperOS — GOD-MODE BUILD PIPELINE                  ║
 # ║  POCO F4 (munch) | SM8250-AC | Snapdragon 870               ║
 # ║  Maintainer: PandeyJI-9                                     ║
 # ╚══════════════════════════════════════════════════════════════╝
@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: "Release tag (e.g. v3.0-extreme)"
+        description: "Release tag (e.g. v4.0-extreme)"
         required: true
         default: "Beta-1.0"
       inject_sukisu:
@@ -31,7 +31,7 @@ permissions:
 
 jobs:
   build-and-release:
-    name: "Patch → Build → Release"
+    name: "Patch → Compile → Release"
     runs-on: ubuntu-22.04
     timeout-minutes: 120
 
@@ -59,12 +59,9 @@ jobs:
       - name: "🛠️ Install build dependencies"
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y bc bison build-essential ccache curl flex gawk \
-            git gnupg gperf imagemagick libncurses-dev \
-            liblz4-tool libssl-dev libxml2 libxml2-utils lzop pngcrush rsync \
-            schedtool squashfs-tools xsltproc zip zlib1g-dev python-is-python3
+          sudo apt-get install -y bc bison build-essential ccache curl flex gawk git gnupg gperf imagemagick libncurses-dev liblz4-tool libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev python-is-python3 mkbootimg
 
-      - name: "⚡ Setup ZyC-Clang 16 Toolchain"
+      - name: "⚡ Setup ZyC-Clang 16"
         run: |
           mkdir -p $HOME/zyc-clang
           cd $HOME/zyc-clang
@@ -75,104 +72,30 @@ jobs:
       - name: "🌐 Clone kernel source"
         run: |
           git clone --depth=1 --branch "$KERNEL_BRANCH" "$KERNEL_REPO" kernel
-          echo "UPSTREAM_SHA=$(git -C kernel rev-parse --short HEAD)" >> $GITHUB_ENV
 
-      - name: "🛑 NEUTRALIZE Dev Script (Prevent Wiping Mods)"
-        working-directory: kernel
-        run: |
-          sed -i 's/git reset/#git reset/g' build_kernel.sh || true
-          sed -i 's/git clean/#git clean/g' build_kernel.sh || true
-          sed -i 's/git checkout/#git checkout/g' build_kernel.sh || true
-          sed -i 's/curl.*KernelSU/#bypassed_ksu/g' build_kernel.sh || true
-          echo "✅ Dev script neutralized!"
-
-      - name: "🔑 Inject SukiSU Ultra"
-        if: inputs.inject_sukisu == 'true'
-        working-directory: kernel
-        run: |
-          curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s main
-          echo "SUKISU=true" >> $GITHUB_ENV
-
-      - name: "🩹 Apply EXTREME++ patches (CPU/GPU/ROOT)"
+      - name: "🩹 Apply EXTREME++ patches (CPU/GPU/Names)"
         run: |
           chmod +x config-repo/patches/apply-all.sh
           bash config-repo/patches/apply-all.sh kernel
 
-      - name: "🔨 Compile kernel using dev script"
+      - name: "⚙️ Replace Dev Script with OUR Script"
+        run: |
+          # YAHAN FIX KIYA HAI! Tere patches folder se utha raha hai
+          echo "Copying custom build_kernel.sh from patches folder..."
+          cp config-repo/patches/build_kernel.sh kernel/build_kernel.sh
+          chmod +x kernel/build_kernel.sh
+          echo "✅ Custom script successfully injected!"
+
+      - name: "🔨 Compile Kernel (The EXTREME Engine)"
         working-directory: kernel
         run: |
-          chmod +x build_kernel.sh
-          # Running dev script. Our apply-all.sh already forced CONFIG_KSU in all defconfigs!
-          ./build_kernel.sh munch miui
-
-      - name: "📦 Package AnyKernel3 ZIP (Bug-Free DTBO Fix)"
-        run: |
-          git clone --depth=1 https://github.com/osm0sis/AnyKernel3 ak3
-          cat > ak3/anykernel.sh << 'AKEOF'
-          properties() { '
-          kernel.string=EXTREME++HyperOS Kernel by PandeyJI-9
-          do.devicecheck=1
-          do.modules=0
-          do.cleanup=1
-          device.name1=munch
-          device.name2=POCO F4
-          supported.versions=13-17
-          '; }
-          
-          BLOCK=/dev/block/bootdevice/by-name/boot;
-          IS_SLOT_DEVICE=1;
-          RAMDISK_COMPRESSION=auto;
-          PATCH_VBMETA_FLAG=auto;
-          . tools/ak3-core.sh;
-          dump_boot;
-          write_boot;
-          
-          if [ -f $home/dtbo.img ]; then
-            ui_print "- Flashing Extreme Frequencies & UV (DTBO)...";
-            DTBO_BLOCK=""
-            for path in /dev/block/bootdevice/by-name/dtbo$slot /dev/block/mapper/dtbo$slot /dev/block/by-name/dtbo$slot; do
-              if [ -e "$path" ]; then
-                DTBO_BLOCK="$path"
-                break
-              fi
-            done
-            
-            if [ -n "$DTBO_BLOCK" ]; then
-              dd if=$home/dtbo.img of=$DTBO_BLOCK
-              ui_print "- ✅ DTBO Successfully Flashed!";
-            else
-              ui_print "- ❌ WARNING: DTBO partition not found!";
-            fi
-          fi
-          AKEOF
-          
-          echo "🔍 Searching for compiled kernel image..."
-          IMAGE_PATH=$(find kernel -type f \( -name "Image" -o -name "Image.gz" \) | grep "arch/arm64/boot" | head -n 1)
-          if [ -z "$IMAGE_PATH" ]; then
-            IMAGE_PATH=$(find kernel -type f \( -name "Image" -o -name "Image.gz" \) | head -n 1)
-          fi
-          
-          if [ -n "$IMAGE_PATH" ]; then
-            echo "✅ Found Kernel Image at: $IMAGE_PATH"
-            cp "$IMAGE_PATH" ak3/
+          if [ "${{ inputs.inject_sukisu }}" == "true" ]; then
+            echo "Running custom build script WITH Root..."
+            ./build_kernel.sh munch ksu miui
           else
-            echo "❌ ERROR: Kernel Image not found! Build script failed."
-            exit 1
+            echo "Running custom build script WITHOUT Root..."
+            ./build_kernel.sh munch miui
           fi
-          
-          echo "🔍 Searching for dtbo.img..."
-          DTBO_PATH=$(find kernel -type f -name "dtbo.img" | head -n 1)
-          if [ -n "$DTBO_PATH" ]; then
-            echo "✅ Found DTBO at: $DTBO_PATH"
-            cp "$DTBO_PATH" ak3/dtbo.img
-          fi
-
-          STAG=""
-          [ "${SUKISU:-}" = "true" ] && STAG="-SukiSU"
-          ZIP="EXTREME++HyperOS-munch-${{ inputs.release_tag }}${STAG}.zip"
-          cd ak3 && zip -r9 "../${ZIP}" . -x "*.git*"
-          echo "ZIP_PATH=${GITHUB_WORKSPACE}/${ZIP}" >> $GITHUB_ENV
-          echo "ZIP_NAME=${ZIP}" >> $GITHUB_ENV
 
       - name: "🚀 Create GitHub Release"
         env:
@@ -181,7 +104,7 @@ jobs:
           gh release create "${{ inputs.release_tag }}" "$ZIP_PATH" \
             --repo "${{ github.repository }}" \
             --title "EXTREME++HyperOS ${{ inputs.release_tag }} | POCO F4 (munch)" \
-            --notes "Safe HyperOS 3 Kernel with CPU 2.8GHz, GPU 150MHz UV, and Working SukiSU."
+            --notes "God-Mode Build. SukiSU Ultra Root, CPU 2.8GHz, & GPU 150MHz UV Guaranteed."
 
       - name: "📢 Telegram: Build Success"
         if: success()
@@ -195,9 +118,8 @@ jobs:
           ⚡ <b>EXTREME++HyperOS Kernel</b> — <code>${{ inputs.release_tag }}</code>
 
           📱 Device: POCO F4 (munch)
-          🏷 Base: HyperOS 3
-          🎮 GPU: Extreme Frequencies + UV
-          🏎 CPU: Capped
+          🎮 GPU: 150MHz Extreme UV
+          🏎 CPU: 2.8GHz Capped
           🔑 Root: SukiSU Ultra ✅
 
           📥 <a href="${DL}">Download ZIP</a>
