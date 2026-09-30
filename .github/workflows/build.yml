@@ -80,38 +80,29 @@ jobs:
       - name: "🛑 NEUTRALIZE Dev Script (Prevent Wiping Mods)"
         working-directory: kernel
         run: |
-          # Dev scripts run git reset/clean which deletes our CPU/GPU patches and Root. 
-          # We force disable them here!
-          sed -i 's/git reset/#git reset/g' build_kernel.sh
-          sed -i 's/git clean/#git clean/g' build_kernel.sh
-          sed -i 's/git checkout/#git checkout/g' build_kernel.sh
-          # Prevent dev script from downloading official KSU over our SukiSU
-          sed -i 's/curl.*KernelSU/#bypassed_ksu/g' build_kernel.sh
-          echo "✅ Dev script neutralized. Your patches are SAFE now!"
+          sed -i 's/git reset/#git reset/g' build_kernel.sh || true
+          sed -i 's/git clean/#git clean/g' build_kernel.sh || true
+          sed -i 's/git checkout/#git checkout/g' build_kernel.sh || true
+          sed -i 's/curl.*KernelSU/#bypassed_ksu/g' build_kernel.sh || true
+          echo "✅ Dev script neutralized!"
 
-      - name: "🔑 Inject SukiSU & Force Root Configs"
+      - name: "🔑 Inject SukiSU Ultra"
         if: inputs.inject_sukisu == 'true'
         working-directory: kernel
         run: |
           curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s main
           echo "SUKISU=true" >> $GITHUB_ENV
-          
-          echo "Forcing CONFIG_KSU in ALL configs..."
-          find arch/arm64/configs/ -type f -exec sh -c 'echo "CONFIG_KSU=y" >> {}; echo "CONFIG_KSU_SUSFS=y" >> {}' \;
-          echo "✅ Root configurations enforced!"
 
-      - name: "🩹 Apply EXTREME++ patches (CPU/GPU)"
+      - name: "🩹 Apply EXTREME++ patches (CPU/GPU/ROOT)"
         run: |
           chmod +x config-repo/patches/apply-all.sh
-          bash config-repo/patches/apply-all.sh kernel || echo "No patches found or applied"
+          bash config-repo/patches/apply-all.sh kernel
 
-      - name: "🔨 Compile kernel using neutralized script"
+      - name: "🔨 Compile kernel using dev script"
         working-directory: kernel
         run: |
           chmod +x build_kernel.sh
-          # We purposefully DO NOT pass 'ksu' here, so the dev script doesn't overwrite 
-          # our injected SukiSU with the standard KernelSU. Our forced configs will handle it.
-          echo "Compiling..."
+          # Running dev script. Our apply-all.sh already forced CONFIG_KSU in all defconfigs!
           ./build_kernel.sh munch miui
 
       - name: "📦 Package AnyKernel3 ZIP (Bug-Free DTBO Fix)"
@@ -136,7 +127,6 @@ jobs:
           dump_boot;
           write_boot;
           
-          # DIRECT DD FLASHING FIX (Bypassing Error 1 completely)
           if [ -f $home/dtbo.img ]; then
             ui_print "- Flashing Extreme Frequencies & UV (DTBO)...";
             DTBO_BLOCK=""
