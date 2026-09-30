@@ -1,21 +1,15 @@
 <div align="center">
 
-<img src="https://img.shields.io/badge/EXTREME++-GAMING-ff6600?style=for-the-badge&logo=android&logoColor=white" alt="EXTREME++GAMING" width="400"/>
+# ⚡ EXTREME++ Gaming Kernel ⚡
+### For POCO F4 (munch) | HyperOS 3 Optimized
 
-# ⚡ EXTREME++GAMING Kernel
-### POCO F4 / Redmi K40S — Snapdragon 870 (SM8250-AC)
-
-[![Build](https://github.com/PandeyJI-9/Extreme-PLUS-kernel-munch/actions/workflows/builder.yml/badge.svg)](https://github.com/PandeyJI-9/Extreme-PLUS-kernel-munch/actions)
-[![KernelSU](https://img.shields.io/badge/KernelSU-Supported-success?logo=android)](https://kernelsu.org/)
-[![Proton Clang](https://img.shields.io/badge/Toolchain-Proton_Clang-blue?logo=llvm)](https://github.com/kdrag0n/proton-clang)
-[![License](https://img.shields.io/badge/License-GPL_v2-red.svg)](https://www.gnu.org/licenses/old-licenses/gpl-2.0.en.html)
-[![Telegram](https://img.shields.io/badge/Support-Telegram-26A5E4?logo=telegram)](https://t.me/)
-
-*A precision-tuned custom kernel built for the Snapdragon 870, delivering ultra-smooth UI performance while keeping thermals and battery drain at absolute minimum.*
+*A custom kernel designed for extreme gaming performance, ultra-smooth UI transitions, and maximum thermal efficiency.*
 
 ---
 
-**`uname -r` → `5.4.xxx-EXTREME++GAMING`**
+**`uname -r` → `5.4.xxx-EXTREME++HyperOS`**
+
+[<kbd> <br> 💬 Join Telegram Support Group <br> </kbd>](https://t.me/Extremeplus_Support)
 
 </div>
 
@@ -23,74 +17,47 @@
 
 ## 🎯 Design Philosophy
 
-The Snapdragon 870 is a powerhouse, but stock frequency scaling wastes battery and generates unnecessary heat during everyday tasks like YouTube, Instagram, and WhatsApp. **EXTREME++GAMING** fixes this with precision hardware-level patches:
+The Snapdragon 870 is a powerhouse, but stock frequency scaling wastes battery and generates unnecessary heat during everyday tasks like YouTube, Instagram, and WhatsApp. **EXTREME++ GAMING** fixes this with precision hardware-level patches:
 
-- 🎮 **GPU peaks at stock 670 MHz** — zero compromise on gaming performance
-- 🔋 **GPU idles at 150 MHz** — massive battery savings during reading, YouTube, AOD
-- 🧊 **CPU Prime Core capped at 3.0 GHz** — reduced heat with zero perceptible performance loss
-- 📱 **Display, Haptics, Sensors, Charging** — 100% stock, fully HyperOS 3 compatible
+- 🎮 **GPU peaks at 670 MHz (with FakeDreamer UV)** — zero compromise on gaming performance, massive thermal reduction.
+- 🔋 **10-Step GPU OPP Table** — massive battery savings during reading, YouTube, AOD, and perfectly paced 120Hz scrolling.
+- 🧊 **CPU Prime Core capped at 2.84 GHz** — completely eliminates the peak heat spike with zero perceptible performance loss.
+- 📱 **SukiSU Ultra (KernelSU)** — Injected directly into the kernel for flawless root access.
+- 🛠️ **Flawless Flashing on GKI/HyperOS 3** — Perfected AnyKernel3 script that strictly flashes `boot` and overlays `dtbo.img` to preserve custom recovery ramdisks.
 
 ---
 
 ## 🎮 GPU Frequency Table — Adreno 650
 
-> **10 custom Operating Performance Points (OPPs)** — 7 more granular steps than stock.
+> **10 custom Operating Performance Points (OPPs)** — 7 more granular steps than stock!
 
-```
+```text
 ╔═══════════╦══════════════╦═══════════════════════════════════════════╗
-║ Frequency ║ Voltage      ║ Workload                                  ║
+║ Frequency ║ Voltage Drop ║ Workload                                  ║
 ╠═══════════╬══════════════╬═══════════════════════════════════════════╣
-║  670 MHz  ║ NOM          ║ 🔴 Peak 3D: Genshin, BGMI max FPS        ║
-║  587 MHz  ║ SVS_L2       ║ 🟠 Heavy 3D: Camera viewfinder, 3D apps  ║
-║  525 MHz  ║ SVS_L1       ║ 🟡 Moderate 3D: Medium gaming             ║
-║  490 MHz  ║ SVS_L1       ║ 🟡 UI transitions: App open/close anim    ║
-║  441 MHz  ║ SVS          ║ 🟢 120Hz scrolling: Instagram, Twitter    ║
-║  400 MHz  ║ SVS          ║ 🟢 Standard 120Hz: Frame pacing, light 2D ║
-║  305 MHz  ║ LOW_SVS      ║ 🔵 Light UI: 1080p/4K video playback     ║
-║  250 MHz  ║ LOW_SVS      ║ 🔵 Low power: Static reading, 60Hz idle  ║
-║  200 MHz  ║ MIN_SVS      ║ ⚪ Ultra-low: Background rendering, AOD   ║
-║  150 MHz  ║ MIN_SVS      ║ ⚪ Deep idle: Screen-off compositing       ║
+║  670 MHz  ║ 1-Step (UV)  ║ 🔴 Peak 3D: Genshin, BGMI max FPS         ║
+║  587 MHz  ║ 1-Step (UV)  ║ 🟠 Heavy 3D: Camera viewfinder, 3D apps   ║
+║  525 MHz  ║ 1-Step (UV)  ║ 🟡 Moderate 3D: Medium gaming             ║
+║  490 MHz  ║ 1-Step (UV)  ║ 🟡 UI transitions: App open/close anim    ║
+║  441 MHz  ║ 1-Step (UV)  ║ 🟢 120Hz scrolling: Instagram, Twitter    ║
+║  400 MHz  ║ 1-Step (UV)  ║ 🟢 Standard 120Hz: Frame pacing, light 2D ║
+║  305 MHz  ║ 1-Step (UV)  ║ 🔵 Light UI: 1080p/4K video playback      ║
+║  250 MHz  ║ Stock        ║ 🔵 Low power: Static reading, 60Hz idle   ║
+║  200 MHz  ║ Stock        ║ ⚪ Ultra-low: Background rendering, AOD   ║
+║  150 MHz  ║ Stock        ║ ⚪ Deep idle: Screen-off compositing       ║
 ╚═══════════╩══════════════╩═══════════════════════════════════════════╝
 ```
 
-**Stock had only 3 steps** (480, 381, 290 MHz). Our 10-step table gives the GPU governor much finer control — it can pick the exact right frequency for each workload instead of jumping between coarse steps.
+**Stock had only 3 active steps** (480, 381, 290 MHz). Our 10-step table gives the GPU governor much finer control — it can pick the exact right frequency for each workload instead of jumping between coarse steps.
 
 ---
 
 ## 🏎️ CPU Frequency Table — Kryo 585
 
-### LITTLE Cluster (Cores 0–3 | Efficiency)
-```
-300 → 403 → 518 → 614 → 691 → 787 → 883 → 979 →
-1075 → 1171 → 1248 → 1344 → 1420 → 1516 → 1612 → 1708 → 1804 MHz
+### PRIME Core (Core 7 | Burst/Heavy Load) — ⚡ Capped at 2.84 GHz
 
-├── 300–614 MHz   Deep idle, screen-off audio, sensor monitoring
-├── 691–1171 MHz  Background sync, push notifications
-└── 1248–1804 MHz OS housekeeping, active downloads
-```
-
-### GOLD Cluster (Cores 4–6 | Performance)
-```
-710 → 825 → 940 → 1056 → 1171 → 1286 → 1382 → 1478 →
-1574 → 1670 → 1766 → 1862 → 1958 → 2054 → 2150 → 2246 → 2342 → 2419 MHz
-
-├── 710–1286 MHz   Static UI display, basic menu navigation
-├── 1382–1958 MHz  120Hz display frame pacing, fluid scrolling
-└── 2054–2419 MHz  Sustained multitasking, camera ISP processing
-```
-
-### PRIME Core (Core 7 | Burst/Heavy Load) — ⚡ Capped at 3000 MHz
-```
-844 → 960 → 1075 → 1190 → 1305 → 1401 → 1516 → 1632 → 1747 →
-1862 → 1977 → 2073 → 2169 → 2265 → 2361 → 2457 → 2553 → 2649 → 2745 → 2841 → 3000 MHz
-
-├── 844–1516 MHz   Parking states alongside Gold cores
-├── 1632–2457 MHz  Burst mitigation (prevents UI micro-stutters)
-└── 2553–3000 MHz  Cold app launches, heavy 3D threads, touch boost
-```
-
-> **Stock Prime max:** 3187 MHz → **Patched:** 3000 MHz  
-> This 187 MHz reduction eliminates the extreme heat spike at peak load while being imperceptible in real-world usage.
+> **Stock Prime max:** 3.18 GHz (3187 MHz) → **Patched:** 2.84 GHz (2841 MHz)  
+> This reduction matches the Fusion X thermal limit, eliminating extreme heat spikes at peak load while remaining imperceptible in real-world 120Hz usage and gaming.
 
 ---
 
@@ -100,80 +67,26 @@ The Snapdragon 870 is a powerhouse, but stock frequency scaling wastes battery a
 Go to **[Releases](https://github.com/PandeyJI-9/Extreme-PLUS-kernel-munch/releases)** → download the latest `.zip`.
 
 ### Step 2: Flash
-1. Reboot into **TWRP / OrangeFox** recovery
-2. *(Recommended)* Backup `boot` and `dtbo` partitions
-3. Flash `EXTREME++GAMING-munch-*.zip`
-4. Wipe **Dalvik / ART Cache**
-5. Reboot
+1. Reboot into **TWRP / OrangeFox** recovery.
+2. *(Recommended)* Backup `boot` and `dtbo` partitions.
+3. Flash `EXTREME++HyperOS-munch-*.zip`
+4. Reboot to System.
+
+*(Note: The AnyKernel3 zip is explicitly designed to leave your `vendor_boot` recovery partition untouched, flashing custom hardware frequencies safely via `dtbo`.)*
 
 ### Step 3: Verify
 After booting, open a terminal emulator and run:
 ```bash
 uname -r
-# Should show: 5.4.xxx-EXTREME++GAMING
+# Should show: 5.4.xxx-EXTREME++HyperOS
 ```
 
 ---
 
-## 🏗️ CI/CD Architecture
+## 💬 Community & Support
 
-This repo contains **zero kernel source code**. Everything is cloud-compiled:
-
-```
-┌─────────────────────────────────────────────────────┐
-│  Your GitHub Repo (this repo)                       │
-│  ├── .github/workflows/   ← Build automation        │
-│  ├── patches/             ← GPU/CPU/Name patches     │
-│  └── README.md                                       │
-└──────────────────┬──────────────────────────────────┘
-                   │ workflow_dispatch (manual trigger)
-                   ▼
-┌─────────────────────────────────────────────────────┐
-│  GitHub Actions Runner (Ubuntu, 7GB RAM, 2 cores)   │
-│  1. git clone AstideLabs kernel (shallow)            │
-│  2. Run patches/apply-all.sh                         │
-│  3. Compile with Proton Clang                        │
-│  4. Package with AnyKernel3                          │
-│  5. Upload ZIP → GitHub Release                      │
-└─────────────────────────────────────────────────────┘
-```
-
-### Available Workflows
-
-| Workflow | Purpose | Trigger |
-|----------|---------|---------|
-| 🔨 **Builder** | Full kernel build → flashable ZIP | Manual |
-| 🧪 **Tester** | Fast CI: defconfig + DTB compile | Manual |
-| 🔍 **Verifier** | Confirms patches in compiled DT | Manual |
-| 🚀 **Releaser** | Sync upstream + KSU + Release | Manual |
-
----
-
-## 📂 Repository Structure
-
-```
-.github/workflows/
-├── builder.yml             Full kernel build pipeline
-├── tester.yml              Fast defconfig + DTB check
-├── verifier.yml            Patch verification
-└── releaser_and_sync.yml   Upstream sync + release
-
-patches/
-├── apply-gpu-opp.py        GPU 10-frequency OPP table patch
-├── apply-cpu-cap.py        CPU Prime Core 3.0GHz cap
-└── apply-all.sh            Master patch orchestrator
-```
-
----
-
-## 🤝 Credits
-
-| Project | Contribution |
-|---------|-------------|
-| [AstideLabs](https://github.com/AstideLabs/android_kernel_xiaomi_sm8250) | Upstream kernel source |
-| [osm0sis](https://github.com/osm0sis/AnyKernel3) | AnyKernel3 flashable ZIP framework |
-| [kdrag0n](https://github.com/kdrag0n/proton-clang) | Proton Clang toolchain |
-| [tiann](https://github.com/tiann/KernelSU) | KernelSU root solution |
+Having issues? Want to request a feature? Join our Telegram support group:
+👉 **[Extreme+ Support Group](https://t.me/Extremeplus_Support)**
 
 ---
 
