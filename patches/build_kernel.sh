@@ -50,13 +50,10 @@ fi
 
 if ! grep -q "selinux,baseband_guard" security/Kconfig; then
     sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/selinux/selinux,baseband_guard/ } }' security/Kconfig
-    if ! grep -q "selinux,baseband_guard" security/Kconfig; then
-        sed -i 's/default "selinux"/default "selinux,baseband_guard"/g' security/Kconfig
-    fi
 fi
 
 # ------------------------------------------
-# 2. SukiSU Ultra (Root) Script Download
+# 2. SukiSU Ultra (Root) Setup
 # ------------------------------------------
 if [ "$ENABLE_KSU" -eq 1 ]; then
     echo "[*] Injecting SukiSU Ultra Source..."
@@ -66,42 +63,9 @@ if [ "$ENABLE_KSU" -eq 1 ]; then
     fi
 fi
 
-# ==========================================
-# (TOUCH BUG FIXED: HATA DIYA DISPLAY PATCHES KA KACHRA!)
-# ==========================================
-
 # ------------------------------------------
-# 3. AGGRESSIVE CONFIG INJECTION
+# 3. Compile Environment & Config Generation
 # ------------------------------------------
-echo "[*] Force-Injecting configs directly into source defconfig..."
-
-if [ "$ENABLE_KSU" -eq 1 ]; then
-    # [FIX] Added KPROBES explicitly so SukiSU works!
-    cat << 'EOF' >> "arch/arm64/configs/${DEFCONFIG}"
-CONFIG_KSU=y
-CONFIG_KSU_SUSFS=y
-CONFIG_KPROBES=y
-CONFIG_HAVE_KPROBES=y
-CONFIG_KPROBE_EVENTS=y
-EOF
-fi
-
-cat << 'EOF' >> "arch/arm64/configs/${DEFCONFIG}"
-CONFIG_PERF_CRITICAL_RT_TASK=y
-CONFIG_SF_BINDER=y
-CONFIG_OVERLAY_FS=y
-CONFIG_MIGT=y
-CONFIG_MIGT_ENERGY_MODEL=y
-CONFIG_MIHW=y
-CONFIG_XIAOMI_MIUI=y
-CONFIG_TASK_DELAY_ACCT=y
-CONFIG_MIUI_ZRAM_MEMORY_TRACKING=y
-CONFIG_PERF_HELPER=y
-# CONFIG_LTO_CLANG is not set
-CONFIG_LTO_NONE=y
-# CONFIG_SHADOW_CALL_STACK is not set
-EOF
-
 MAKE_OPTS=(
     -j"$(nproc --all)"
     O="${OUT_DIR}"
@@ -119,7 +83,30 @@ echo "[*] Generating Defconfig (${DEFCONFIG})..."
 make "${MAKE_OPTS[@]}" "${DEFCONFIG}"
 
 # ------------------------------------------
-# 4. Build Kernel Image, DTB & DTBO
+# 4. Safe & Aggressive Config Injection
+# ------------------------------------------
+echo "[*] Injecting Custom Configs Safely..."
+
+# Baseband
+scripts/config --file "${OUT_DIR}/.config" -e BBG
+
+# SukiSU Root Injection (Safe method, no KPROBES needed for inline)
+if [ "$ENABLE_KSU" -eq 1 ]; then
+    scripts/config --file "${OUT_DIR}/.config" -e KSU -e THREAD_INFO_IN_TASK -e KSU_SUSFS
+fi
+
+# HyperOS Essential Gaming & Display Configs
+scripts/config --file "${OUT_DIR}/.config" \
+    --set-str STATIC_USERMODEHELPER_PATH /system/bin/micd \
+    -e PERF_CRITICAL_RT_TASK -e SF_BINDER -e OVERLAY_FS -e MIGT \
+    -e MIGT_ENERGY_MODEL -e MIHW -e XIAOMI_MIUI -e TASK_DELAY_ACCT \
+    -e MIUI_ZRAM_MEMORY_TRACKING -e PERF_HELPER -e LTO_NONE -d LTO_CLANG
+
+# Validate and apply injected configs
+make "${MAKE_OPTS[@]}" olddefconfig
+
+# ------------------------------------------
+# 5. Build Kernel Image, DTB & DTBO
 # ------------------------------------------
 echo "[*] Compiling Kernel Image..."
 make "${MAKE_OPTS[@]}" Image
@@ -128,7 +115,7 @@ echo "[*] Compiling DTBs & DTBO (For CPU & GPU patches)..."
 make "${MAKE_OPTS[@]}" dtbs
 
 # ------------------------------------------
-# 5. AnyKernel3 Setup
+# 6. AnyKernel3 Setup
 # ------------------------------------------
 echo "[*] Cloning Pure AnyKernel3..."
 git clone --depth=1 https://github.com/osm0sis/AnyKernel3 anykernel
@@ -171,10 +158,11 @@ fi
 EOF
 
 # ------------------------------------------
-# 6. Packaging: DTB, DTBO, & Image (THE ROOT & CLOCK FIX)
+# 7. Packaging: DTB, DTBO, & Image (THE ROOT & CLOCK FIX)
 # ------------------------------------------
 echo "[*] Verifying compiled files..."
 
+# 1. Kernel Image
 if [ ! -f "${OUT_DIR}/arch/arm64/boot/Image" ]; then
     echo "❌ [ERROR] Kernel Image did NOT compile!"
     exit 1
@@ -182,25 +170,25 @@ fi
 cp "${OUT_DIR}/arch/arm64/boot/Image" anykernel/
 echo "[+] Kernel Image copied."
 
-# Main DTB for CPU/GPU Frequencies
+# 2. Main DTB (CRITICAL FOR CPU 2.8GHz & GPU UV)
 echo "[*] Copying main DTB for CPU/GPU Frequencies..."
-cat ${OUT_DIR}/arch/arm64/boot/dts/vendor/qcom/*.dtb > anykernel/dtb
-if [ -s anykernel/dtb ]; then
+if ls ${OUT_DIR}/arch/arm64/boot/dts/vendor/qcom/*.dtb >/dev/null 2>&1; then
+    cat ${OUT_DIR}/arch/arm64/boot/dts/vendor/qcom/*.dtb > anykernel/dtb
     echo "[+] DTB successfully packed."
 else
     echo "❌ [ERROR] Failed to compile main DTB!"
     exit 1
 fi
 
-# DTBO File Tool Fix
+# 3. DTBO Image (Using Bot's tool download fix)
 if [ ! -f "${OUT_DIR}/arch/arm64/boot/dtbo.img" ]; then
-    echo "⚠️ dtbo.img not found. Packing from .dtbo files..."
+    echo "⚠️ dtbo.img not found directly. Attempting to pack from .dtbo files..."
     if [ ! -f "scripts/dtc/libfdt/mkdtboimg.py" ]; then
         echo "[*] Downloading missing mkdtboimg.py tool..."
         mkdir -p scripts/dtc/libfdt/
         curl -sL -o scripts/dtc/libfdt/mkdtboimg.py https://raw.githubusercontent.com/LineageOS/android_system_libufdt/lineage-19.1/utils/src/mkdtboimg.py
     fi
-    count=$(ls -1 ${OUT_DIR}/arch/arm64/boot/dts/vendor/qcom/*.dtbo 2>/dev/null | wc -l)
+    count=$(ls -1 ${OUT_DIR}/arch/arm64/boot/dts/vendor/qcom/*.dtbo 2>/dev/null | wc -l || echo "0")
     if [ "$count" != "0" ]; then
         python3 scripts/dtc/libfdt/mkdtboimg.py create anykernel/dtbo.img --page_size=4096 ${OUT_DIR}/arch/arm64/boot/dts/vendor/qcom/*.dtbo
         echo "[+] DTBO packed successfully from fragments."
@@ -214,7 +202,7 @@ else
 fi
 
 # ------------------------------------------
-# 7. Final Zip Creation
+# 8. Final Zip Creation
 # ------------------------------------------
 echo "[*] Zipping EXTREME++ Kernel..."
 cd anykernel
