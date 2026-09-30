@@ -201,6 +201,11 @@ if [ -f "${OUT_DIR}/arch/arm64/boot/dtbo.img" ]; then
     echo "[+] DTBO Image copied directly."
 else
     echo "⚠️ dtbo.img not found directly. Attempting to pack from .dtbo files..."
+    if [ ! -f "scripts/dtc/libfdt/mkdtboimg.py" ]; then
+        echo "[*] Downloading missing mkdtboimg.py tool..."
+        mkdir -p scripts/dtc/libfdt/
+        curl -sL -o scripts/dtc/libfdt/mkdtboimg.py https://raw.githubusercontent.com/LineageOS/android_system_libufdt/lineage-19.1/utils/src/mkdtboimg.py
+    fi
     if [ -f "scripts/dtc/libfdt/mkdtboimg.py" ]; then
         # Check if there are actually any .dtbo files to pack
         count=$(ls -1 ${OUT_DIR}/arch/arm64/boot/dts/vendor/qcom/*.dtbo 2>/dev/null | wc -l)
