@@ -3,7 +3,7 @@
 # ║  POCO F4 (munch) | SM8250-AC | Snapdragon 870               ║
 # ║  Maintainer: PandeyJI-9                                     ║
 # ╚══════════════════════════════════════════════════════════════╝
-name: "🔥 EXTREME++ Build & Release by PandeyJi"
+name: "🔥 EXTREME++ Build & Release"
 
 on:
   workflow_dispatch:
@@ -77,6 +77,18 @@ jobs:
           git clone --depth=1 --branch "$KERNEL_BRANCH" "$KERNEL_REPO" kernel
           echo "UPSTREAM_SHA=$(git -C kernel rev-parse --short HEAD)" >> $GITHUB_ENV
 
+      - name: "🛑 NEUTRALIZE Dev Script (Prevent Wiping Mods)"
+        working-directory: kernel
+        run: |
+          # Dev scripts run git reset/clean which deletes our CPU/GPU patches and Root. 
+          # We force disable them here!
+          sed -i 's/git reset/#git reset/g' build_kernel.sh
+          sed -i 's/git clean/#git clean/g' build_kernel.sh
+          sed -i 's/git checkout/#git checkout/g' build_kernel.sh
+          # Prevent dev script from downloading official KSU over our SukiSU
+          sed -i 's/curl.*KernelSU/#bypassed_ksu/g' build_kernel.sh
+          echo "✅ Dev script neutralized. Your patches are SAFE now!"
+
       - name: "🔑 Inject SukiSU & Force Root Configs"
         if: inputs.inject_sukisu == 'true'
         working-directory: kernel
@@ -84,9 +96,8 @@ jobs:
           curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s main
           echo "SUKISU=true" >> $GITHUB_ENV
           
-          # 1000% GUARANTEE FIX: Forcefully enabling Root in all munch defconfigs!
-          echo "Force enabling CONFIG_KSU in defconfigs..."
-          find arch/arm64/configs/ -name "*munch*" -type f -exec sh -c 'echo "CONFIG_KSU=y" >> {}; echo "CONFIG_KSU_SUSFS=y" >> {}' \;
+          echo "Forcing CONFIG_KSU in ALL configs..."
+          find arch/arm64/configs/ -type f -exec sh -c 'echo "CONFIG_KSU=y" >> {}; echo "CONFIG_KSU_SUSFS=y" >> {}' \;
           echo "✅ Root configurations enforced!"
 
       - name: "🩹 Apply EXTREME++ patches (CPU/GPU)"
@@ -94,20 +105,16 @@ jobs:
           chmod +x config-repo/patches/apply-all.sh
           bash config-repo/patches/apply-all.sh kernel || echo "No patches found or applied"
 
-      - name: "🔨 Compile kernel using dev script"
+      - name: "🔨 Compile kernel using neutralized script"
         working-directory: kernel
         run: |
           chmod +x build_kernel.sh
-          # Passing ksu argument properly to the dev script
-          if [ "${{ inputs.inject_sukisu }}" == "true" ]; then
-            echo "Compiling WITH Root (ksu)..."
-            ./build_kernel.sh munch ksu miui
-          else
-            echo "Compiling WITHOUT Root..."
-            ./build_kernel.sh munch miui
-          fi
+          # We purposefully DO NOT pass 'ksu' here, so the dev script doesn't overwrite 
+          # our injected SukiSU with the standard KernelSU. Our forced configs will handle it.
+          echo "Compiling..."
+          ./build_kernel.sh munch miui
 
-      - name: "📦 Package AnyKernel3 ZIP (1000% Bug-Free DTBO Fix)"
+      - name: "📦 Package AnyKernel3 ZIP (Bug-Free DTBO Fix)"
         run: |
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3 ak3
           cat > ak3/anykernel.sh << 'AKEOF'
