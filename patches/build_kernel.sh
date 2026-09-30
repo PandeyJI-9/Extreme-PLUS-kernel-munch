@@ -53,18 +53,14 @@ if ! grep -q "selinux,baseband_guard" security/Kconfig; then
 fi
 
 # ------------------------------------------
-# 2. SukiSU Ultra (Root) Setup - THE HARDCORE BYPASS
+# 2. SukiSU Ultra (Root) Setup - SAFE MODE
 # ------------------------------------------
 if [ "$ENABLE_KSU" -eq 1 ]; then
-    echo "[*] Injecting SukiSU Ultra Source..."
+    echo "[*] Injecting SukiSU Ultra Source (Vanilla Mode)..."
     if ! curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s main; then
         echo "❌ [ERROR] SukiSU script execution failed!"
         exit 1
     fi
-    
-    echo "[*] Hardcoding SukiSU into Makefile..."
-    sed -i 's/obj-$(CONFIG_KSU) += KernelSU\//obj-y += KernelSU\//g' drivers/Makefile 2>/dev/null || true
-    echo "ccflags-y += -DCONFIG_KSU=1" >> drivers/KernelSU/Makefile 2>/dev/null || true
 fi
 
 # ------------------------------------------
@@ -87,21 +83,19 @@ echo "[*] Generating Defconfig (${DEFCONFIG})..."
 make "${MAKE_OPTS[@]}" "${DEFCONFIG}"
 
 # ------------------------------------------
-# 4. Safe & Aggressive Config Injection
+# 4. Config Injection (Stable)
 # ------------------------------------------
 echo "[*] Injecting Custom Configs Safely..."
 
 scripts/config --file "${OUT_DIR}/.config" -e BBG
 
 if [ "$ENABLE_KSU" -eq 1 ]; then
-    echo "[*] Enabling KPROBES, KSU and SUSFS..."
-    # Force Kprobes
+    echo "[*] Enabling KPROBES and KSU (Disabled SUSFS to prevent bootloop)..."
     scripts/config --file "${OUT_DIR}/.config" -e KPROBES -e HAVE_KPROBES -e KPROBE_EVENTS
-    # Force KSU & SUSFS (Fix applied: SUSFS re-enabled)
-    scripts/config --file "${OUT_DIR}/.config" -e KSU -e KSU_SUSFS
+    scripts/config --file "${OUT_DIR}/.config" -e KSU
+    scripts/config --file "${OUT_DIR}/.config" -d KSU_SUSFS
 fi
 
-# HyperOS Essential Gaming & Display Configs + Disabling LTO to PREVENT GitHub Actions RAM Crash
 scripts/config --file "${OUT_DIR}/.config" \
     --set-str STATIC_USERMODEHELPER_PATH /system/bin/micd \
     -e PERF_CRITICAL_RT_TASK -e SF_BINDER -e OVERLAY_FS -e MIGT \
@@ -109,7 +103,6 @@ scripts/config --file "${OUT_DIR}/.config" \
     -e MIUI_ZRAM_MEMORY_TRACKING -e PERF_HELPER \
     -e LTO_NONE -d LTO_CLANG -d LTO_CLANG_THIN -d CFI_CLANG
 
-# Validate and apply injected configs
 make "${MAKE_OPTS[@]}" olddefconfig
 
 # ------------------------------------------
@@ -118,7 +111,7 @@ make "${MAKE_OPTS[@]}" olddefconfig
 echo "[*] Compiling Kernel Image..."
 make "${MAKE_OPTS[@]}" Image
 
-echo "[*] Compiling DTBs & DTBO (For CPU & GPU patches)..."
+echo "[*] Compiling DTBs & DTBO..."
 make "${MAKE_OPTS[@]}" dtbs
 
 # ------------------------------------------
@@ -165,7 +158,7 @@ fi
 EOF
 
 # ------------------------------------------
-# 7. Packaging: DTB, DTBO, & Image 
+# 7. Packaging: EXACT DTB MATCH ONLY
 # ------------------------------------------
 echo "[*] Verifying compiled files..."
 
@@ -176,13 +169,22 @@ fi
 cp "${OUT_DIR}/arch/arm64/boot/Image" anykernel/
 echo "[+] Kernel Image copied."
 
-echo "[*] Copying main DTB for CPU/GPU Frequencies..."
-if ls ${OUT_DIR}/arch/arm64/boot/dts/vendor/qcom/*.dtb >/dev/null 2>&1; then
-    cat ${OUT_DIR}/arch/arm64/boot/dts/vendor/qcom/*.dtb > anykernel/dtb
-    echo "[+] DTB successfully packed."
+echo "[*] Extracting specific munch DTB..."
+# FIX: Do not concatenate ALL dtbs, it causes bootloops. Just find munch specific ones.
+MUNCH_DTB=$(find ${OUT_DIR}/arch/arm64/boot/dts/vendor/qcom/ -name "*munch*.dtb" | head -n 1)
+if [ -n "$MUNCH_DTB" ] && [ -f "$MUNCH_DTB" ]; then
+    cp "$MUNCH_DTB" anykernel/dtb
+    echo "[+] DTB (Munch) successfully packed."
 else
-    echo "❌ [ERROR] Failed to compile main DTB!"
-    exit 1
+    echo "⚠️ Warning: Specific munch.dtb not found. Falling back to kona-v2.1.dtb (Snapdragon 870 base)..."
+    KONA_DTB=$(find ${OUT_DIR}/arch/arm64/boot/dts/vendor/qcom/ -name "*kona-v2.1*.dtb" | head -n 1)
+    if [ -n "$KONA_DTB" ] && [ -f "$KONA_DTB" ]; then
+        cp "$KONA_DTB" anykernel/dtb
+        echo "[+] DTB (Kona v2.1) packed as fallback."
+    else
+        echo "❌ [ERROR] Failed to find ANY suitable DTB!"
+        exit 1
+    fi
 fi
 
 if [ ! -f "${OUT_DIR}/arch/arm64/boot/dtbo.img" ]; then
