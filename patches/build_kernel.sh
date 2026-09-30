@@ -52,7 +52,6 @@ if ! wget -qO- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh |
     exit 1
 fi
 
-# Robust sed replacement for Baseband guard
 if grep -q "selinux,baseband_guard" security/Kconfig; then
     echo "[+] Baseband-guard already in Kconfig."
 else
@@ -64,15 +63,15 @@ else
 fi
 
 # ------------------------------------------
-# 2. SukiSU Ultra (Root) Check
+# 2. SukiSU Ultra (Root) Script Download
 # ------------------------------------------
 if [ "$ENABLE_KSU" -eq 1 ]; then
-    echo "[*] Injecting SukiSU Ultra..."
+    echo "[*] Injecting SukiSU Ultra Source..."
     if ! curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s main; then
         echo "❌ [ERROR] SukiSU script execution failed!"
         exit 1
     fi
-    echo "[+] SukiSU Ultra Setup Success."
+    echo "[+] SukiSU Ultra Source Downloaded."
 fi
 
 # ------------------------------------------
@@ -80,7 +79,6 @@ fi
 # ------------------------------------------
 DTS_SOURCE="arch/arm64/boot/dts/vendor/qcom"
 echo "[*] Applying HyperOS Display Optimizations..."
-# Added '|| true' safely so it doesn't break if a specific display panel file is missing in a newer source
 sed -i 's/<154>/<1537>/g' ${DTS_SOURCE}/dsi-panel-j1s* 2>/dev/null || true
 sed -i 's/<154>/<1537>/g' ${DTS_SOURCE}/dsi-panel-j2* 2>/dev/null || true
 sed -i 's/<155>/<1544>/g' ${DTS_SOURCE}/dsi-panel-j3s-37-02-0a-dsc-video.dtsi 2>/dev/null || true
@@ -90,8 +88,33 @@ sed -i 's/<71>/<710>/g' ${DTS_SOURCE}/dsi-panel-j1s* 2>/dev/null || true
 sed -i 's/120 90 60/120 90 60 50 30/g' ${DTS_SOURCE}/dsi-panel-g7a-36-02-0c-dsc-video.dtsi 2>/dev/null || true
 
 # ------------------------------------------
-# 4. Config Generation & Injection
+# 4. AGGRESSIVE CONFIG INJECTION (Fixes Root & HyperOS bugs)
 # ------------------------------------------
+echo "[*] Force-Injecting configs directly into source defconfig..."
+
+# Agar SukiSU enabled hai toh usko directly source file me pel do
+if [ "$ENABLE_KSU" -eq 1 ]; then
+    echo "CONFIG_KSU=y" >> "arch/arm64/configs/${DEFCONFIG}"
+    echo "CONFIG_KSU_SUSFS=y" >> "arch/arm64/configs/${DEFCONFIG}"
+fi
+
+# Force HyperOS & Baseband Guard configs
+cat << 'EOF' >> "arch/arm64/configs/${DEFCONFIG}"
+CONFIG_PERF_CRITICAL_RT_TASK=y
+CONFIG_SF_BINDER=y
+CONFIG_OVERLAY_FS=y
+CONFIG_MIGT=y
+CONFIG_MIGT_ENERGY_MODEL=y
+CONFIG_MIHW=y
+CONFIG_XIAOMI_MIUI=y
+CONFIG_TASK_DELAY_ACCT=y
+CONFIG_MIUI_ZRAM_MEMORY_TRACKING=y
+CONFIG_PERF_HELPER=y
+# CONFIG_LTO_CLANG is not set
+CONFIG_LTO_NONE=y
+# CONFIG_SHADOW_CALL_STACK is not set
+EOF
+
 MAKE_OPTS=(
     -j"$(nproc --all)"
     O="${OUT_DIR}"
@@ -107,27 +130,6 @@ MAKE_OPTS=(
 
 echo "[*] Generating Defconfig (${DEFCONFIG})..."
 make "${MAKE_OPTS[@]}" "${DEFCONFIG}"
-
-echo "[*] Injecting Core HyperOS configs..."
-scripts/config --file "${OUT_DIR}/.config" -e BBG
-scripts/config --file "${OUT_DIR}/.config" \
-    --set-str STATIC_USERMODEHELPER_PATH /system/bin/micd \
-    -e PERF_CRITICAL_RT_TASK -e SF_BINDER -e OVERLAY_FS -e MIGT \
-    -e MIGT_ENERGY_MODEL -e MIHW -e PACKAGE_RUNTIME_INFO -e BINDER_OPT \
-    -e KPERFEVENTS -e PERF_HUMANTASK -d LTO_CLANG -e LTO_NONE \
-    -d SHADOW_CALL_STACK -e XIAOMI_MIUI -d MI_MEMORY_SYSFS \
-    -e TASK_DELAY_ACCT -e MIUI_ZRAM_MEMORY_TRACKING -e PERF_HELPER \
-    -e BOOTUP_RECLAIM -e MI_RECLAIM -e RTMM -e MILLET_CGROUP \
-    -e MILLET_SIG -e MILLET_BINDER -e MILLET_PKG -e MILLET_BINDER_GKI \
-    -e MILLET_CORE -e MILLET_HS -e BINDER_PRIO -d REKERNEL -d REKERNEL_NETWORK
-
-if [ "$ENABLE_KSU" -eq 1 ]; then
-    echo "[*] Enabling SukiSU Ultra in config..."
-    scripts/config --file "${OUT_DIR}/.config" -e KSU -e THREAD_INFO_IN_TASK -e KSU_SUSFS
-fi
-
-echo "[*] Saving new configuration..."
-make "${MAKE_OPTS[@]}" olddefconfig
 
 # ------------------------------------------
 # 5. Build Kernel Image & DTBO
@@ -195,19 +197,12 @@ fi
 cp "${OUT_DIR}/arch/arm64/boot/Image" anykernel/
 echo "[+] Kernel Image copied."
 
-# Improved DTBO finding and packaging logic
 if [ -f "${OUT_DIR}/arch/arm64/boot/dtbo.img" ]; then
     cp "${OUT_DIR}/arch/arm64/boot/dtbo.img" anykernel/
     echo "[+] DTBO Image copied directly."
 else
     echo "⚠️ dtbo.img not found directly. Attempting to pack from .dtbo files..."
-    if [ ! -f "scripts/dtc/libfdt/mkdtboimg.py" ]; then
-        echo "[*] Downloading missing mkdtboimg.py tool..."
-        mkdir -p scripts/dtc/libfdt/
-        curl -sL -o scripts/dtc/libfdt/mkdtboimg.py https://raw.githubusercontent.com/LineageOS/android_system_libufdt/lineage-19.1/utils/src/mkdtboimg.py
-    fi
     if [ -f "scripts/dtc/libfdt/mkdtboimg.py" ]; then
-        # Check if there are actually any .dtbo files to pack
         count=$(ls -1 ${OUT_DIR}/arch/arm64/boot/dts/vendor/qcom/*.dtbo 2>/dev/null | wc -l)
         if [ "$count" != "0" ]; then
              python3 scripts/dtc/libfdt/mkdtboimg.py create anykernel/dtbo.img --page_size=4096 ${OUT_DIR}/arch/arm64/boot/dts/vendor/qcom/*.dtbo
@@ -228,7 +223,6 @@ KSU_TAG="NoRoot"
 [ "$ENABLE_KSU" -eq 1 ] && KSU_TAG="SukiSU"
 ZIP_NAME="EXTREME_HyperOS_munch_${KSU_TAG}_$(date +'%d%b%Y_%H%M').zip"
 
-# Clean up AK3 dir before zipping just in case
 rm -rf .git
 zip -r9 "../${ZIP_NAME}" ./* -x .gitignore out/ ./*.zip > /dev/null
 cd ..
