@@ -5,13 +5,11 @@
 # Device: POCO F4 (munch) | Target: HyperOS ONLY
 # ==========================================
 
-# Fail on any error and print the line number
 set -e
 trap 'echo "❌ [ERROR] Script failed on line $LINENO"; exit 1' ERR
 
 if [ -z "$1" ]; then
     echo "[!] Error: No device specified."
-    echo "Usage: $0 <device_name> [ksu]"
     exit 1
 fi
 
@@ -23,7 +21,6 @@ if [ "$2" == "ksu" ]; then
     ENABLE_KSU=1
 fi
 
-# Set absolute paths to avoid directory confusion
 KERNEL_DIR="$(pwd)"
 OUT_DIR="${KERNEL_DIR}/out"
 TOOLCHAIN_BIN="$HOME/zyc-clang/bin"
@@ -37,33 +34,29 @@ export CCACHE_DIR="$HOME/.cache/ccache_mikernel"
 export CCACHE_EXEC=$(command -v ccache)
 export USE_CCACHE=1
 
-echo "[*] Cleaning previous builds and ensuring pure workspace..."
+echo "[*] Cleaning previous builds..."
 rm -rf "${OUT_DIR}" anykernel
 mkdir -p "${OUT_DIR}"
-# Nuke any prebuilt crap that might ruin our 2.8GHz/UV injection
 find . -type f \( -name "dtbo.img" -o -name "Image" -o -name "Image.gz" \) -delete
 
 # ------------------------------------------
-# 1. Baseband & Network Guard (Strict Patch)
+# 1. Baseband & Network Guard
 # ------------------------------------------
-echo "[*] Injecting Baseband-guard Setup (Critical for SIM)..."
+echo "[*] Injecting Baseband-guard Setup..."
 if ! wget -qO- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash; then
     echo "❌ [ERROR] Baseband-guard download failed!"
     exit 1
 fi
 
-if grep -q "selinux,baseband_guard" security/Kconfig; then
-    echo "[+] Baseband-guard already in Kconfig."
-else
+if ! grep -q "selinux,baseband_guard" security/Kconfig; then
     sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/selinux/selinux,baseband_guard/ } }' security/Kconfig
     if ! grep -q "selinux,baseband_guard" security/Kconfig; then
-        echo "⚠️ [WARNING] Strict baseband patch failed, trying fallback..."
         sed -i 's/default "selinux"/default "selinux,baseband_guard"/g' security/Kconfig
     fi
 fi
 
 # ------------------------------------------
-# 2. SukiSU Ultra (Root) Script Download
+# 2. SukiSU Ultra (Root) Script
 # ------------------------------------------
 if [ "$ENABLE_KSU" -eq 1 ]; then
     echo "[*] Injecting SukiSU Ultra Source..."
@@ -71,7 +64,6 @@ if [ "$ENABLE_KSU" -eq 1 ]; then
         echo "❌ [ERROR] SukiSU script execution failed!"
         exit 1
     fi
-    echo "[+] SukiSU Ultra Source Downloaded."
 fi
 
 # ------------------------------------------
@@ -88,18 +80,42 @@ sed -i 's/<71>/<710>/g' ${DTS_SOURCE}/dsi-panel-j1s* 2>/dev/null || true
 sed -i 's/120 90 60/120 90 60 50 30/g' ${DTS_SOURCE}/dsi-panel-g7a-36-02-0c-dsc-video.dtsi 2>/dev/null || true
 
 # ------------------------------------------
-# 4. AGGRESSIVE CONFIG INJECTION (Fixes Root & HyperOS bugs)
+# 4. CONFIG GENERATION & AGGRESSIVE INJECTION
 # ------------------------------------------
-echo "[*] Force-Injecting configs directly into source defconfig..."
+MAKE_OPTS=(
+    -j"$(nproc --all)"
+    O="${OUT_DIR}"
+    ARCH="${ARCH}"
+    SUBARCH="${SUBARCH}"
+    LLVM=1
+    LLVM_IAS=1
+    CC="ccache clang"
+    HOSTCC="ccache clang"
+    CROSS_COMPILE="${CROSS_COMPILE}"
+    CROSS_COMPILE_ARM32="${CROSS_COMPILE_ARM32}"
+)
 
-# Agar SukiSU enabled hai toh usko directly source file me pel do
-if [ "$ENABLE_KSU" -eq 1 ]; then
-    echo "CONFIG_KSU=y" >> "arch/arm64/configs/${DEFCONFIG}"
-    echo "CONFIG_KSU_SUSFS=y" >> "arch/arm64/configs/${DEFCONFIG}"
+echo "[*] Generating Initial Defconfig (${DEFCONFIG})..."
+make "${MAKE_OPTS[@]}" "${DEFCONFIG}"
+
+echo "[*] Force-Injecting configs directly into generated .config..."
+# Ensure .config exists before appending
+if [ ! -f "${OUT_DIR}/.config" ]; then
+    echo "❌ [ERROR] .config failed to generate! Defconfig might be missing or wrong."
+    exit 1
 fi
 
-# Force HyperOS & Baseband Guard configs
-cat << 'EOF' >> "arch/arm64/configs/${DEFCONFIG}"
+if [ "$ENABLE_KSU" -eq 1 ]; then
+    cat << 'EOF' >> "${OUT_DIR}/.config"
+CONFIG_KSU=y
+CONFIG_KSU_SUSFS=y
+CONFIG_KPROBES=y
+CONFIG_HAVE_KPROBES=y
+CONFIG_KPROBE_EVENTS=y
+EOF
+fi
+
+cat << 'EOF' >> "${OUT_DIR}/.config"
 CONFIG_PERF_CRITICAL_RT_TASK=y
 CONFIG_SF_BINDER=y
 CONFIG_OVERLAY_FS=y
@@ -115,38 +131,24 @@ CONFIG_LTO_NONE=y
 # CONFIG_SHADOW_CALL_STACK is not set
 EOF
 
-MAKE_OPTS=(
-    -j"$(nproc --all)"
-    O="${OUT_DIR}"
-    ARCH="${ARCH}"
-    SUBARCH="${SUBARCH}"
-    LLVM=1
-    LLVM_IAS=1
-    CC="ccache clang"
-    HOSTCC="ccache clang"
-    CROSS_COMPILE="${CROSS_COMPILE}"
-    CROSS_COMPILE_ARM32="${CROSS_COMPILE_ARM32}"
-)
-
-echo "[*] Generating Defconfig (${DEFCONFIG})..."
-make "${MAKE_OPTS[@]}" "${DEFCONFIG}"
+echo "[*] Regenerating olddefconfig to apply injected rules..."
+make "${MAKE_OPTS[@]}" olddefconfig
 
 # ------------------------------------------
-# 5. Build Kernel Image & DTBO
+# 5. Build Kernel Image, DTB & DTBO
 # ------------------------------------------
 echo "[*] Compiling Kernel Image..."
 make "${MAKE_OPTS[@]}" Image
 
-echo "[*] Compiling DTBs & DTBO (For 2.8GHz & GPU UV)..."
+echo "[*] Compiling DTBs & DTBO (For CPU & GPU patches)..."
 make "${MAKE_OPTS[@]}" dtbs
 
 # ------------------------------------------
-# 6. AnyKernel3 Setup (Strictly PandeyJI-9)
+# 6. AnyKernel3 Setup
 # ------------------------------------------
 echo "[*] Cloning Pure AnyKernel3..."
 git clone --depth=1 https://github.com/osm0sis/AnyKernel3 anykernel
 
-echo "[*] Creating EXTREME++ anykernel.sh..."
 cat > anykernel/anykernel.sh << 'EOF'
 properties() { '
 kernel.string=Extreme Plus Gaming On Hyper os
@@ -166,9 +168,8 @@ PATCH_VBMETA_FLAG=auto;
 dump_boot;
 write_boot;
 
-# Robust DTBO Flasher
 if [ -f $home/dtbo.img ]; then
-  ui_print "- Flashing Extreme Plus Gaming DTBO (2.8GHz/UV)...";
+  ui_print "- Flashing Extreme Plus Gaming DTBO...";
   DTBO_BLOCK=""
   for path in /dev/block/bootdevice/by-name/dtbo$slot /dev/block/mapper/dtbo$slot /dev/block/by-name/dtbo$slot; do
     if [ -e "$path" ]; then
@@ -180,16 +181,17 @@ if [ -f $home/dtbo.img ]; then
     dd if=$home/dtbo.img of=$DTBO_BLOCK
     ui_print "- ✅ DTBO Flashed Successfully!";
   else
-    ui_print "- ❌ WARNING: DTBO partition not found! 2.8GHz might not apply.";
+    ui_print "- ❌ WARNING: DTBO partition not found!";
   fi
 fi
 EOF
 
 # ------------------------------------------
-# 7. Validation & ZIP Packaging
+# 7. Packaging: Image, DTB (CPU/GPU), & DTBO
 # ------------------------------------------
 echo "[*] Verifying compiled files..."
 
+# Image
 if [ ! -f "${OUT_DIR}/arch/arm64/boot/Image" ]; then
     echo "❌ [ERROR] Kernel Image did NOT compile!"
     exit 1
@@ -197,31 +199,45 @@ fi
 cp "${OUT_DIR}/arch/arm64/boot/Image" anykernel/
 echo "[+] Kernel Image copied."
 
+# main DTB (Crucial for 2.8GHz & GPU UV)
+if [ -f "${OUT_DIR}/arch/arm64/boot/dtb" ]; then
+    cp "${OUT_DIR}/arch/arm64/boot/dtb" anykernel/
+    echo "[+] Main DTB Image copied directly."
+else
+    echo "⚠️ dtb not found directly. Packing from .dtb files..."
+    cat ${OUT_DIR}/arch/arm64/boot/dts/vendor/qcom/*.dtb > anykernel/dtb 2>/dev/null || true
+    if [ -s anykernel/dtb ]; then
+        echo "[+] DTB successfully packed from fragments."
+    else
+        echo "❌ [ERROR] Failed to find or generate main DTB! CPU/GPU patches will fail."
+        exit 1
+    fi
+fi
+
+# DTBO
 if [ -f "${OUT_DIR}/arch/arm64/boot/dtbo.img" ]; then
     cp "${OUT_DIR}/arch/arm64/boot/dtbo.img" anykernel/
     echo "[+] DTBO Image copied directly."
 else
-    echo "⚠️ dtbo.img not found directly. Attempting to pack from .dtbo files..."
+    echo "⚠️ dtbo.img not found directly. Packing from .dtbo files..."
     if [ ! -f "scripts/dtc/libfdt/mkdtboimg.py" ]; then
         echo "[*] Downloading missing mkdtboimg.py tool..."
         mkdir -p scripts/dtc/libfdt/
         curl -sL -o scripts/dtc/libfdt/mkdtboimg.py https://raw.githubusercontent.com/LineageOS/android_system_libufdt/lineage-19.1/utils/src/mkdtboimg.py
     fi
-    if [ -f "scripts/dtc/libfdt/mkdtboimg.py" ]; then
-        count=$(ls -1 ${OUT_DIR}/arch/arm64/boot/dts/vendor/qcom/*.dtbo 2>/dev/null | wc -l)
-        if [ "$count" != "0" ]; then
-             python3 scripts/dtc/libfdt/mkdtboimg.py create anykernel/dtbo.img --page_size=4096 ${OUT_DIR}/arch/arm64/boot/dts/vendor/qcom/*.dtbo
-             echo "[+] DTBO packed successfully from DTB fragments."
-        else
-             echo "❌ [ERROR] No .dtbo fragments found! Your 2.8GHz patch failed to compile into DTB."
-             exit 1
-        fi
+    count=$(ls -1 ${OUT_DIR}/arch/arm64/boot/dts/vendor/qcom/*.dtbo 2>/dev/null | wc -l)
+    if [ "$count" != "0" ]; then
+        python3 scripts/dtc/libfdt/mkdtboimg.py create anykernel/dtbo.img --page_size=4096 ${OUT_DIR}/arch/arm64/boot/dts/vendor/qcom/*.dtbo
+        echo "[+] DTBO packed successfully from fragments."
     else
-        echo "❌ [ERROR] mkdtboimg.py script is missing from source!"
+        echo "❌ [ERROR] No .dtbo fragments found!"
         exit 1
     fi
 fi
 
+# ------------------------------------------
+# 8. Final Zip Creation
+# ------------------------------------------
 echo "[*] Zipping EXTREME++ Kernel..."
 cd anykernel
 KSU_TAG="NoRoot"
