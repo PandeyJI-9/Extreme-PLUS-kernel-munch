@@ -53,7 +53,7 @@ if ! grep -q "selinux,baseband_guard" security/Kconfig; then
 fi
 
 # ------------------------------------------
-# 2. SukiSU Ultra (Root) Setup
+# 2. SukiSU Ultra (Root) Setup - THE HARDCORE BYPASS
 # ------------------------------------------
 if [ "$ENABLE_KSU" -eq 1 ]; then
     echo "[*] Injecting SukiSU Ultra Source..."
@@ -61,6 +61,10 @@ if [ "$ENABLE_KSU" -eq 1 ]; then
         echo "❌ [ERROR] SukiSU script execution failed!"
         exit 1
     fi
+    
+    echo "[*] Hardcoding SukiSU into Makefile..."
+    sed -i 's/obj-$(CONFIG_KSU) += KernelSU\//obj-y += KernelSU\//g' drivers/Makefile 2>/dev/null || true
+    echo "ccflags-y += -DCONFIG_KSU=1" >> drivers/KernelSU/Makefile 2>/dev/null || true
 fi
 
 # ------------------------------------------
@@ -87,20 +91,23 @@ make "${MAKE_OPTS[@]}" "${DEFCONFIG}"
 # ------------------------------------------
 echo "[*] Injecting Custom Configs Safely..."
 
-# Baseband
 scripts/config --file "${OUT_DIR}/.config" -e BBG
 
-# SukiSU Root Injection (Safe method, no KPROBES needed for inline)
 if [ "$ENABLE_KSU" -eq 1 ]; then
-    scripts/config --file "${OUT_DIR}/.config" -e KSU -e THREAD_INFO_IN_TASK -e KSU_SUSFS
+    echo "[*] Enabling KPROBES, KSU and SUSFS..."
+    # Force Kprobes
+    scripts/config --file "${OUT_DIR}/.config" -e KPROBES -e HAVE_KPROBES -e KPROBE_EVENTS
+    # Force KSU & SUSFS (Fix applied: SUSFS re-enabled)
+    scripts/config --file "${OUT_DIR}/.config" -e KSU -e KSU_SUSFS
 fi
 
-# HyperOS Essential Gaming & Display Configs
+# HyperOS Essential Gaming & Display Configs + Disabling LTO to PREVENT GitHub Actions RAM Crash
 scripts/config --file "${OUT_DIR}/.config" \
     --set-str STATIC_USERMODEHELPER_PATH /system/bin/micd \
     -e PERF_CRITICAL_RT_TASK -e SF_BINDER -e OVERLAY_FS -e MIGT \
     -e MIGT_ENERGY_MODEL -e MIHW -e XIAOMI_MIUI -e TASK_DELAY_ACCT \
-    -e MIUI_ZRAM_MEMORY_TRACKING -e PERF_HELPER -e LTO_NONE -d LTO_CLANG
+    -e MIUI_ZRAM_MEMORY_TRACKING -e PERF_HELPER \
+    -e LTO_NONE -d LTO_CLANG -d LTO_CLANG_THIN -d CFI_CLANG
 
 # Validate and apply injected configs
 make "${MAKE_OPTS[@]}" olddefconfig
@@ -158,11 +165,10 @@ fi
 EOF
 
 # ------------------------------------------
-# 7. Packaging: DTB, DTBO, & Image (THE ROOT & CLOCK FIX)
+# 7. Packaging: DTB, DTBO, & Image 
 # ------------------------------------------
 echo "[*] Verifying compiled files..."
 
-# 1. Kernel Image
 if [ ! -f "${OUT_DIR}/arch/arm64/boot/Image" ]; then
     echo "❌ [ERROR] Kernel Image did NOT compile!"
     exit 1
@@ -170,7 +176,6 @@ fi
 cp "${OUT_DIR}/arch/arm64/boot/Image" anykernel/
 echo "[+] Kernel Image copied."
 
-# 2. Main DTB (CRITICAL FOR CPU 2.8GHz & GPU UV)
 echo "[*] Copying main DTB for CPU/GPU Frequencies..."
 if ls ${OUT_DIR}/arch/arm64/boot/dts/vendor/qcom/*.dtb >/dev/null 2>&1; then
     cat ${OUT_DIR}/arch/arm64/boot/dts/vendor/qcom/*.dtb > anykernel/dtb
@@ -180,7 +185,6 @@ else
     exit 1
 fi
 
-# 3. DTBO Image (Using Bot's tool download fix)
 if [ ! -f "${OUT_DIR}/arch/arm64/boot/dtbo.img" ]; then
     echo "⚠️ dtbo.img not found directly. Attempting to pack from .dtbo files..."
     if [ ! -f "scripts/dtc/libfdt/mkdtboimg.py" ]; then
