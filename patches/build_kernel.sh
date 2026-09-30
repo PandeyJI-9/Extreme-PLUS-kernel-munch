@@ -16,6 +16,7 @@ if [ -z "$1" ]; then
 fi
 
 DEVICE_NAME="$1"
+DEFCONFIG="${DEVICE_NAME}_defconfig"
 ENABLE_KSU=0
 
 if [ "$2" == "ksu" ]; then
@@ -104,8 +105,8 @@ MAKE_OPTS=(
     CROSS_COMPILE_ARM32="${CROSS_COMPILE_ARM32}"
 )
 
-echo "[*] Generating Defconfig (munch-perf_defconfig)..."
-make "${MAKE_OPTS[@]}" vendor/munch-perf_defconfig
+echo "[*] Generating Defconfig (${DEFCONFIG})..."
+make "${MAKE_OPTS[@]}" "${DEFCONFIG}"
 
 echo "[*] Injecting Core HyperOS configs..."
 scripts/config --file "${OUT_DIR}/.config" -e BBG
