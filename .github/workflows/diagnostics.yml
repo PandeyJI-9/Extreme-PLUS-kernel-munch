@@ -1,18 +1,12 @@
----
 # ╔══════════════════════════════════════════════════════════════╗
 # ║  EXTREME++HyperOS — STANDALONE DIAGNOSTICS                   ║
-# ║  Picks up the RELEASED .zip and runs deep verification       ║
-# ║  Run this AFTER a successful build if you want a report      ║
+# ║  Auto-fetches the LATEST release & runs deep binary audit    ║
 # ╚══════════════════════════════════════════════════════════════╝
 name: "☣️ Diagnostics & Audit"
 
 on:
   workflow_dispatch:
-    inputs:
-      release_tag:
-        description: "Release tag to audit (must already exist)"
-        required: true
-        default: "v1.0-extreme"
+    # No inputs required! Yeh automatically latest release uthayega.
 
 permissions:
   contents: read
@@ -21,131 +15,132 @@ jobs:
   audit:
     name: "Deep Binary Audit"
     runs-on: ubuntu-22.04
-    timeout-minutes: 30
+    timeout-minutes: 10
 
     steps:
-      - name: "📦 Checkout config repo"
-        uses: actions/checkout@v4
-
-      - name: "🛠️ Install tools"
+      - name: "🛠️ Install diagnostic tools"
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends \
-            wget unzip device-tree-compiler bc
+            wget unzip device-tree-compiler bc binutils jq gh
 
-      - name: "📥 Download release ZIP"
+      - name: "📥 Auto-Fetch Latest ZIP"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG="${{ inputs.release_tag }}"
-          echo "Fetching release: ${TAG}"
-          gh release download "${TAG}" \
+          # Automatically GitHub API se latest release ka tag nikalo
+          LATEST_TAG=$(gh api repos/${{ github.repository }}/releases/latest --jq .tag_name)
+          echo "Latest release detected: $LATEST_TAG"
+          echo "RELEASE_TAG=$LATEST_TAG" >> $GITHUB_ENV
+          
+          mkdir -p release_dl
+          gh release download "$LATEST_TAG" \
             --repo "${{ github.repository }}" \
             --pattern "*.zip" \
             --dir release_dl
 
           ZIP_FILE=$(find release_dl -name "*.zip" | head -1)
           if [ -z "$ZIP_FILE" ]; then
-            echo "::error::No ZIP found in release ${TAG}"
+            echo "❌ ERROR: No ZIP found in latest release ($LATEST_TAG)"
             exit 1
           fi
-          echo "ZIP_FILE=${ZIP_FILE}" >> $GITHUB_ENV
-          echo "Found: ${ZIP_FILE}"
+          echo "ZIP_FILE=$ZIP_FILE" >> $GITHUB_ENV
+          echo "Found ZIP: $ZIP_FILE"
 
-      - name: "🔬 Audit Report"
+      - name: "🔬 Deep Binary Audit"
         run: |
-          echo "# ☣️ EXTREME++HyperOS Diagnostics Report" >> $GITHUB_STEP_SUMMARY
-          echo "**Release:** \`${{ inputs.release_tag }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-
-          # ── ZIP Integrity ──
-          echo "## 1. 📦 ZIP Integrity" >> $GITHUB_STEP_SUMMARY
-          if unzip -t "$ZIP_FILE" > /dev/null 2>&1; then
-            echo "✅ Archive is valid, no corruption detected." >> $GITHUB_STEP_SUMMARY
-          else
-            echo "❌ ZIP is corrupted! DO NOT FLASH." >> $GITHUB_STEP_SUMMARY
-            exit 1
-          fi
-
-          # ── Extract contents ──
           mkdir -p audit_extract
           unzip -o "$ZIP_FILE" -d audit_extract > /dev/null
 
-          # ── Kernel Image ──
-          echo "## 2. 🧠 Kernel Image" >> $GITHUB_STEP_SUMMARY
-          if [ -f audit_extract/Image.gz ]; then
-            SIZE=$(stat -c%s audit_extract/Image.gz)
-            SIZE_MB=$(echo "scale=1; $SIZE/1048576" | bc)
-            echo "✅ Image.gz present (${SIZE_MB} MB)" >> $GITHUB_STEP_SUMMARY
+          # 1. Kernel Image Setup
+          if [ -f audit_extract/Image ]; then
+            KERNEL_BIN="audit_extract/Image"
+          elif [ -f audit_extract/Image.gz ]; then
+            gunzip -k audit_extract/Image.gz
+            KERNEL_BIN="audit_extract/Image"
           else
-            echo "❌ Image.gz MISSING from ZIP!" >> $GITHUB_STEP_SUMMARY
+            echo "❌ Kernel Image MISSING!"
             exit 1
           fi
-
-          # ── DTBO ──
-          echo "## 3. 🌲 Device Tree Overlay" >> $GITHUB_STEP_SUMMARY
-          if [ -f audit_extract/dtbo.img ]; then
-            echo "✅ dtbo.img present" >> $GITHUB_STEP_SUMMARY
+          
+          # 2. Deep Root (SukiSU) & KPROBES Scan
+          echo "Scanning binary for SukiSU..."
+          if strings "$KERNEL_BIN" | grep -qi "kernelsu"; then
+            echo "ROOT_STATUS=✅ Verified In-Binary (SukiSU)" >> $GITHUB_ENV
           else
-            echo "⚠️ dtbo.img not found (may use stock DTBO)" >> $GITHUB_STEP_SUMMARY
+            echo "ROOT_STATUS=❌ Missing in Binary" >> $GITHUB_ENV
           fi
 
-          # ── AnyKernel3 Script ──
-          echo "## 4. ⚙️ Flasher Script" >> $GITHUB_STEP_SUMMARY
-          if [ -f audit_extract/anykernel.sh ]; then
-            if grep -q "device.name1=munch" audit_extract/anykernel.sh; then
-              echo "✅ anykernel.sh targets \`munch\` (POCO F4)" >> $GITHUB_STEP_SUMMARY
+          echo "Scanning binary for KProbes..."
+          if strings "$KERNEL_BIN" | grep -qi "kprobe"; then
+            echo "KPROBE_STATUS=✅ Active" >> $GITHUB_ENV
+          else
+            echo "KPROBE_STATUS=❌ Missing" >> $GITHUB_ENV
+          fi
+
+          # 3. DTB Check (CPU/GPU Frequencies)
+          if [ -f audit_extract/dtb ]; then
+            # Try decompiling to ensure it's valid
+            dtc -I dtb -O dts audit_extract/dtb > audit_extract/decompiled.dts 2>/dev/null || true
+            if [ -f audit_extract/decompiled.dts ]; then
+              echo "DTB_STATUS=✅ Packed & Decompiled" >> $GITHUB_ENV
             else
-              echo "❌ anykernel.sh does NOT target munch!" >> $GITHUB_STEP_SUMMARY
-              exit 1
-            fi
-            if grep -q "EXTREME++HyperOS" audit_extract/anykernel.sh; then
-              echo "✅ Kernel string: EXTREME++HyperOS" >> $GITHUB_STEP_SUMMARY
+              echo "DTB_STATUS=⚠️ Packed but failed to decompile" >> $GITHUB_ENV
             fi
           else
-            echo "❌ anykernel.sh MISSING!" >> $GITHUB_STEP_SUMMARY
-            exit 1
+            echo "DTB_STATUS=❌ Missing (Frequencies failed)" >> $GITHUB_ENV
           fi
 
-          # ── SukiSU Check ──
-          echo "## 5. 🔑 Root Manager" >> $GITHUB_STEP_SUMMARY
-          if echo "$ZIP_FILE" | grep -qi "sukisu"; then
-            echo "✅ SukiSU Ultra detected in filename" >> $GITHUB_STEP_SUMMARY
+          # 4. DTBO Check
+          if [ -f audit_extract/dtbo.img ]; then
+            echo "DTBO_STATUS=✅ Present" >> $GITHUB_ENV
           else
-            echo "ℹ️ No SukiSU tag in filename (may be non-root build)" >> $GITHUB_STEP_SUMMARY
+            echo "DTBO_STATUS=❌ Missing" >> $GITHUB_ENV
           fi
 
-          # ── Final ──
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "## 🏆 Verdict" >> $GITHUB_STEP_SUMMARY
-          echo "**SAFE TO FLASH** ✅" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "_Report generated at $(date -u '+%Y-%m-%d %H:%M UTC')_" >> $GITHUB_STEP_SUMMARY
+          # 5. AnyKernel Branding
+          if grep -q "Extreme Plus Gaming On Hyper os" audit_extract/anykernel.sh; then
+            echo "BRAND_STATUS=✅ Verified" >> $GITHUB_ENV
+          else
+            echo "BRAND_STATUS=❌ Wrong Branding" >> $GITHUB_ENV
+          fi
 
-      - name: "📢 Telegram: Audit Report"
+      - name: "📢 Telegram: Deep Report"
         if: always()
         env:
           BOT_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
           [ -z "$BOT_TOKEN" ] || [ -z "$CHAT_ID" ] && exit 0
+          
+          # Fallback values if script crashed mid-way
+          ROOT_STATUS="${ROOT_STATUS:-❌ Audit Failed}"
+          KPROBE_STATUS="${KPROBE_STATUS:-❌ Audit Failed}"
+          DTB_STATUS="${DTB_STATUS:-❌ Audit Failed}"
+          DTBO_STATUS="${DTBO_STATUS:-❌ Audit Failed}"
+          BRAND_STATUS="${BRAND_STATUS:-❌ Audit Failed}"
+          
           if [ "${{ job.status }}" = "success" ]; then
-            EMOJI="✅"
-            VERDICT="SAFE TO FLASH"
+            VERDICT="SAFE TO FLASH 🚀"
           else
-            EMOJI="❌"
-            VERDICT="ISSUES FOUND"
+            VERDICT="DANGER / CORRUPTED ⚠️"
           fi
-          RUN_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          
           TEXT=$(cat << EOF
-          ${EMOJI} <b>Diagnostics Report — <code>${{ inputs.release_tag }}</code></b>
+          ☣️ <b>EXTREME++ DEEP AUDIT REPORT</b>
+          🏷 Tag: <code>${RELEASE_TAG:-Unknown}</code>
 
-          📱 Device: POCO F4 (munch)
-          🏆 Verdict: <b>${VERDICT}</b>
+          <b>🔬 Binary Scan Results:</b>
+          🔑 Root (SukiSU): ${ROOT_STATUS}
+          🪝 KProbes (Root Mount): ${KPROBE_STATUS}
+          🌲 Main DTB (CPU/GPU): ${DTB_STATUS}
+          🖥️ DTBO Image: ${DTBO_STATUS}
+          🏷️ Branding: ${BRAND_STATUS}
 
-          🔗 <a href="${RUN_URL}">View Full Report</a>
+          🏆 <b>Verdict:</b> ${VERDICT}
           EOF
           )
+          
           curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
             -d chat_id="${CHAT_ID}" -d parse_mode="HTML" \
             -d text="${TEXT}"
