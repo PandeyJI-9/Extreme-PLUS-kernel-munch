@@ -1,7 +1,7 @@
 # ╔══════════════════════════════════════════════════════════════╗
-# ║  EXTREME++HyperOS — GOD-MODE BUILD PIPELINE                  ║
-# ║  POCO F4 (munch) | SM8250-AC | Snapdragon 870               ║
-# ║  Maintainer: PandeyJI-9                                     ║
+# ║  EXTREME++GAMING — MASTER BUILD PIPELINE                     ║
+# ║  POCO F4 (munch) | HyperOS Exclusive                         ║
+# ║  Maintainer: PandeyJI-9                                      ║
 # ╚══════════════════════════════════════════════════════════════╝
 name: "🔥 EXTREME++ Build & Release"
 
@@ -31,7 +31,7 @@ permissions:
 
 jobs:
   build-and-release:
-    name: "Patch → Compile → Release"
+    name: "Compile → Release"
     runs-on: ubuntu-22.04
     timeout-minutes: 120
 
@@ -46,6 +46,7 @@ jobs:
           🚧 <b>EXTREME++HyperOS Build Started!</b> 🚧
           📱 Device: POCO F4 (munch)
           🏷 Tag: <code>${{ inputs.release_tag }}</code>
+          👨‍💻 Dev: PandeyJI-9
           MSGEOF
           )
           curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
@@ -73,28 +74,34 @@ jobs:
         run: |
           git clone --depth=1 --branch "$KERNEL_BRANCH" "$KERNEL_REPO" kernel
 
-      - name: "🩹 Apply EXTREME++ patches (CPU/GPU/Names)"
+      - name: "🩹 Apply EXTREME++ CPU/GPU Patches"
         run: |
           chmod +x config-repo/patches/apply-all.sh
           bash config-repo/patches/apply-all.sh kernel
 
-      - name: "⚙️ Replace Dev Script with OUR Script"
+      - name: "⚙️ Inject PandeyJI Custom Build Script"
         run: |
-          # YAHAN FIX KIYA HAI! Tere patches folder se utha raha hai
-          echo "Copying custom build_kernel.sh from patches folder..."
           cp config-repo/patches/build_kernel.sh kernel/build_kernel.sh
           chmod +x kernel/build_kernel.sh
-          echo "✅ Custom script successfully injected!"
 
-      - name: "🔨 Compile Kernel (The EXTREME Engine)"
+      - name: "🔨 Compile EXTREME++ Kernel"
         working-directory: kernel
         run: |
           if [ "${{ inputs.inject_sukisu }}" == "true" ]; then
-            echo "Running custom build script WITH Root..."
-            ./build_kernel.sh munch ksu miui
+            ./build_kernel.sh munch ksu
           else
-            echo "Running custom build script WITHOUT Root..."
-            ./build_kernel.sh munch miui
+            ./build_kernel.sh munch
+          fi
+          
+          # FIXED: Fail-proof ZIP Path Export using 'find' instead of 'ls'
+          ZIP_FILE=$(find . -maxdepth 1 -name "EXTREME_HyperOS_munch_*.zip" | head -n 1)
+          if [ -n "$ZIP_FILE" ] && [ -f "$ZIP_FILE" ]; then
+            echo "ZIP_PATH=$(realpath $ZIP_FILE)" >> $GITHUB_ENV
+            echo "ZIP_NAME=$(basename $ZIP_FILE)" >> $GITHUB_ENV
+            echo "✅ ZIP successfully located: $ZIP_FILE"
+          else
+            echo "❌ ERROR: ZIP file failed to generate!"
+            exit 1
           fi
 
       - name: "🚀 Create GitHub Release"
@@ -103,8 +110,8 @@ jobs:
         run: |
           gh release create "${{ inputs.release_tag }}" "$ZIP_PATH" \
             --repo "${{ github.repository }}" \
-            --title "EXTREME++HyperOS ${{ inputs.release_tag }} | POCO F4 (munch)" \
-            --notes "God-Mode Build. SukiSU Ultra Root, CPU 2.8GHz, & GPU 150MHz UV Guaranteed."
+            --title "EXTREME++HyperOS ${{ inputs.release_tag }} | POCO F4" \
+            --notes "God-Mode Build by PandeyJI-9. SukiSU Ultra Root, CPU 2.8GHz, & GPU 150MHz UV."
 
       - name: "📢 Telegram: Build Success"
         if: success()
@@ -115,9 +122,10 @@ jobs:
           [ -z "$BOT_TOKEN" ] || [ -z "$CHAT_ID" ] && exit 0
           DL="https://github.com/${{ github.repository }}/releases/tag/${{ inputs.release_tag }}"
           TEXT=$(cat << EOF
-          ⚡ <b>EXTREME++HyperOS Kernel</b> — <code>${{ inputs.release_tag }}</code>
+          ⚡ <b>Extreme Plus Gaming On Hyper os</b> — <code>${{ inputs.release_tag }}</code>
 
           📱 Device: POCO F4 (munch)
+          👨‍💻 Dev: PandeyJI-9
           🎮 GPU: 150MHz Extreme UV
           🏎 CPU: 2.8GHz Capped
           🔑 Root: SukiSU Ultra ✅
