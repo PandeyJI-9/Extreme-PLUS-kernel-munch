@@ -88,6 +88,37 @@ jobs:
           files: ${{ env.ZIP_PATH }}
           tag_name: "Beta-testing-v1.1.2.${{ github.run_number }}"
           name: "EXTREME++ Build #${{ github.run_number }}"
+          body: |
+            ## 🚀 EXTREME++ GAMING HyperOS Kernel
+
+            ### 📱 Device & Build Information
+            - **Device:** POCO F4 (munch / munch-in)
+            - **SoC:** Qualcomm Snapdragon 870 5G (SM8250-AC / Kona v2.1)
+            - **Target OS:** HyperOS / MIUI Android 13–17
+            - **Build Number:** #${{ github.run_number }}
+            - **Toolchain:** ZyC-Clang 16.0.6 + LLD + ccache
+            - **Root & Hooks:** ReSukiSU Non-GKI 4.19 Legacy with SuSFS v1.5.5
+
+            ---
+
+            ### ⚡ Performance & Thermal Optimizations
+            - 🏎 **CPU Frequency Cap:** Prime Core hard-capped at **2.84 GHz** (`2841600`) via `qcom-cpufreq-hw` driver & `kona.dtsi` to eliminate 3.2 GHz thermal throttle spikes.
+            - 🎮 **GPU Undervolt (UV):** FakeDreamer **10-Step OPP Table (150 MHz – 670 MHz)** applied across all Kona speed-bins with RPMh safe voltage mapping:
+              - Peak 670 MHz undervolted to `SVS_L2` (smooth sustained 60/90/120 FPS).
+              - Added Ultra-Low idle states: `250 MHz`, `200 MHz`, `150 MHz` for maximum battery savings.
+              - `KGSL_MAX_PWRLEVELS` expanded to 16 for full 10-step frequency scaling.
+            - 🚀 **Zero Heat Policy:** 100% untouched stock thermal-engine, trip points, and TSENS. Hardware-safe sustained gaming.
+            - 🧠 **Memory & Responsiveness:**
+              - ZRAM compressed with **ZSTD** algorithm (`CONFIG_ZRAM_DEF_COMP_ZSTD=y`).
+              - Instant touch response: Schedutil `up_rate_limit_us` tuned to 0 for instant ramp-up.
+              - Optimized `vm.swappiness = 100` & `vfs_cache_pressure = 100` for lag-free multitasking on 6GB/8GB RAM models.
+
+            ---
+
+            ### 📦 Flashing Instructions
+            1. Boot into custom recovery (TWRP / OrangeFox).
+            2. Flash the kernel ZIP (`split_boot` method preserves stock HyperOS ramdisk).
+            3. Reboot system and install **ReSukiSU / KernelSU Manager**.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

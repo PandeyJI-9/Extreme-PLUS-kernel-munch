@@ -38,6 +38,10 @@ GPU_OPP_TABLE = """\tgpu_opp_table: gpu-opp-table {
 \t\t\topp-hz = /bits/ 64 <490000000>;
 \t\t\topp-microvolt = <RPMH_REGULATOR_LEVEL_SVS>;
 \t\t};
+\t\topp-441600000 {
+\t\t\topp-hz = /bits/ 64 <441600000>;
+\t\t\topp-microvolt = <RPMH_REGULATOR_LEVEL_LOW_SVS>;
+\t\t};
 \t\topp-441000000 {
 \t\t\topp-hz = /bits/ 64 <441000000>;
 \t\t\topp-microvolt = <RPMH_REGULATOR_LEVEL_LOW_SVS>;
@@ -72,7 +76,7 @@ def patch(path):
         print(f"⚠️️ ERROR: File not found -> {path}")
         return True
 
-    if '670000000' in text and '150000000' in text:
+    if '670000000' in text and '150000000' in text and '441600000' in text:
         print("✅ GPU OPP table already patched — skipping")
         return True
 
@@ -96,7 +100,7 @@ def patch(path):
             text = text[:match2.start()] + opp_v2 + text[block_end:]
             print("✅ Replaced gpu_opp_table_v2 in " + path)
 
-    text = re.sub(r'qcom,initial-pwrlevel\s*=\s*<\d+>', 'qcom,initial-pwrlevel = <5>', text)
+    text = re.sub(r'qcom,initial-pwrlevel\s*=\s*<\d+>', 'qcom,initial-pwrlevel = <6>', text)
 
     with open(path, 'w') as f:
         f.write(text)

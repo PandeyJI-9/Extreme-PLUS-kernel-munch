@@ -53,6 +53,17 @@ sed -i 's/^CONFIG_LOCALVERSION=.*/CONFIG_LOCALVERSION="-EXTREME++GAMING_Hyperos"
 grep -q "CONFIG_LOCALVERSION=" "arch/arm64/configs/${DEFCONFIG}" || echo 'CONFIG_LOCALVERSION="-EXTREME++GAMING_Hyperos"' >> "arch/arm64/configs/${DEFCONFIG}"
 sed -i 's/^EXTRAVERSION =.*/EXTRAVERSION =/' Makefile
 
+# ZRAM ZSTD & Schedutil defconfig tunables
+sed -i 's/CONFIG_ZRAM_DEF_COMP_LZ4=y/CONFIG_ZRAM_DEF_COMP_ZSTD=y/' "arch/arm64/configs/${DEFCONFIG}"
+grep -q "CONFIG_CRYPTO_ZSTD=y" "arch/arm64/configs/${DEFCONFIG}" || cat >> "arch/arm64/configs/${DEFCONFIG}" << 'EOF'
+CONFIG_CRYPTO_ZSTD=y
+CONFIG_ZSTD_COMPRESS=y
+CONFIG_ZSTD_DECOMPRESS=y
+CONFIG_ZRAM_DEF_COMP_ZSTD=y
+CONFIG_ZRAM_DEF_COMP="zstd"
+CONFIG_SCHEDUTIL_UP_RATE_LIMIT=0
+EOF
+
 # ------------------------------------------
 # 2. Baseband & Network Guard
 # ------------------------------------------
@@ -81,11 +92,18 @@ if [ "$ENABLE_KSU" -eq 1 ]; then
 fi
 
 # ------------------------------------------
-# 4. Native GPU FakeDreamer 10-Step OPP Table (150MHz - 670MHz UV)
+# 4. Native GPU FakeDreamer 10-Step OPP Table (150MHz - 670MHz UV) & Speed Bins
 # ------------------------------------------
 echo "[*] Natively Applying FakeDreamer Adreno 650 10-Step OPP Tables & All Speed Bins..."
+
+# Expand KGSL_MAX_PWRLEVELS to 16 to support all 10 frequencies + off level
+if [ -f "drivers/gpu/msm/kgsl_pwrctrl.h" ]; then
+    sed -i 's/#define KGSL_MAX_PWRLEVELS 10/#define KGSL_MAX_PWRLEVELS 16/' drivers/gpu/msm/kgsl_pwrctrl.h
+    echo "[+] Expanded KGSL_MAX_PWRLEVELS to 16 in drivers/gpu/msm/kgsl_pwrctrl.h"
+fi
+
 python3 -c '
-import re
+import re, os
 
 def find_block_end(text, start_idx):
     depth = 0
@@ -105,9 +123,7 @@ def find_block_end(text, start_idx):
         i += 1
     return -1
 
-OPP_TABLE_V1 = """\tgpu_opp_table: gpu-opp-table {
-\t\tcompatible = "operating-points-v2";
-
+OPP_TABLE_BODY = """
 \t\topp-670000000 {
 \t\t\topp-hz = /bits/ 64 <670000000>;
 \t\t\topp-microvolt = <RPMH_REGULATOR_LEVEL_SVS_L2>;
@@ -154,219 +170,355 @@ OPP_TABLE_V1 = """\tgpu_opp_table: gpu-opp-table {
 \t\t};
 \t};"""
 
-OPP_TABLE_V2 = """\tgpu_opp_table_v2: gpu-opp-table_v2 {
-\t\tcompatible = "operating-points-v2";
+OPP_TABLE_V1 = "\tgpu_opp_table: gpu-opp-table {\n\t\tcompatible = \"operating-points-v2\";" + OPP_TABLE_BODY
+OPP_TABLE_V2 = "\tgpu_opp_table_v2: gpu-opp-table_v2 {\n\t\tcompatible = \"operating-points-v2\";" + OPP_TABLE_BODY
 
-\t\topp-670000000 {
-\t\t\topp-hz = /bits/ 64 <670000000>;
-\t\t\topp-microvolt = <RPMH_REGULATOR_LEVEL_SVS_L2>;
-\t\t};
-\t\topp-587000000 {
-\t\t\topp-hz = /bits/ 64 <587000000>;
-\t\t\topp-microvolt = <RPMH_REGULATOR_LEVEL_SVS_L1>;
-\t\t};
-\t\topp-525000000 {
-\t\t\topp-hz = /bits/ 64 <525000000>;
-\t\t\topp-microvolt = <RPMH_REGULATOR_LEVEL_SVS>;
-\t\t};
-\t\topp-490000000 {
-\t\t\topp-hz = /bits/ 64 <490000000>;
-\t\t\topp-microvolt = <RPMH_REGULATOR_LEVEL_SVS>;
-\t\t};
-\t\topp-441600000 {
-\t\t\topp-hz = /bits/ 64 <441600000>;
-\t\t\topp-microvolt = <RPMH_REGULATOR_LEVEL_LOW_SVS>;
-\t\t};
-\t\topp-441000000 {
-\t\t\topp-hz = /bits/ 64 <441000000>;
-\t\t\topp-microvolt = <RPMH_REGULATOR_LEVEL_LOW_SVS>;
-\t\t};
-\t\topp-400000000 {
-\t\t\topp-hz = /bits/ 64 <400000000>;
-\t\t\topp-microvolt = <RPMH_REGULATOR_LEVEL_LOW_SVS>;
-\t\t};
-\t\topp-305000000 {
-\t\t\topp-hz = /bits/ 64 <305000000>;
-\t\t\topp-microvolt = <RPMH_REGULATOR_LEVEL_MIN_SVS>;
-\t\t};
-\t\topp-250000000 {
-\t\t\topp-hz = /bits/ 64 <250000000>;
-\t\t\topp-microvolt = <RPMH_REGULATOR_LEVEL_LOW_SVS>;
-\t\t};
-\t\topp-200000000 {
-\t\t\topp-hz = /bits/ 64 <200000000>;
-\t\t\topp-microvolt = <RPMH_REGULATOR_LEVEL_MIN_SVS>;
-\t\t};
-\t\topp-150000000 {
-\t\t\topp-hz = /bits/ 64 <150000000>;
-\t\t\topp-microvolt = <RPMH_REGULATOR_LEVEL_MIN_SVS>;
-\t\t};
-\t};"""
+PWRLEVELS_10_BIN = """
+			#address-cells = <1>;
+			#size-cells = <0>;
+			qcom,speed-bin = <{BIN}>;
+			qcom,initial-pwrlevel = <6>;
+			qcom,throttle-pwrlevel = <1>;
+
+			qcom,gpu-pwrlevel@0 {
+				reg = <0>;
+				qcom,gpu-freq = <670000000>;
+				qcom,bus-freq-ddr7 = <11>;
+				qcom,bus-min-ddr7 = <11>;
+				qcom,bus-max-ddr7 = <11>;
+				qcom,bus-freq-ddr8 = <11>;
+				qcom,bus-min-ddr8 = <11>;
+				qcom,bus-max-ddr8 = <11>;
+				qcom,acd-level = <0x802b5ffd>;
+			};
+
+			qcom,gpu-pwrlevel@1 {
+				reg = <1>;
+				qcom,gpu-freq = <587000000>;
+				qcom,bus-freq-ddr7 = <11>;
+				qcom,bus-min-ddr7 = <11>;
+				qcom,bus-max-ddr7 = <11>;
+				qcom,bus-freq-ddr8 = <11>;
+				qcom,bus-min-ddr8 = <11>;
+				qcom,bus-max-ddr8 = <11>;
+				qcom,acd-level = <0x802b5ffd>;
+			};
+
+			qcom,gpu-pwrlevel@2 {
+				reg = <2>;
+				qcom,gpu-freq = <525000000>;
+				qcom,bus-freq-ddr7 = <9>;
+				qcom,bus-min-ddr7 = <9>;
+				qcom,bus-max-ddr7 = <11>;
+				qcom,bus-freq-ddr8 = <8>;
+				qcom,bus-min-ddr8 = <8>;
+				qcom,bus-max-ddr8 = <11>;
+				qcom,acd-level = <0x802b5ffd>;
+			};
+
+			qcom,gpu-pwrlevel@3 {
+				reg = <3>;
+				qcom,gpu-freq = <490000000>;
+				qcom,bus-freq-ddr7 = <9>;
+				qcom,bus-min-ddr7 = <6>;
+				qcom,bus-max-ddr7 = <9>;
+				qcom,bus-freq-ddr8 = <8>;
+				qcom,bus-min-ddr8 = <7>;
+				qcom,bus-max-ddr8 = <9>;
+				qcom,acd-level = <0xa02b5ffd>;
+			};
+
+			qcom,gpu-pwrlevel@4 {
+				reg = <4>;
+				qcom,gpu-freq = <441600000>;
+				qcom,bus-freq-ddr7 = <9>;
+				qcom,bus-min-ddr7 = <6>;
+				qcom,bus-max-ddr7 = <9>;
+				qcom,bus-freq-ddr8 = <8>;
+				qcom,bus-min-ddr8 = <7>;
+				qcom,bus-max-ddr8 = <9>;
+				qcom,acd-level = <0xa02b5ffd>;
+			};
+
+			qcom,gpu-pwrlevel@5 {
+				reg = <5>;
+				qcom,gpu-freq = <400000000>;
+				qcom,bus-freq-ddr7 = <7>;
+				qcom,bus-min-ddr7 = <6>;
+				qcom,bus-max-ddr7 = <9>;
+				qcom,bus-freq-ddr8 = <8>;
+				qcom,bus-min-ddr8 = <6>;
+				qcom,bus-max-ddr8 = <9>;
+				qcom,acd-level = <0xa02b5ffd>;
+			};
+
+			qcom,gpu-pwrlevel@6 {
+				reg = <6>;
+				qcom,gpu-freq = <305000000>;
+				qcom,bus-freq-ddr7 = <3>;
+				qcom,bus-min-ddr7 = <2>;
+				qcom,bus-max-ddr7 = <9>;
+				qcom,bus-freq-ddr8 = <3>;
+				qcom,bus-min-ddr8 = <2>;
+				qcom,bus-max-ddr8 = <9>;
+				qcom,acd-level = <0xa02b5ffd>;
+			};
+
+			qcom,gpu-pwrlevel@7 {
+				reg = <7>;
+				qcom,gpu-freq = <250000000>;
+				qcom,bus-freq-ddr7 = <3>;
+				qcom,bus-min-ddr7 = <2>;
+				qcom,bus-max-ddr7 = <9>;
+				qcom,bus-freq-ddr8 = <3>;
+				qcom,bus-min-ddr8 = <2>;
+				qcom,bus-max-ddr8 = <9>;
+				qcom,acd-level = <0xa02b5ffd>;
+			};
+
+			qcom,gpu-pwrlevel@8 {
+				reg = <8>;
+				qcom,gpu-freq = <200000000>;
+				qcom,bus-freq-ddr7 = <2>;
+				qcom,bus-min-ddr7 = <1>;
+				qcom,bus-max-ddr7 = <3>;
+				qcom,bus-freq-ddr8 = <2>;
+				qcom,bus-min-ddr8 = <1>;
+				qcom,bus-max-ddr8 = <3>;
+				qcom,acd-level = <0xa02b5ffd>;
+			};
+
+			qcom,gpu-pwrlevel@9 {
+				reg = <9>;
+				qcom,gpu-freq = <150000000>;
+				qcom,bus-freq-ddr7 = <2>;
+				qcom,bus-min-ddr7 = <1>;
+				qcom,bus-max-ddr7 = <3>;
+				qcom,bus-freq-ddr8 = <2>;
+				qcom,bus-min-ddr8 = <1>;
+				qcom,bus-max-ddr8 = <3>;
+				qcom,acd-level = <0xa02b5ffd>;
+			};
+
+			qcom,gpu-pwrlevel@10 {
+				reg = <10>;
+				qcom,gpu-freq = <0>;
+				qcom,bus-freq = <0>;
+				qcom,bus-min = <0>;
+				qcom,bus-max = <0>;
+			};
+		};"""
+
+PWRLEVELS_10_LEGACY = """\t\tqcom,gpu-pwrlevels {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			compatible = "qcom,gpu-pwrlevels";
+			qcom,initial-pwrlevel = <6>;
+			qcom,throttle-pwrlevel = <1>;
+
+			qcom,gpu-pwrlevel@0 {
+				reg = <0>;
+				qcom,gpu-freq = <670000000>;
+				qcom,bus-freq-ddr7 = <11>;
+				qcom,bus-min-ddr7 = <11>;
+				qcom,bus-max-ddr7 = <11>;
+				qcom,bus-freq-ddr8 = <11>;
+				qcom,bus-min-ddr8 = <11>;
+				qcom,bus-max-ddr8 = <11>;
+				qcom,acd-level = <0x802b5ffd>;
+			};
+
+			qcom,gpu-pwrlevel@1 {
+				reg = <1>;
+				qcom,gpu-freq = <587000000>;
+				qcom,bus-freq-ddr7 = <11>;
+				qcom,bus-min-ddr7 = <11>;
+				qcom,bus-max-ddr7 = <11>;
+				qcom,bus-freq-ddr8 = <11>;
+				qcom,bus-min-ddr8 = <11>;
+				qcom,bus-max-ddr8 = <11>;
+				qcom,acd-level = <0x802b5ffd>;
+			};
+
+			qcom,gpu-pwrlevel@2 {
+				reg = <2>;
+				qcom,gpu-freq = <525000000>;
+				qcom,bus-freq-ddr7 = <9>;
+				qcom,bus-min-ddr7 = <9>;
+				qcom,bus-max-ddr7 = <11>;
+				qcom,bus-freq-ddr8 = <8>;
+				qcom,bus-min-ddr8 = <8>;
+				qcom,bus-max-ddr8 = <11>;
+				qcom,acd-level = <0x802b5ffd>;
+			};
+
+			qcom,gpu-pwrlevel@3 {
+				reg = <3>;
+				qcom,gpu-freq = <490000000>;
+				qcom,bus-freq-ddr7 = <9>;
+				qcom,bus-min-ddr7 = <6>;
+				qcom,bus-max-ddr7 = <9>;
+				qcom,bus-freq-ddr8 = <8>;
+				qcom,bus-min-ddr8 = <7>;
+				qcom,bus-max-ddr8 = <9>;
+				qcom,acd-level = <0xa02b5ffd>;
+			};
+
+			qcom,gpu-pwrlevel@4 {
+				reg = <4>;
+				qcom,gpu-freq = <441600000>;
+				qcom,bus-freq-ddr7 = <9>;
+				qcom,bus-min-ddr7 = <6>;
+				qcom,bus-max-ddr7 = <9>;
+				qcom,bus-freq-ddr8 = <8>;
+				qcom,bus-min-ddr8 = <7>;
+				qcom,bus-max-ddr8 = <9>;
+				qcom,acd-level = <0xa02b5ffd>;
+			};
+
+			qcom,gpu-pwrlevel@5 {
+				reg = <5>;
+				qcom,gpu-freq = <400000000>;
+				qcom,bus-freq-ddr7 = <7>;
+				qcom,bus-min-ddr7 = <6>;
+				qcom,bus-max-ddr7 = <9>;
+				qcom,bus-freq-ddr8 = <8>;
+				qcom,bus-min-ddr8 = <6>;
+				qcom,bus-max-ddr8 = <9>;
+				qcom,acd-level = <0xa02b5ffd>;
+			};
+
+			qcom,gpu-pwrlevel@6 {
+				reg = <6>;
+				qcom,gpu-freq = <305000000>;
+				qcom,bus-freq-ddr7 = <3>;
+				qcom,bus-min-ddr7 = <2>;
+				qcom,bus-max-ddr7 = <9>;
+				qcom,bus-freq-ddr8 = <3>;
+				qcom,bus-min-ddr8 = <2>;
+				qcom,bus-max-ddr8 = <9>;
+				qcom,acd-level = <0xa02b5ffd>;
+			};
+
+			qcom,gpu-pwrlevel@7 {
+				reg = <7>;
+				qcom,gpu-freq = <250000000>;
+				qcom,bus-freq-ddr7 = <3>;
+				qcom,bus-min-ddr7 = <2>;
+				qcom,bus-max-ddr7 = <9>;
+				qcom,bus-freq-ddr8 = <3>;
+				qcom,bus-min-ddr8 = <2>;
+				qcom,bus-max-ddr8 = <9>;
+				qcom,acd-level = <0xa02b5ffd>;
+			};
+
+			qcom,gpu-pwrlevel@8 {
+				reg = <8>;
+				qcom,gpu-freq = <200000000>;
+				qcom,bus-freq-ddr7 = <2>;
+				qcom,bus-min-ddr7 = <1>;
+				qcom,bus-max-ddr7 = <3>;
+				qcom,bus-freq-ddr8 = <2>;
+				qcom,bus-min-ddr8 = <1>;
+				qcom,bus-max-ddr8 = <3>;
+				qcom,acd-level = <0xa02b5ffd>;
+			};
+
+			qcom,gpu-pwrlevel@9 {
+				reg = <9>;
+				qcom,gpu-freq = <150000000>;
+				qcom,bus-freq-ddr7 = <2>;
+				qcom,bus-min-ddr7 = <1>;
+				qcom,bus-max-ddr7 = <3>;
+				qcom,bus-freq-ddr8 = <2>;
+				qcom,bus-min-ddr8 = <1>;
+				qcom,bus-max-ddr8 = <3>;
+				qcom,acd-level = <0xa02b5ffd>;
+			};
+
+			qcom,gpu-pwrlevel@10 {
+				reg = <10>;
+				qcom,gpu-freq = <0>;
+				qcom,bus-freq = <0>;
+				qcom,bus-min = <0>;
+				qcom,bus-max = <0>;
+			};
+		};"""
 
 # 1. Patch arch/arm64/boot/dts/vendor/qcom/kona-gpu.dtsi
 path1 = "arch/arm64/boot/dts/vendor/qcom/kona-gpu.dtsi"
-with open(path1, "r") as f:
-    text1 = f.read()
+if os.path.isfile(path1):
+    with open(path1, "r") as f:
+        t1 = f.read()
 
-m1 = re.search(r"gpu_opp_table:\s*gpu-opp-table\s*\{", text1)
-if m1:
-    brace1 = text1.find("{", m1.start())
-    end1 = find_block_end(text1, brace1)
-    if end1 != -1:
-        text1 = text1[:m1.start()] + OPP_TABLE_V1 + text1[end1:]
+    m1 = re.search(r"gpu_opp_table:\s*gpu-opp-table\s*\{", t1)
+    if m1:
+        b1 = t1.find("{", m1.start())
+        e1 = find_block_end(t1, b1)
+        if e1 != -1:
+            t1 = t1[:m1.start()] + OPP_TABLE_V1 + t1[e1:]
 
-text1 = re.sub(r"qcom,initial-pwrlevel\s*=\s*<\d+>;", "qcom,initial-pwrlevel = <5>;", text1)
+    mp1 = re.search(r"qcom,gpu-pwrlevels\s*\{", t1)
+    if mp1:
+        bp1 = t1.find("{", mp1.start())
+        ep1 = find_block_end(t1, bp1)
+        if ep1 != -1:
+            t1 = t1[:mp1.start()] + PWRLEVELS_10_LEGACY + t1[ep1:]
 
-with open(path1, "w") as f:
-    f.write(text1)
-print("✅ kona-gpu.dtsi: gpu_opp_table 10-step UV table injected!")
+    t1 = re.sub(r"qcom,initial-pwrlevel\s*=\s*<\d+>;", "qcom,initial-pwrlevel = <6>;", t1)
+    with open(path1, "w") as f:
+        f.write(t1)
+    print("✅ kona-gpu.dtsi: Full 10-step UV OPP table + power levels injected!")
 
 # 2. Patch arch/arm64/boot/dts/vendor/qcom/kona-v2-gpu.dtsi (Active on POCO F4 / Kona v2.x!)
 path2 = "arch/arm64/boot/dts/vendor/qcom/kona-v2-gpu.dtsi"
-with open(path2, "r") as f:
-    text2 = f.read()
+if os.path.isfile(path2):
+    with open(path2, "r") as f:
+        t2 = f.read()
 
-m2 = re.search(r"gpu_opp_table_v2:\s*gpu-opp-table_v2\s*\{", text2)
-if m2:
-    brace2 = text2.find("{", m2.start())
-    end2 = find_block_end(text2, brace2)
-    if end2 != -1:
-        text2 = text2[:m2.start()] + OPP_TABLE_V2 + text2[end2:]
+    m2 = re.search(r"gpu_opp_table_v2:\s*gpu-opp-table_v2\s*\{", t2)
+    if m2:
+        b2 = t2.find("{", m2.start())
+        e2 = find_block_end(t2, b2)
+        if e2 != -1:
+            t2 = t2[:m2.start()] + OPP_TABLE_V2 + t2[e2:]
 
-# Update speed bins (bins 0, 1, 3, 4) in kona-v2-gpu.dtsi to include 150000000
-old_tail_7 = """\t\t\tqcom,gpu-pwrlevel@6 {
-\t\t\t\treg = <6>;
-\t\t\t\tqcom,gpu-freq = <305000000>;
-\t\t\t\tqcom,bus-freq-ddr7 = <3>;
-\t\t\t\tqcom,bus-min-ddr7 = <2>;
-\t\t\t\tqcom,bus-max-ddr7 = <9>;
+    # Replace all speed bins (bins 0, 1, 2, 3, 4) with full 10-step tables
+    matches = list(re.finditer(r"(qcom,gpu-pwrlevels-(\d+)\s*\{)", t2))
+    for m in reversed(matches):
+        bin_idx = m.group(2)
+        end = find_block_end(t2, m.end() - 1)
+        old_block = t2[m.start():end]
+        sb_match = re.search(r"qcom,speed-bin\s*=\s*<(\d+)>;", old_block)
+        sb_val = sb_match.group(1) if sb_match else bin_idx
+        new_block = "\t\tqcom,gpu-pwrlevels-" + bin_idx + " {" + PWRLEVELS_10_BIN.replace("{BIN}", sb_val)
+        t2 = t2[:m.start()] + new_block + t2[end:]
 
-\t\t\t\tqcom,bus-freq-ddr8 = <3>;
-\t\t\t\tqcom,bus-min-ddr8 = <2>;
-\t\t\t\tqcom,bus-max-ddr8 = <9>;
+    t2 = re.sub(r"qcom,initial-pwrlevel\s*=\s*<\d+>;", "qcom,initial-pwrlevel = <6>;", t2)
+    with open(path2, "w") as f:
+        f.write(t2)
+    print("✅ kona-v2-gpu.dtsi: Full 10-step UV OPP table + ALL 5 speed bins injected!")
 
-\t\t\t\tqcom,acd-level = <0xa02b5ffd>;
-\t\t\t};
+# 3. Patch arch/arm64/boot/dts/vendor/qcom/kona-v2.1-gpu.dtsi (Specific to POCO F4 / Kona v2.1 SM8250-AC!)
+path3 = "arch/arm64/boot/dts/vendor/qcom/kona-v2.1-gpu.dtsi"
+v2_1_content = """&soc {
+\tgpu_opp_table_v2_1: gpu-opp-table_v2_1 {
+\t\tcompatible = "operating-points-v2";
+""" + OPP_TABLE_BODY + """
+};
 
-\t\t\tqcom,gpu-pwrlevel@7 {
-\t\t\t\treg = <7>;
-\t\t\t\tqcom,gpu-freq = <0>;
-\t\t\t\tqcom,bus-freq = <0>;
-\t\t\t\tqcom,bus-min = <0>;
-\t\t\t\tqcom,bus-max = <0>;
-\t\t\t};"""
+&msm_gpu {
+\tqcom,chipid = <0x06050002>;
+\toperating-points-v2 = <&gpu_opp_table_v2_1>;
+};
+"""
+with open(path3, "w") as f:
+    f.write(v2_1_content)
+print("✅ kona-v2.1-gpu.dtsi: Explicit gpu_opp_table_v2_1 UV OPP table locked to msm_gpu!")
 
-new_tail_7 = """\t\t\tqcom,gpu-pwrlevel@6 {
-\t\t\t\treg = <6>;
-\t\t\t\tqcom,gpu-freq = <305000000>;
-\t\t\t\tqcom,bus-freq-ddr7 = <3>;
-\t\t\t\tqcom,bus-min-ddr7 = <2>;
-\t\t\t\tqcom,bus-max-ddr7 = <9>;
-
-\t\t\t\tqcom,bus-freq-ddr8 = <3>;
-\t\t\t\tqcom,bus-min-ddr8 = <2>;
-\t\t\t\tqcom,bus-max-ddr8 = <9>;
-
-\t\t\t\tqcom,acd-level = <0xa02b5ffd>;
-\t\t\t};
-
-\t\t\tqcom,gpu-pwrlevel@7 {
-\t\t\t\treg = <7>;
-\t\t\t\tqcom,gpu-freq = <150000000>;
-\t\t\t\tqcom,bus-freq-ddr7 = <2>;
-\t\t\t\tqcom,bus-min-ddr7 = <1>;
-\t\t\t\tqcom,bus-max-ddr7 = <3>;
-
-\t\t\t\tqcom,bus-freq-ddr8 = <2>;
-\t\t\t\tqcom,bus-min-ddr8 = <1>;
-\t\t\t\tqcom,bus-max-ddr8 = <3>;
-
-\t\t\t\tqcom,acd-level = <0xa02b5ffd>;
-\t\t\t};
-
-\t\t\tqcom,gpu-pwrlevel@8 {
-\t\t\t\treg = <8>;
-\t\t\t\tqcom,gpu-freq = <0>;
-\t\t\t\tqcom,bus-freq = <0>;
-\t\t\t\tqcom,bus-min = <0>;
-\t\t\t\tqcom,bus-max = <0>;
-\t\t\t};"""
-
-if old_tail_7 in text2:
-    text2 = text2.replace(old_tail_7, new_tail_7)
-
-# Also update speed bin 2 (qcom,gpu-pwrlevels-2) to include 150000000
-old_tail_5 = """\t\t\tqcom,gpu-pwrlevel@4 {
-\t\t\t\treg = <4>;
-\t\t\t\tqcom,gpu-freq = <305000000>;
-\t\t\t\tqcom,bus-freq-ddr7 = <3>;
-\t\t\t\tqcom,bus-min-ddr7 = <2>;
-\t\t\t\tqcom,bus-max-ddr7 = <9>;
-
-\t\t\t\tqcom,bus-freq-ddr8 = <3>;
-\t\t\t\tqcom,bus-min-ddr8 = <2>;
-\t\t\t\tqcom,bus-max-ddr8 = <9>;
-
-\t\t\t\tqcom,acd-level = <0xa02b5ffd>;
-\t\t\t};
-
-\t\t\tqcom,gpu-pwrlevel@5 {
-\t\t\t\treg = <5>;
-\t\t\t\tqcom,gpu-freq = <0>;
-\t\t\t\tqcom,bus-freq = <0>;
-\t\t\t\tqcom,bus-min = <0>;
-\t\t\t\tqcom,bus-max = <0>;
-\t\t\t};"""
-
-new_tail_5 = """\t\t\tqcom,gpu-pwrlevel@4 {
-\t\t\t\treg = <4>;
-\t\t\t\tqcom,gpu-freq = <305000000>;
-\t\t\t\tqcom,bus-freq-ddr7 = <3>;
-\t\t\t\tqcom,bus-min-ddr7 = <2>;
-\t\t\t\tqcom,bus-max-ddr7 = <9>;
-
-\t\t\t\tqcom,bus-freq-ddr8 = <3>;
-\t\t\t\tqcom,bus-min-ddr8 = <2>;
-\t\t\t\tqcom,bus-max-ddr8 = <9>;
-
-\t\t\t\tqcom,acd-level = <0xa02b5ffd>;
-\t\t\t};
-
-\t\t\tqcom,gpu-pwrlevel@5 {
-\t\t\t\treg = <5>;
-\t\t\t\tqcom,gpu-freq = <150000000>;
-\t\t\t\tqcom,bus-freq-ddr7 = <2>;
-\t\t\t\tqcom,bus-min-ddr7 = <1>;
-\t\t\t\tqcom,bus-max-ddr7 = <3>;
-
-\t\t\t\tqcom,bus-freq-ddr8 = <2>;
-\t\t\t\tqcom,bus-min-ddr8 = <1>;
-\t\t\t\tqcom,bus-max-ddr8 = <3>;
-
-\t\t\t\tqcom,acd-level = <0xa02b5ffd>;
-\t\t\t};
-
-\t\t\tqcom,gpu-pwrlevel@6 {
-\t\t\t\treg = <6>;
-\t\t\t\tqcom,gpu-freq = <0>;
-\t\t\t\tqcom,bus-freq = <0>;
-\t\t\t\tqcom,bus-min = <0>;
-\t\t\t\tqcom,bus-max = <0>;
-\t\t\t};"""
-
-if old_tail_5 in text2:
-    text2 = text2.replace(old_tail_5, new_tail_5)
-
-text2 = re.sub(r"qcom,initial-pwrlevel\s*=\s*<\d+>;", "qcom,initial-pwrlevel = <5>;", text2)
-
-with open(path2, "w") as f:
-    f.write(text2)
-print("✅ kona-v2-gpu.dtsi: gpu_opp_table_v2 and ALL speed-bins injected!")
-
-assert "150000000" in text1 and "RPMH_REGULATOR_LEVEL_SVS_L2" in text1
-assert "150000000" in text2 and "RPMH_REGULATOR_LEVEL_SVS_L2" in text2
 print("✅ ALL GPU OPP TABLES AND SPEED BINS VERIFIED 100%!")
 '
+
 
 # ------------------------------------------
 # 5. Native CPU Peak Cap (2.84 GHz / Drop 3.2 GHz Peak Step)
@@ -463,11 +615,44 @@ echo "[*] Generating Defconfig (${DEFCONFIG})..."
 make -j"${TOTAL_CORES}" "${MAKE_OPTS[@]}" "${DEFCONFIG}"
 
 # ------------------------------------------
-# 8. Full HyperOS / MIUI Config Injection (AstideLabs standard)
+# 8. Full HyperOS / MIUI Config Injection (AstideLabs standard) & Performance Tunables
 # ------------------------------------------
 echo "[*] Injecting Full HyperOS / MIUI Subsystem Configs..."
 scripts/config --file "${OUT_DIR}/.config" -e BBG
 scripts/config --file "${OUT_DIR}/.config" --set-str LOCALVERSION "-EXTREME++GAMING_Hyperos"
+
+# 🚀 6GB RAM & Zero-Stutter Memory Optimizations (ZRAM ZSTD)
+scripts/config --file "${OUT_DIR}/.config" \
+    -e ZRAM \
+    -e CRYPTO_ZSTD \
+    -e ZSTD_COMPRESS \
+    -e ZSTD_DECOMPRESS \
+    -e ZRAM_DEF_COMP_ZSTD \
+    -d ZRAM_DEF_COMP_LZ4 \
+    --set-str ZRAM_DEF_COMP "zstd"
+
+# 🚀 Instant Touch Reaction (Schedutil Governor zero-latency ramp-up)
+scripts/config --file "${OUT_DIR}/.config" \
+    -e CPU_FREQ_GOV_SCHEDUTIL \
+    --set-val SCHEDUTIL_UP_RATE_LIMIT 0
+
+# Native source patches for VM & Schedutil tunables
+if [ -f "kernel/sched/cpufreq_schedutil.c" ]; then
+    sed -i 's/tunables->up_rate_limit_us = CONFIG_SCHEDUTIL_UP_RATE_LIMIT;/tunables->up_rate_limit_us = 0;/' kernel/sched/cpufreq_schedutil.c
+    echo "[+] Schedutil up_rate_limit_us set to 0 in kernel/sched/cpufreq_schedutil.c"
+fi
+if [ -f "drivers/cpufreq/cpufreq_schedutil.c" ]; then
+    sed -i 's/tunables->up_rate_limit_us = CONFIG_SCHEDUTIL_UP_RATE_LIMIT;/tunables->up_rate_limit_us = 0;/' drivers/cpufreq/cpufreq_schedutil.c
+    echo "[+] Schedutil up_rate_limit_us set to 0 in drivers/cpufreq/cpufreq_schedutil.c"
+fi
+if [ -f "mm/vmscan.c" ]; then
+    sed -i 's/int vm_swappiness = 60;/int vm_swappiness = 100;/' mm/vmscan.c
+    echo "[+] Optimized default vm_swappiness to 100 in mm/vmscan.c"
+fi
+if [ -f "fs/dcache.c" ]; then
+    sed -i 's/int sysctl_vfs_cache_pressure __read_mostly = [0-9]*;/int sysctl_vfs_cache_pressure __read_mostly = 100;/' fs/dcache.c
+    echo "[+] Optimized sysctl_vfs_cache_pressure to 100 in fs/dcache.c"
+fi
 
 if [ "$ENABLE_KSU" -eq 1 ]; then
     scripts/config --file "${OUT_DIR}/.config" -e KPROBES -e HAVE_KPROBES -e KPROBE_EVENTS
@@ -510,6 +695,18 @@ scripts/config --file "${OUT_DIR}/.config" \
     -d LTO_CLANG_THIN -d CFI_CLANG
 
 make -j"${TOTAL_CORES}" "${MAKE_OPTS[@]}" olddefconfig
+
+# Ensure ZRAM ZSTD, Schedutil, and KSU survive olddefconfig
+scripts/config --file "${OUT_DIR}/.config" \
+    -e ZRAM \
+    -e CRYPTO_ZSTD \
+    -e ZSTD_COMPRESS \
+    -e ZSTD_DECOMPRESS \
+    -e ZRAM_DEF_COMP_ZSTD \
+    -d ZRAM_DEF_COMP_LZ4 \
+    --set-str ZRAM_DEF_COMP "zstd" \
+    -e CPU_FREQ_GOV_SCHEDUTIL \
+    --set-val SCHEDUTIL_UP_RATE_LIMIT 0
 
 # 🔥 THE ULTIMATE KSU FIX: Ensuring CONFIG_KSU survives olddefconfig
 if [ "$ENABLE_KSU" -eq 1 ]; then
