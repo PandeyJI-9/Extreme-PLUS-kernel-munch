@@ -5,6 +5,19 @@ Device codename: munch
 Kernel maintainer: @pandey_ji_8
 
 ==========01/10/2026==========
+* feat: native GPU 10-step UV across all speed bins & kona-v2.1, 6GB RAM ZSTD + schedutil zero-lag, pro release notes, and fixed changelog links
+* fix: inject FakeDreamer 10-step UV OPP table & speed bins into both kona-gpu.dtsi and kona-v2-gpu.dtsi
+* Update send_rksu.yml
+* Update send_rksu.yml
+* Update send_rksu.yml
+* fix: make cpufreq driver patch C89-compliant to fix -Wdeclaration-after-statement
+* fix: strictly cap CPU Prime Core to 2841600 (2.84 GHz) in driver and kona.dtsi
+* fix: custom kernel name (-EXTREME++GAMING_Hyperos), ReSukiSU Non-GKI 4.19, native FakeDreamer GPU OPP, and native CPU 3.05GHz peak cap
+* Create send_rksu.yml
+* fix: guarantee 2.84GHz CPU cap and GPU UV patches are applied with explicit target paths
+
+
+==========01/10/2026==========
 * fix: inject FakeDreamer 10-step UV OPP table & speed bins into both kona-gpu.dtsi and kona-v2-gpu.dtsi
 * Update send_rksu.yml
 * Update send_rksu.yml
