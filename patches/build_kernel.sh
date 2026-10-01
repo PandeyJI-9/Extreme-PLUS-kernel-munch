@@ -180,31 +180,35 @@ with open(path_dts, "w") as f:
     f.write(text_dts)
 print("✅ CPU Prime Core max-freq cap (<2841600>) set in kona.dtsi")
 
-# 2. Patch drivers/cpufreq/qcom-cpufreq-hw.c
+# 2. Patch drivers/cpufreq/qcom-cpufreq-hw.c (C89 compliant)
 path_driver = "drivers/cpufreq/qcom-cpufreq-hw.c"
 with open(path_driver, "r") as f:
     text_driver = f.read()
 
-if "max_freq_cap" in text_driver:
-    text_driver = text_driver.replace("3052800", "2841600")
-else:
-    target1 = "spin_lock_init(&c->skip_data.lock);"
-    patch1 = """spin_lock_init(&c->skip_data.lock);
-\tu32 max_freq_cap = 0;
-\tof_property_read_u32(dev->of_node, "qcom,freq-domain-max-freq", &max_freq_cap);
-\tif (!max_freq_cap) max_freq_cap = 2841600;"""
-    text_driver = text_driver.replace(target1, patch1, 1)
+if "max_freq_cap" not in text_driver:
+    target_decl = "\tu32 vc;\n\tunsigned long cpu;"
+    patch_decl = "\tu32 vc, max_freq_cap = 0;\n\tunsigned long cpu;"
+    text_driver = text_driver.replace(target_decl, patch_decl, 1)
 
-    target2 = "dev_dbg(dev, \"index=%d freq=%d, core_count %d\\n\","
-    patch2 = """if (max_freq_cap && c->table[i].frequency > max_freq_cap) {
+    target_read = "spin_lock_init(&c->skip_data.lock);"
+    patch_read = """spin_lock_init(&c->skip_data.lock);
+\tof_property_read_u32(dev->of_node, "qcom,freq-domain-max-freq", &max_freq_cap);
+\tif (!max_freq_cap)
+\t\tmax_freq_cap = 2841600;"""
+    text_driver = text_driver.replace(target_read, patch_read, 1)
+
+    target_break = "dev_dbg(dev, \"index=%d freq=%d, core_count %d\\n\","
+    patch_break = """if (max_freq_cap && c->table[i].frequency > max_freq_cap) {
 \t\t\tbreak;
 \t\t}
 \t\tdev_dbg(dev, \"index=%d freq=%d, core_count %d\\n\","""
-    text_driver = text_driver.replace(target2, patch2, 1)
+    text_driver = text_driver.replace(target_break, patch_break, 1)
 
-with open(path_driver, "w") as f:
-    f.write(text_driver)
-print("✅ qcom-cpufreq-hw driver patched to honor freq-domain-max-freq (strictly 2841600)")
+    with open(path_driver, "w") as f:
+        f.write(text_driver)
+    print("✅ qcom-cpufreq-hw driver patched (C89 compliant) to honor freq-domain-max-freq (strictly 2841600)")
+else:
+    print("ℹ️ qcom-cpufreq-hw driver already patched")
 '
 
 # ------------------------------------------
