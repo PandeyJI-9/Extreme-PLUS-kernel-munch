@@ -1,19 +1,19 @@
 name: 📜 Auto-Generate & Post Changelog
 
 on:
-  workflow_dispatch: # Jab tu chahe tab manual trigger kar sakta hai
+  workflow_dispatch: # Manual trigger
 
 jobs:
   update_changelog:
     runs-on: ubuntu-latest
     permissions:
-      contents: write # Repo me file push karne ke liye zaroori hai
+      contents: write
 
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # Pura git history read karne ke liye
+          fetch-depth: 0
 
       - name: 📝 Build Pro Developer Changelog
         id: build_log
@@ -22,7 +22,7 @@ jobs:
           TEMP_FILE="temp_log.txt"
           CURRENT_DATE=$(date +"%d/%m/%Y")
           
-          # 1. Pro Header Injection
+          # 1. Pro Header Injection (Username updated)
           echo "Kernel Specific Changes:" > $TEMP_FILE
           echo "Build type: EXTREME++ Stable / Performance" >> $TEMP_FILE
           echo "Device name: POCO F4" >> $TEMP_FILE
@@ -33,18 +33,25 @@ jobs:
           # 2. Date Divider
           echo "==========${CURRENT_DATE}==========" >> $TEMP_FILE
           
-          # 3. Git Commits Scan (Latest 10 changes)
-          COMMITS=$(git log -n 10 --no-merges --pretty=format:"* %s")
+          # 3. Smart Git Commits Scan (Kachra Filter)
+          # Ye line 30 commits uthayegi, usme se 'changelog.yml' aur 'Auto-updated' ko delete karegi, aur bache hue top 10 asli commits legi
+          COMMITS=$(git log -n 30 --no-merges --pretty=format:"* %s" | grep -v -i "changelog.yml" | grep -v "Auto-updated EXTREME" | head -n 10)
+          
+          # Agar koi asli commit nahi bacha, toh default message daal do
+          if [ -z "$COMMITS" ]; then
+            COMMITS="* Synced with latest kernel sources and improvements."
+          fi
+          
           echo "$COMMITS" >> $TEMP_FILE
           echo "" >> $TEMP_FILE
           echo "" >> $TEMP_FILE
           
-          # Telegram ke liye sirf aaj ke changes ko alag se save karna
+          # Telegram Env Variable
           echo "TG_COMMITS<<EOF" >> $GITHUB_ENV
           echo "$COMMITS" >> $GITHUB_ENV
           echo "EOF" >> $GITHUB_ENV
           
-          # 4. History Retention (Purani history bachana)
+          # 4. History Retention
           if [ -f "$CHANGELOG_FILE" ]; then
             tail -n +7 "$CHANGELOG_FILE" >> $TEMP_FILE
           fi
@@ -62,28 +69,26 @@ jobs:
           git commit -m "📝 docs: Auto-updated EXTREME++ changelog" || echo "No changes to commit"
           git push
 
-      - name: 📲 Send Changelog to Telegram with Link
+      - name: 📲 Send Changelog to Telegram
         run: |
-          # Auto-generate dynamic GitHub links based on your repo
           REPO_URL="https://github.com/${{ github.repository }}"
           CHANGELOG_LINK="${REPO_URL}/blob/main/EXTREME_Changelog.txt"
-          RAW_LINK="https://raw.githubusercontent.com/${{ github.repository }}/main/EXTREME_Changelog.txt"
           
-          # Professional Telegram Text Formatting
+          # Direct URLs use kiye hain taaki hide na ho
           CAPTION="🔥 <b>EXTREME++ Kernel Update Changelog</b>
           
           🗓 <b>Date:</b> $(date +"%d/%m/%Y")
-          👤 <b>Maintainer:</b> Ayush Pandey JI
+          👤 <b>Maintainer:</b> @pandey_ji_8
           📱 <b>Device:</b> POCO F4 (munch)
           
           🛠 <b>Latest Changes:</b>
           ${{ env.TG_COMMITS }}
           
           ━━━━━━━━━━━━━━━━━━
-          🔗 <a href='${CHANGELOG_LINK}'>View Full Changelog History Here</a>
-          📄 <a href='${RAW_LINK}'>Raw Text View</a>"
+          🔗 <b>Full Changelog History:</b>
+          ${CHANGELOG_LINK}"
           
-          echo "[*] Sending Changelog and Link to Telegram..."
+          echo "[*] Sending Changelog to Telegram..."
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
             -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
             -d text="$CAPTION" \
