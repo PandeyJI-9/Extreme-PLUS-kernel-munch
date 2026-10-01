@@ -142,7 +142,29 @@ except Exception as e:
 fi
 
 # ------------------------------------------
-# 3. Compile Environment Setup
+# 3. HyperOS Display DTS Patches
+# ------------------------------------------
+DTS_SOURCE="arch/arm64/boot/dts/vendor/qcom"
+echo "[*] Applying HyperOS / MIUI Display & Panel DTS patches..."
+sed -i 's/<154>/<1537>/g' ${DTS_SOURCE}/dsi-panel-j1s* 2>/dev/null || true
+sed -i 's/<154>/<1537>/g' ${DTS_SOURCE}/dsi-panel-j2* 2>/dev/null || true
+sed -i 's/<155>/<1544>/g' ${DTS_SOURCE}/dsi-panel-j3s-37-02-0a-dsc-video.dtsi 2>/dev/null || true
+sed -i 's/<155>/<1545>/g' ${DTS_SOURCE}/dsi-panel-j11-38-08-0a-fhd-cmd.dtsi 2>/dev/null || true
+sed -i 's/<155>/<1546>/g' ${DTS_SOURCE}/dsi-panel-k11a-38-08-0a-dsc-cmd.dtsi 2>/dev/null || true
+sed -i 's/<155>/<1546>/g' ${DTS_SOURCE}/dsi-panel-l11r-38-08-0a-dsc-cmd.dtsi 2>/dev/null || true
+sed -i 's/<70>/<695>/g' ${DTS_SOURCE}/dsi-panel-j11-38-08-0a-fhd-cmd.dtsi 2>/dev/null || true
+sed -i 's/<70>/<695>/g' ${DTS_SOURCE}/dsi-panel-j3s-37-02-0a-dsc-video.dtsi 2>/dev/null || true
+sed -i 's/<70>/<695>/g' ${DTS_SOURCE}/dsi-panel-k11a-38-08-0a-dsc-cmd.dtsi 2>/dev/null || true
+sed -i 's/<70>/<695>/g' ${DTS_SOURCE}/dsi-panel-l11r-38-08-0a-dsc-cmd.dtsi 2>/dev/null || true
+sed -i 's/<71>/<710>/g' ${DTS_SOURCE}/dsi-panel-j1s* 2>/dev/null || true
+sed -i 's/<71>/<710>/g' ${DTS_SOURCE}/dsi-panel-j2* 2>/dev/null || true
+sed -i 's/120 90 60/120 90 60 50 30/g' ${DTS_SOURCE}/dsi-panel-g7a-36-02-0c-dsc-video.dtsi 2>/dev/null || true
+sed -i 's/120 90 60/120 90 60 50 30/g' ${DTS_SOURCE}/dsi-panel-g7a-37-02-0a-dsc-video.dtsi 2>/dev/null || true
+sed -i 's/120 90 60/120 90 60 50 30/g' ${DTS_SOURCE}/dsi-panel-g7a-37-02-0b-dsc-video.dtsi 2>/dev/null || true
+sed -i 's/144 120 90 60/144 120 90 60 50 48 30/g' ${DTS_SOURCE}/dsi-panel-j3s-37-02-0a-dsc-video.dtsi 2>/dev/null || true
+
+# ------------------------------------------
+# 4. Compile Environment Setup
 # ------------------------------------------
 MAKE_OPTS=(
     O="${OUT_DIR}"
@@ -160,9 +182,9 @@ echo "[*] Generating Defconfig (${DEFCONFIG})..."
 make -j"${TOTAL_CORES}" "${MAKE_OPTS[@]}" "${DEFCONFIG}"
 
 # ------------------------------------------
-# 4. Safe Config Injection
+# 5. Full HyperOS / MIUI Config Injection (AstideLabs standard)
 # ------------------------------------------
-echo "[*] Injecting Custom Configs Safely..."
+echo "[*] Injecting Full HyperOS / MIUI Subsystem Configs..."
 scripts/config --file "${OUT_DIR}/.config" -e BBG
 
 if [ "$ENABLE_KSU" -eq 1 ]; then
@@ -172,10 +194,38 @@ fi
 
 scripts/config --file "${OUT_DIR}/.config" \
     --set-str STATIC_USERMODEHELPER_PATH /system/bin/micd \
-    -e PERF_CRITICAL_RT_TASK -e SF_BINDER -e OVERLAY_FS -e MIGT \
-    -e MIGT_ENERGY_MODEL -e MIHW -e XIAOMI_MIUI -e TASK_DELAY_ACCT \
-    -e MIUI_ZRAM_MEMORY_TRACKING -e PERF_HELPER \
-    -e LTO_NONE -d LTO_CLANG -d LTO_CLANG_THIN -d CFI_CLANG
+    -e PERF_CRITICAL_RT_TASK \
+    -e SF_BINDER \
+    -e OVERLAY_FS \
+    -e MIGT \
+    -e MIGT_ENERGY_MODEL \
+    -e MIHW \
+    -e PACKAGE_RUNTIME_INFO \
+    -e BINDER_OPT \
+    -e KPERFEVENTS \
+    -e PERF_HUMANTASK \
+    -d LTO_CLANG \
+    -e LTO_NONE \
+    -d SHADOW_CALL_STACK \
+    -e XIAOMI_MIUI \
+    -d MI_MEMORY_SYSFS \
+    -e TASK_DELAY_ACCT \
+    -e MIUI_ZRAM_MEMORY_TRACKING \
+    -e PERF_HELPER \
+    -e BOOTUP_RECLAIM \
+    -e MI_RECLAIM \
+    -e RTMM \
+    -e MILLET_CGROUP \
+    -e MILLET_SIG \
+    -e MILLET_BINDER \
+    -e MILLET_PKG \
+    -e MILLET_BINDER_GKI \
+    -e MILLET_CORE \
+    -e MILLET_HS \
+    -e BINDER_PRIO \
+    -d REKERNEL \
+    -d REKERNEL_NETWORK \
+    -d LTO_CLANG_THIN -d CFI_CLANG
 
 make -j"${TOTAL_CORES}" "${MAKE_OPTS[@]}" olddefconfig
 
@@ -188,7 +238,7 @@ if [ "$ENABLE_KSU" -eq 1 ]; then
 fi
 
 # ------------------------------------------
-# 5. Build Kernel Image & DTBO
+# 6. Build Kernel Image & DTBs
 # ------------------------------------------
 echo "[*] Compiling Kernel Image..."
 make -j"${TOTAL_CORES}" "${MAKE_OPTS[@]}" Image
@@ -197,50 +247,47 @@ echo "[*] Compiling DTBs & DTBO..."
 make -j"${TOTAL_CORES}" "${MAKE_OPTS[@]}" dtbs
 
 # ------------------------------------------
-# 6. AnyKernel3 Setup
+# 7. AnyKernel3 Setup (AstideLabs Kona Branch)
 # ------------------------------------------
-echo "[*] Cloning Pure AnyKernel3..."
-git clone --depth=1 https://github.com/osm0sis/AnyKernel3 anykernel
+echo "[*] Cloning AstideLabs AnyKernel3 (Kona branch)..."
+git clone --depth=1 https://github.com/AstideLabs/AnyKernel3 -b kona anykernel
 
 cat > anykernel/anykernel.sh << 'EOF'
+### AnyKernel3 Ramdisk Mod Script
+## Adapted for POCO F4 (munch) HyperOS by PandeyJI-9
+
 properties() { '
-kernel.string=Extreme Plus Gaming On Hyper os
+kernel.string=EXTREME++ HyperOS Gaming Kernel | POCO F4 (munch)
 do.devicecheck=0
 do.modules=0
+do.systemless=1
 do.cleanup=1
+do.cleanuponabort=0
 device.name1=munch
 device.name2=POCO F4
 supported.versions=13-17
 '; }
 
-BLOCK=/dev/block/bootdevice/by-name/boot;
-IS_SLOT_DEVICE=1;
+BLOCK=boot;
+IS_SLOT_DEVICE=auto;
 RAMDISK_COMPRESSION=auto;
 PATCH_VBMETA_FLAG=auto;
-. tools/ak3-core.sh;
-dump_boot;
-write_boot;
+NO_BLOCK_DISPLAY=1;
 
-if [ -f $home/dtbo.img ]; then
-  ui_print "- Flashing Extreme Plus Gaming DTBO...";
-  DTBO_BLOCK=""
-  for path in /dev/block/bootdevice/by-name/dtbo$slot /dev/block/mapper/dtbo$slot /dev/block/by-name/dtbo$slot; do
-    if [ -e "$path" ]; then
-      DTBO_BLOCK="$path"
-      break
-    fi
-  done
-  if [ -n "$DTBO_BLOCK" ]; then
-    dd if=$home/dtbo.img of=$DTBO_BLOCK
-    ui_print "- ✅ DTBO Flashed Successfully!";
-  else
-    ui_print "- ❌ WARNING: DTBO partition not found!";
-  fi
-fi
+. tools/ak3-core.sh;
+
+ui_print "  -> Flashing EXTREME++ Kernel (split_boot method)...";
+
+# boot install (leaves stock HyperOS ramdisk byte-for-byte untouched)
+split_boot;
+
+flash_boot;
+flash_generic dtbo;
+## end boot install
 EOF
 
 # ------------------------------------------
-# 7. Packaging: EXACT DTB MATCH ONLY
+# 8. Packaging: Concatenated Multi-DTB Table & DTBO
 # ------------------------------------------
 echo "[*] Verifying compiled files..."
 
@@ -251,22 +298,23 @@ fi
 cp "${OUT_DIR}/arch/arm64/boot/Image" anykernel/
 echo "[+] Kernel Image copied."
 
-MUNCH_DTB=$(find ${OUT_DIR}/arch/arm64/boot/dts/vendor/qcom/ -name "*munch*.dtb" | head -n 1)
-if [ -n "$MUNCH_DTB" ] && [ -f "$MUNCH_DTB" ]; then
-    cp "$MUNCH_DTB" anykernel/dtb
-    echo "[+] DTB (Munch) successfully packed."
+# CONCATENATED MULTI-DTB TABLE (AstideLabs & Qualcomm Kona standard):
+# Kona has kona.dtb, kona-v2.dtb, kona-v2.1.dtb. The bootloader searches the
+# concatenated DTB table for the exact matching PMIC & SoC board revision.
+echo "[*] Packing concatenated multi-DTB table..."
+if [ -f "${OUT_DIR}/arch/arm64/boot/dtb" ]; then
+    cp "${OUT_DIR}/arch/arm64/boot/dtb" anykernel/dtb
+    echo "[+] DTB table copied from arch/arm64/boot/dtb"
 else
-    KONA_DTB=$(find ${OUT_DIR}/arch/arm64/boot/dts/vendor/qcom/ -name "*kona-v2.1*.dtb" | head -n 1)
-    if [ -n "$KONA_DTB" ] && [ -f "$KONA_DTB" ]; then
-        cp "$KONA_DTB" anykernel/dtb
-        echo "[+] DTB (Kona v2.1) packed as fallback."
-    else
-        echo "❌ [ERROR] Failed to find ANY suitable DTB!"
-        exit 1
-    fi
+    cat ${OUT_DIR}/arch/arm64/boot/dts/vendor/qcom/*.dtb > anykernel/dtb
+    echo "[+] Concatenated all compiled DTBs into anykernel/dtb"
 fi
 
-if [ ! -f "${OUT_DIR}/arch/arm64/boot/dtbo.img" ]; then
+# DTBO packaging
+if [ -f "${OUT_DIR}/arch/arm64/boot/dtbo.img" ]; then
+    cp "${OUT_DIR}/arch/arm64/boot/dtbo.img" anykernel/
+    echo "[+] DTBO Image copied directly."
+else
     if [ ! -f "scripts/dtc/libfdt/mkdtboimg.py" ]; then
         mkdir -p scripts/dtc/libfdt/
         curl -sL -o scripts/dtc/libfdt/mkdtboimg.py https://raw.githubusercontent.com/LineageOS/android_system_libufdt/lineage-19.1/utils/src/mkdtboimg.py
@@ -274,12 +322,11 @@ if [ ! -f "${OUT_DIR}/arch/arm64/boot/dtbo.img" ]; then
     count=$(ls -1 ${OUT_DIR}/arch/arm64/boot/dts/vendor/qcom/*.dtbo 2>/dev/null | wc -l || echo "0")
     if [ "$count" != "0" ]; then
         python3 scripts/dtc/libfdt/mkdtboimg.py create anykernel/dtbo.img --page_size=4096 ${OUT_DIR}/arch/arm64/boot/dts/vendor/qcom/*.dtbo
+        echo "[+] DTBO packed successfully from DTBO fragments."
     else
         echo "❌ [ERROR] No .dtbo fragments found!"
         exit 1
     fi
-else
-    cp "${OUT_DIR}/arch/arm64/boot/dtbo.img" anykernel/
 fi
 
 # ------------------------------------------
