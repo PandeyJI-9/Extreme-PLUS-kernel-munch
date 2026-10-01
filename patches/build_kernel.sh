@@ -34,6 +34,14 @@ export CCACHE_DIR="$HOME/.cache/ccache_mikernel"
 export CCACHE_EXEC=$(command -v ccache)
 export USE_CCACHE=1
 
+# ------------------------------------------
+# 🚀 THE RAM FIX LOGIC (For GitHub Actions)
+# ------------------------------------------
+TOTAL_CORES=$(nproc --all)
+SAFE_CORES=$((TOTAL_CORES / 2))
+if [ "$SAFE_CORES" -lt 1 ]; then SAFE_CORES=1; fi
+
+echo "[*] System Cores: ${TOTAL_CORES} | Safe Cores for Compilation: ${SAFE_CORES}"
 echo "[*] Cleaning previous builds..."
 rm -rf "${OUT_DIR}" anykernel
 mkdir -p "${OUT_DIR}"
@@ -53,21 +61,24 @@ if ! grep -q "selinux,baseband_guard" security/Kconfig; then
 fi
 
 # ------------------------------------------
-# 2. SukiSU Ultra (Root) Setup - SAFE MODE
+# 2. SukiSU Ultra (Root) Setup
 # ------------------------------------------
 if [ "$ENABLE_KSU" -eq 1 ]; then
-    echo "[*] Injecting SukiSU Ultra Source (Vanilla Mode)..."
+    echo "[*] Injecting SukiSU Ultra Source..."
     if ! curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s main; then
         echo "❌ [ERROR] SukiSU script execution failed!"
         exit 1
     fi
+    
+    echo "[*] Hardcoding SukiSU into Makefile to force compilation..."
+    sed -i 's/obj-$(CONFIG_KSU) += KernelSU\//obj-y += KernelSU\//g' drivers/Makefile 2>/dev/null || true
+    echo "ccflags-y += -DCONFIG_KSU=1" >> drivers/KernelSU/Makefile 2>/dev/null || true
 fi
 
 # ------------------------------------------
-# 3. Compile Environment & Config Generation
+# 3. Compile Environment Setup
 # ------------------------------------------
 MAKE_OPTS=(
-    -j"$(nproc --all)"
     O="${OUT_DIR}"
     ARCH="${ARCH}"
     SUBARCH="${SUBARCH}"
@@ -80,22 +91,21 @@ MAKE_OPTS=(
 )
 
 echo "[*] Generating Defconfig (${DEFCONFIG})..."
-make "${MAKE_OPTS[@]}" "${DEFCONFIG}"
+make -j"${TOTAL_CORES}" "${MAKE_OPTS[@]}" "${DEFCONFIG}"
 
 # ------------------------------------------
-# 4. Config Injection (Stable)
+# 4. Safe & Aggressive Config Injection
 # ------------------------------------------
 echo "[*] Injecting Custom Configs Safely..."
-
 scripts/config --file "${OUT_DIR}/.config" -e BBG
 
 if [ "$ENABLE_KSU" -eq 1 ]; then
-    echo "[*] Enabling KPROBES and KSU (Disabled SUSFS to prevent bootloop)..."
+    echo "[*] Enabling KPROBES, KSU and SUSFS..."
     scripts/config --file "${OUT_DIR}/.config" -e KPROBES -e HAVE_KPROBES -e KPROBE_EVENTS
-    scripts/config --file "${OUT_DIR}/.config" -e KSU
-    scripts/config --file "${OUT_DIR}/.config" -d KSU_SUSFS
+    scripts/config --file "${OUT_DIR}/.config" -e KSU -e KSU_SUSFS
 fi
 
+# LTO disabled to save RAM during the heavy linking phase
 scripts/config --file "${OUT_DIR}/.config" \
     --set-str STATIC_USERMODEHELPER_PATH /system/bin/micd \
     -e PERF_CRITICAL_RT_TASK -e SF_BINDER -e OVERLAY_FS -e MIGT \
@@ -103,16 +113,16 @@ scripts/config --file "${OUT_DIR}/.config" \
     -e MIUI_ZRAM_MEMORY_TRACKING -e PERF_HELPER \
     -e LTO_NONE -d LTO_CLANG -d LTO_CLANG_THIN -d CFI_CLANG
 
-make "${MAKE_OPTS[@]}" olddefconfig
+make -j"${TOTAL_CORES}" "${MAKE_OPTS[@]}" olddefconfig
 
 # ------------------------------------------
-# 5. Build Kernel Image, DTB & DTBO
+# 5. Build Kernel Image & DTBO (THE RAM FIX)
 # ------------------------------------------
-echo "[*] Compiling Kernel Image..."
-make "${MAKE_OPTS[@]}" Image
+echo "[*] Compiling Kernel Image (Using ${SAFE_CORES} threads to save RAM)..."
+make -j"${SAFE_CORES}" "${MAKE_OPTS[@]}" Image
 
-echo "[*] Compiling DTBs & DTBO..."
-make "${MAKE_OPTS[@]}" dtbs
+echo "[*] Compiling DTBs & DTBO (Full threads)..."
+make -j"${TOTAL_CORES}" "${MAKE_OPTS[@]}" dtbs
 
 # ------------------------------------------
 # 6. AnyKernel3 Setup
@@ -169,14 +179,13 @@ fi
 cp "${OUT_DIR}/arch/arm64/boot/Image" anykernel/
 echo "[+] Kernel Image copied."
 
-echo "[*] Extracting specific munch DTB..."
-# FIX: Do not concatenate ALL dtbs, it causes bootloops. Just find munch specific ones.
+echo "[*] Extracting specific munch DTB (Fixes Bootloop)..."
 MUNCH_DTB=$(find ${OUT_DIR}/arch/arm64/boot/dts/vendor/qcom/ -name "*munch*.dtb" | head -n 1)
 if [ -n "$MUNCH_DTB" ] && [ -f "$MUNCH_DTB" ]; then
     cp "$MUNCH_DTB" anykernel/dtb
     echo "[+] DTB (Munch) successfully packed."
 else
-    echo "⚠️ Warning: Specific munch.dtb not found. Falling back to kona-v2.1.dtb (Snapdragon 870 base)..."
+    echo "⚠️️ Warning: Specific munch.dtb not found. Falling back to kona-v2.1.dtb (Snapdragon 870 base)..."
     KONA_DTB=$(find ${OUT_DIR}/arch/arm64/boot/dts/vendor/qcom/ -name "*kona-v2.1*.dtb" | head -n 1)
     if [ -n "$KONA_DTB" ] && [ -f "$KONA_DTB" ]; then
         cp "$KONA_DTB" anykernel/dtb
