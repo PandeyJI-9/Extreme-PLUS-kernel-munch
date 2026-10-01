@@ -10,7 +10,11 @@ def patch(path):
         return True # Return True to not break the build loop
 
     if 'qcom,freq-domain-max-freq' in text:
-        print("✅ CPU Prime Core cap already applied — skipping")
+        import re
+        text = re.sub(r"qcom,freq-domain-max-freq\s*=\s*<[^>]+>;", "qcom,freq-domain-max-freq = <2841600>;", text)
+        with open(path, 'w') as f:
+            f.write(text)
+        print("✅ CPU Prime Core cap updated to 2841600")
         return True
 
     # Added multiple fallback markers in case the dev's kernel tree is slightly different
@@ -26,7 +30,7 @@ def patch(path):
                 '\n\t\t\t/* EXTREME++GAMING: Cap Prime Core (CPU7) to 2.84 GHz     */\n'
                 '\t\t\t/* Domain 2 = Kryo 585 Gold Plus — reduces peak heat      */\n'
                 '\t\t\t/* Stock: 3187 MHz → Patched: 2841 MHz                    */\n'
-                '\t\t\tqcom,freq-domain-max-freq = <0 0 2841600>;\n'
+                '\t\t\tqcom,freq-domain-max-freq = <2841600>;\n'
             )
             text = text.replace(marker, marker + insert, 1)
             with open(path, 'w') as f:

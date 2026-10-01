@@ -158,33 +158,41 @@ print("✅ GPU OPP 10-step Table natively injected!")
 '
 
 # ------------------------------------------
-# 5. Native CPU Peak Cap (3.05 GHz / Drop 3.187 GHz Peak Step)
+# 5. Native CPU Peak Cap (2.84 GHz / Drop 3.2 GHz Peak Step)
 # ------------------------------------------
-echo "[*] Natively Applying CPU Peak Cap (3.05 GHz / Drop 3.187 GHz Peak Step)..."
+echo "[*] Natively Applying CPU Peak Cap (2.84 GHz / Drop 3.2 GHz Peak Step)..."
 python3 -c '
+import re
+
 # 1. Patch kona.dtsi
 path_dts = "arch/arm64/boot/dts/vendor/qcom/kona.dtsi"
 with open(path_dts, "r") as f:
     text_dts = f.read()
 
 marker = "qcom,skip-enable-check;"
-insertion = "\n\t\t\t/* EXTREME++: Cap Prime Core peak (remove 3.187 GHz step) */\n\t\t\tqcom,freq-domain-max-freq = <3052800>;"
-if "qcom,freq-domain-max-freq" not in text_dts:
+insertion = "\n\t\t\t/* EXTREME++: Cap Prime Core peak to 2.84 GHz (remove 3.187 GHz step) */\n\t\t\tqcom,freq-domain-max-freq = <2841600>;"
+if "qcom,freq-domain-max-freq" in text_dts:
+    text_dts = re.sub(r"qcom,freq-domain-max-freq\s*=\s*<[^>]+>;", "qcom,freq-domain-max-freq = <2841600>;", text_dts)
+else:
     text_dts = text_dts.replace(marker, marker + insertion, 1)
-    with open(path_dts, "w") as f:
-        f.write(text_dts)
-    print("✅ CPU Prime Core max-freq cap (<3052800>) added to kona.dtsi")
+
+with open(path_dts, "w") as f:
+    f.write(text_dts)
+print("✅ CPU Prime Core max-freq cap (<2841600>) set in kona.dtsi")
 
 # 2. Patch drivers/cpufreq/qcom-cpufreq-hw.c
 path_driver = "drivers/cpufreq/qcom-cpufreq-hw.c"
 with open(path_driver, "r") as f:
     text_driver = f.read()
 
-if "max_freq_cap" not in text_driver:
+if "max_freq_cap" in text_driver:
+    text_driver = text_driver.replace("3052800", "2841600")
+else:
     target1 = "spin_lock_init(&c->skip_data.lock);"
     patch1 = """spin_lock_init(&c->skip_data.lock);
 \tu32 max_freq_cap = 0;
-\tof_property_read_u32(dev->of_node, "qcom,freq-domain-max-freq", &max_freq_cap);"""
+\tof_property_read_u32(dev->of_node, "qcom,freq-domain-max-freq", &max_freq_cap);
+\tif (!max_freq_cap) max_freq_cap = 2841600;"""
     text_driver = text_driver.replace(target1, patch1, 1)
 
     target2 = "dev_dbg(dev, \"index=%d freq=%d, core_count %d\\n\","
@@ -194,9 +202,9 @@ if "max_freq_cap" not in text_driver:
 \t\tdev_dbg(dev, \"index=%d freq=%d, core_count %d\\n\","""
     text_driver = text_driver.replace(target2, patch2, 1)
 
-    with open(path_driver, "w") as f:
-        f.write(text_driver)
-    print("✅ qcom-cpufreq-hw driver patched to honor freq-domain-max-freq")
+with open(path_driver, "w") as f:
+    f.write(text_driver)
+print("✅ qcom-cpufreq-hw driver patched to honor freq-domain-max-freq (strictly 2841600)")
 '
 
 # ------------------------------------------
