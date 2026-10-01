@@ -1,34 +1,56 @@
-      - name: "🔍 Fetch Latest ReSukiSU Release"
+name: 📲 Send ReSukiSU Manager
+
+on:
+  workflow_dispatch: # Manual trigger button
+
+jobs:
+  push_apk_telegram:
+    name: "Fetch & Send Manager"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: "🔍 Fetch Latest Manager APK"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "[*] Contacting GitHub API..."
-          # Fetch all releases (including pre-releases) instead of just 'latest'
-          API_URL="https://api.github.com/repos/ReSukiSU/ReSukiSU/releases"
+          echo "[*] Contacting GitHub API for APK..."
+          # Fetching from rsuntk as ReSukiSU doesn't host compiled APKs
+          API_URL="https://api.github.com/repos/rsuntk/KernelSU/releases"
           
-          # Extract exact APK URL and Version using jq
-          APK_URL=$(curl -sL -H "Authorization: Bearer $GH_TOKEN" $API_URL | jq -r '.[0].assets[]? | select(.name | endswith(".apk")) | .browser_download_url' | head -n 1)
-          VERSION_TAG=$(curl -sL -H "Authorization: Bearer $GH_TOKEN" $API_URL | jq -r '.[0].tag_name')
-          
-          # Failsafe Fallback: Agar ReSukiSU manager unke repo me direct nahi hai
-          if [ -z "$APK_URL" ] || [ "$APK_URL" == "null" ]; then
-            echo "[!] ReSukiSU direct APK missing. Triggering fallback to rsuntk..."
-            API_URL="https://api.github.com/repos/rsuntk/KernelSU/releases"
-            APK_URL=$(curl -sL -H "Authorization: Bearer $GH_TOKEN" $API_URL | jq -r '.[0].assets[]? | select(.name | endswith(".apk")) | .browser_download_url' | head -n 1)
-            VERSION_TAG=$(curl -sL -H "Authorization: Bearer $GH_TOKEN" $API_URL | jq -r '.[0].tag_name')
-          fi
+          # Bulletproof extraction using grep
+          APK_URL=$(curl -sL -H "Authorization: Bearer $GH_TOKEN" $API_URL | grep "browser_download_url" | grep -i "\.apk" | cut -d '"' -f 4 | head -n 1)
+          VERSION_TAG=$(curl -sL -H "Authorization: Bearer $GH_TOKEN" $API_URL | grep '"tag_name":' | cut -d '"' -f 4 | head -n 1)
           
           echo "Downloading version: $VERSION_TAG"
           FILE_NAME="ReSukiSU_Manager_${VERSION_TAG}.apk"
           
           wget -q -O "$FILE_NAME" "$APK_URL"
           
-          # Check if file exists AND is not empty (-s)
+          # Check if file exists and is not empty
           if [ -s "$FILE_NAME" ]; then
             echo "APK_FILE=$FILE_NAME" >> $GITHUB_ENV
             echo "VERSION_TAG=$VERSION_TAG" >> $GITHUB_ENV
             echo "✅ Download complete: $FILE_NAME"
           else
-            echo "❌ Failed to download APK! Check API or URL."
+            echo "❌ Failed to download APK!"
             exit 1
           fi
+
+      - name: "🚀 Send APK to Telegram"
+        run: |
+          CAPTION="🔥 <b>EXTREME++ KernelSU Manager</b>
+          
+          📦 <b>Version:</b> <code>${{ env.VERSION_TAG }}</code>
+          ⚙️ <b>Type:</b> ReSukiSU (Non-GKI 4.19 + SuSFS)
+          📱 <b>Device:</b> POCO F4 (munch)
+          
+          ⬇️ <i>Install this specific manager to control your root access. This is perfectly synced with your EXTREME++ kernel for zero detection!</i>"
+          
+          echo "[*] Uploading APK to Telegram..."
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendDocument" \
+            -F chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -F document="@${{ env.APK_FILE }}" \
+            -F caption="$CAPTION" \
+            -F parse_mode="HTML"
+          
+          echo "[+] Successfully pushed to Telegram!"
