@@ -1,0 +1,56 @@
+name: 📲 Send RKSU Manager
+
+on:
+  workflow_dispatch: # Manual trigger button ke liye
+
+jobs:
+  push_apk_telegram:
+    name: "Fetch & Send RKSU Manager"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: "🔍 Fetch Latest RKSU Release"
+        run: |
+          echo "[*] Contacting rsuntk GitHub API..."
+          API_URL="https://api.github.com/repos/rsuntk/KernelSU/releases/latest"
+          
+          # Extract the direct download URL for the APK
+          APK_URL=$(curl -s $API_URL | grep "browser_download_url.*\.apk" | cut -d '"' -f 4 | head -n 1)
+          
+          # Extract the version tag (e.g., v11938)
+          VERSION_TAG=$(curl -s $API_URL | grep '"tag_name":' | cut -d '"' -f 4)
+          
+          echo "Downloading version: $VERSION_TAG"
+          FILE_NAME="RKSU_Manager_${VERSION_TAG}.apk"
+          
+          wget -q -O "$FILE_NAME" "$APK_URL"
+          
+          # Verify file downloaded successfully
+          if [ -f "$FILE_NAME" ]; then
+            echo "APK_FILE=$FILE_NAME" >> $GITHUB_ENV
+            echo "VERSION_TAG=$VERSION_TAG" >> $GITHUB_ENV
+            echo "✅ Download complete: $FILE_NAME"
+          else
+            echo "❌ Failed to download APK!"
+            exit 1
+          fi
+
+      - name: "🚀 Send APK to Telegram Group"
+        run: |
+          # Professional Telegram Caption Styling
+          CAPTION="🔥 <b>EXTREME++ KernelSU Manager</b>
+          
+          📦 <b>Version:</b> <code>${{ env.VERSION_TAG }}</code>
+          ⚙️ <b>Type:</b> RootHide KSU (rsuntk)
+          📱 <b>Device:</b> POCO F4 (munch)
+          
+          ⬇️ <i>Install this specific manager to control your root access without getting detected by banking apps!</i>"
+          
+          echo "[*] Uploading APK to Telegram..."
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendDocument" \
+            -F chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -F document="@${{ env.APK_FILE }}" \
+            -F caption="$CAPTION" \
+            -F parse_mode="HTML"
+          
+          echo "[+] Successfully pushed to Telegram!"
