@@ -27,7 +27,7 @@ jobs:
           echo "Build type: EXTREME++ Stable / Performance" >> $TEMP_FILE
           echo "Device name: POCO F4" >> $TEMP_FILE
           echo "Device codename: munch" >> $TEMP_FILE
-          echo "Kernel maintainer: Ayush Pandey JI" >> $TEMP_FILE
+          echo "Kernel maintainer: @pandey_ji_8" >> $TEMP_FILE
           echo "" >> $TEMP_FILE
           
           # 2. Date Divider
