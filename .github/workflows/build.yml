@@ -79,9 +79,9 @@ jobs:
           fi
           
           # Fix path export for release
-          ZIP_FILE=$(find anykernel -maxdepth 1 -name "EXTREME_HyperOS_munch_*.zip" | head -n 1)
-          if [ -n "$ZIP_FILE" ]; then
-            echo "ZIP_PATH=kernel/${ZIP_FILE}" >> $GITHUB_ENV
+          ZIP_FILE=$(find "$GITHUB_WORKSPACE" -maxdepth 3 -name "EXTREME_HyperOS_munch_*.zip" | head -n 1)
+          if [ -n "$ZIP_FILE" ] && [ -f "$ZIP_FILE" ]; then
+            echo "ZIP_PATH=${ZIP_FILE}" >> $GITHUB_ENV
             echo "✅ ZIP located: $ZIP_FILE"
           else
             echo "❌ ZIP NOT FOUND!"
