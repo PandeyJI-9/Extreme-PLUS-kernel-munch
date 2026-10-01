@@ -36,7 +36,7 @@ export CCACHE_EXEC=$(command -v ccache)
 export USE_CCACHE=1
 
 # ------------------------------------------
-# 🚀 SYSTEM CORES SETUP (Full Speed to prevent deadlock)
+# 🚀 SYSTEM CORES SETUP
 # ------------------------------------------
 TOTAL_CORES=$(nproc --all)
 echo "[*] System Cores: ${TOTAL_CORES} | Running at FULL SPEED!"
@@ -59,7 +59,7 @@ if ! grep -q "selinux,baseband_guard" security/Kconfig; then
 fi
 
 # ------------------------------------------
-# 2. RKSU (RootHide KernelSU) Setup
+# 2. RKSU (RootHide KernelSU) Setup & LINKER FIX
 # ------------------------------------------
 if [ "$ENABLE_KSU" -eq 1 ]; then
     echo "[*] Injecting RKSU (RootHide KernelSU) Source..."
@@ -67,6 +67,12 @@ if [ "$ENABLE_KSU" -eq 1 ]; then
         echo "❌ [ERROR] RKSU script execution failed!"
         exit 1
     fi
+    
+    # 🔥 THE MASTER LINKER FIX: Force the compiler to build the KernelSU folder
+    echo "[*] Applying Force-Compile Hack for RKSU..."
+    sed -i 's/obj-$(CONFIG_KSU) += KernelSU\//obj-y += KernelSU\//g' drivers/Makefile 2>/dev/null || true
+    echo "obj-y += KernelSU/" >> drivers/Makefile
+    echo "ccflags-y += -DCONFIG_KSU=1" >> drivers/KernelSU/Makefile 2>/dev/null || true
 fi
 
 # ------------------------------------------
@@ -99,7 +105,6 @@ if [ "$ENABLE_KSU" -eq 1 ]; then
     scripts/config --file "${OUT_DIR}/.config" -e KSU
 fi
 
-# Essential HyperOS configs + Disabled LTO to save base RAM
 scripts/config --file "${OUT_DIR}/.config" \
     --set-str STATIC_USERMODEHELPER_PATH /system/bin/micd \
     -e PERF_CRITICAL_RT_TASK -e SF_BINDER -e OVERLAY_FS -e MIGT \
