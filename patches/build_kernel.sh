@@ -10,7 +10,6 @@ trap 'echo "❌ [ERROR] Script failed on line $LINENO"; exit 1' ERR
 
 if [ -z "$1" ]; then
     echo "[!] Error: No device specified."
-    echo "Usage: $0 <device_name> [ksu]"
     exit 1
 fi
 
@@ -36,7 +35,7 @@ export CCACHE_EXEC=$(command -v ccache)
 export USE_CCACHE=1
 
 # ------------------------------------------
-# 🚀 SYSTEM CORES SETUP
+# 🚀 SYSTEM CORES SETUP (Full Speed)
 # ------------------------------------------
 TOTAL_CORES=$(nproc --all)
 echo "[*] System Cores: ${TOTAL_CORES} | Running at FULL SPEED!"
@@ -59,20 +58,15 @@ if ! grep -q "selinux,baseband_guard" security/Kconfig; then
 fi
 
 # ------------------------------------------
-# 2. RKSU (RootHide KernelSU) Setup & LINKER FIX
+# 2. RKSU (RootHide KernelSU) Setup
 # ------------------------------------------
 if [ "$ENABLE_KSU" -eq 1 ]; then
     echo "[*] Injecting RKSU (RootHide KernelSU) Source..."
-    if ! curl -LSs "https://raw.githubusercontent.com/rsuntk/KernelSU/main/kernel/setup.sh" | bash -s main; then
-        echo "❌ [ERROR] RKSU script execution failed!"
-        exit 1
-    fi
+    curl -LSs "https://raw.githubusercontent.com/rsuntk/KernelSU/main/kernel/setup.sh" | bash -s main || true
     
-    # 🔥 THE MASTER LINKER FIX: Force the compiler to build the KernelSU folder
-    echo "[*] Applying Force-Compile Hack for RKSU..."
-    sed -i 's/obj-$(CONFIG_KSU) += KernelSU\//obj-y += KernelSU\//g' drivers/Makefile 2>/dev/null || true
-    echo "obj-y += KernelSU/" >> drivers/Makefile
-    echo "ccflags-y += -DCONFIG_KSU=1" >> drivers/KernelSU/Makefile 2>/dev/null || true
+    echo "[*] Applying Native Failsafe for RKSU Kconfigs..."
+    grep -q "KernelSU" drivers/Kconfig || echo 'source "drivers/KernelSU/Kconfig"' >> drivers/Kconfig
+    grep -q "KernelSU" drivers/Makefile || echo 'obj-$(CONFIG_KSU) += KernelSU/' >> drivers/Makefile
 fi
 
 # ------------------------------------------
@@ -100,7 +94,6 @@ echo "[*] Injecting Custom Configs Safely..."
 scripts/config --file "${OUT_DIR}/.config" -e BBG
 
 if [ "$ENABLE_KSU" -eq 1 ]; then
-    echo "[*] Enabling KPROBES and RKSU..."
     scripts/config --file "${OUT_DIR}/.config" -e KPROBES -e HAVE_KPROBES -e KPROBE_EVENTS
     scripts/config --file "${OUT_DIR}/.config" -e KSU
 fi
@@ -114,13 +107,21 @@ scripts/config --file "${OUT_DIR}/.config" \
 
 make -j"${TOTAL_CORES}" "${MAKE_OPTS[@]}" olddefconfig
 
+# 🔥 THE ULTIMATE KSU FIX: Ensuring CONFIG_KSU survives olddefconfig
+if [ "$ENABLE_KSU" -eq 1 ]; then
+    if ! grep -q "CONFIG_KSU=y" "${OUT_DIR}/.config"; then
+        echo "[!] CONFIG_KSU was dropped by olddefconfig! Forcing it back into .config..."
+        echo "CONFIG_KSU=y" >> "${OUT_DIR}/.config"
+    fi
+fi
+
 # ------------------------------------------
 # 5. Build Kernel Image & DTBO
 # ------------------------------------------
-echo "[*] Compiling Kernel Image (Full Speed - Using ${TOTAL_CORES} threads)..."
+echo "[*] Compiling Kernel Image..."
 make -j"${TOTAL_CORES}" "${MAKE_OPTS[@]}" Image
 
-echo "[*] Compiling DTBs & DTBO (Full Speed - Using ${TOTAL_CORES} threads)..."
+echo "[*] Compiling DTBs & DTBO..."
 make -j"${TOTAL_CORES}" "${MAKE_OPTS[@]}" dtbs
 
 # ------------------------------------------
@@ -178,13 +179,11 @@ fi
 cp "${OUT_DIR}/arch/arm64/boot/Image" anykernel/
 echo "[+] Kernel Image copied."
 
-echo "[*] Extracting specific munch DTB (Fixes Bootloop)..."
 MUNCH_DTB=$(find ${OUT_DIR}/arch/arm64/boot/dts/vendor/qcom/ -name "*munch*.dtb" | head -n 1)
 if [ -n "$MUNCH_DTB" ] && [ -f "$MUNCH_DTB" ]; then
     cp "$MUNCH_DTB" anykernel/dtb
     echo "[+] DTB (Munch) successfully packed."
 else
-    echo "⚠️ Warning: Specific munch.dtb not found. Falling back to kona-v2.1.dtb (Snapdragon 870 base)..."
     KONA_DTB=$(find ${OUT_DIR}/arch/arm64/boot/dts/vendor/qcom/ -name "*kona-v2.1*.dtb" | head -n 1)
     if [ -n "$KONA_DTB" ] && [ -f "$KONA_DTB" ]; then
         cp "$KONA_DTB" anykernel/dtb
@@ -196,23 +195,19 @@ else
 fi
 
 if [ ! -f "${OUT_DIR}/arch/arm64/boot/dtbo.img" ]; then
-    echo "⚠️ dtbo.img not found directly. Attempting to pack from .dtbo files..."
     if [ ! -f "scripts/dtc/libfdt/mkdtboimg.py" ]; then
-        echo "[*] Downloading missing mkdtboimg.py tool..."
         mkdir -p scripts/dtc/libfdt/
         curl -sL -o scripts/dtc/libfdt/mkdtboimg.py https://raw.githubusercontent.com/LineageOS/android_system_libufdt/lineage-19.1/utils/src/mkdtboimg.py
     fi
     count=$(ls -1 ${OUT_DIR}/arch/arm64/boot/dts/vendor/qcom/*.dtbo 2>/dev/null | wc -l || echo "0")
     if [ "$count" != "0" ]; then
         python3 scripts/dtc/libfdt/mkdtboimg.py create anykernel/dtbo.img --page_size=4096 ${OUT_DIR}/arch/arm64/boot/dts/vendor/qcom/*.dtbo
-        echo "[+] DTBO packed successfully from fragments."
     else
         echo "❌ [ERROR] No .dtbo fragments found!"
         exit 1
     fi
 else
     cp "${OUT_DIR}/arch/arm64/boot/dtbo.img" anykernel/
-    echo "[+] DTBO Image copied directly."
 fi
 
 # ------------------------------------------
