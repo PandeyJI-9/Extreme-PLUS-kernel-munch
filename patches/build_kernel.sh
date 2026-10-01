@@ -35,7 +35,7 @@ export CCACHE_EXEC=$(command -v ccache)
 export USE_CCACHE=1
 
 # ------------------------------------------
-# 🚀 THE RAM FIX LOGIC (For GitHub Actions)
+# 🚀 THE RAM FIX LOGIC
 # ------------------------------------------
 TOTAL_CORES=$(nproc --all)
 SAFE_CORES=$((TOTAL_CORES / 2))
@@ -61,18 +61,15 @@ if ! grep -q "selinux,baseband_guard" security/Kconfig; then
 fi
 
 # ------------------------------------------
-# 2. SukiSU Ultra (Root) Setup
+# 2. LIGHTWEIGHT ROOT (Official KernelSU)
 # ------------------------------------------
 if [ "$ENABLE_KSU" -eq 1 ]; then
-    echo "[*] Injecting SukiSU Ultra Source..."
-    if ! curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s main; then
-        echo "❌ [ERROR] SukiSU script execution failed!"
+    echo "[*] Injecting Official Vanilla KernelSU (Lightweight & Stable)..."
+    if ! curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s main; then
+        echo "❌ [ERROR] KernelSU script execution failed!"
         exit 1
     fi
-    
-    echo "[*] Hardcoding SukiSU into Makefile to force compilation..."
-    sed -i 's/obj-$(CONFIG_KSU) += KernelSU\//obj-y += KernelSU\//g' drivers/Makefile 2>/dev/null || true
-    echo "ccflags-y += -DCONFIG_KSU=1" >> drivers/KernelSU/Makefile 2>/dev/null || true
+    # No aggressive Makefile hacks needed for Official KSU. It is naturally stable.
 fi
 
 # ------------------------------------------
@@ -94,18 +91,17 @@ echo "[*] Generating Defconfig (${DEFCONFIG})..."
 make -j"${TOTAL_CORES}" "${MAKE_OPTS[@]}" "${DEFCONFIG}"
 
 # ------------------------------------------
-# 4. Safe & Aggressive Config Injection
+# 4. Safe Config Injection
 # ------------------------------------------
 echo "[*] Injecting Custom Configs Safely..."
 scripts/config --file "${OUT_DIR}/.config" -e BBG
 
 if [ "$ENABLE_KSU" -eq 1 ]; then
-    echo "[*] Enabling KPROBES, KSU and SUSFS..."
+    echo "[*] Enabling KPROBES and Standard KSU..."
     scripts/config --file "${OUT_DIR}/.config" -e KPROBES -e HAVE_KPROBES -e KPROBE_EVENTS
-    scripts/config --file "${OUT_DIR}/.config" -e KSU -e KSU_SUSFS
+    scripts/config --file "${OUT_DIR}/.config" -e KSU
 fi
 
-# LTO disabled to save RAM during the heavy linking phase
 scripts/config --file "${OUT_DIR}/.config" \
     --set-str STATIC_USERMODEHELPER_PATH /system/bin/micd \
     -e PERF_CRITICAL_RT_TASK -e SF_BINDER -e OVERLAY_FS -e MIGT \
@@ -116,7 +112,7 @@ scripts/config --file "${OUT_DIR}/.config" \
 make -j"${TOTAL_CORES}" "${MAKE_OPTS[@]}" olddefconfig
 
 # ------------------------------------------
-# 5. Build Kernel Image & DTBO (THE RAM FIX)
+# 5. Build Kernel Image & DTBO
 # ------------------------------------------
 echo "[*] Compiling Kernel Image (Using ${SAFE_CORES} threads to save RAM)..."
 make -j"${SAFE_CORES}" "${MAKE_OPTS[@]}" Image
@@ -185,7 +181,7 @@ if [ -n "$MUNCH_DTB" ] && [ -f "$MUNCH_DTB" ]; then
     cp "$MUNCH_DTB" anykernel/dtb
     echo "[+] DTB (Munch) successfully packed."
 else
-    echo "⚠️️ Warning: Specific munch.dtb not found. Falling back to kona-v2.1.dtb (Snapdragon 870 base)..."
+    echo "⚠️ Warning: Specific munch.dtb not found. Falling back to kona-v2.1.dtb (Snapdragon 870 base)..."
     KONA_DTB=$(find ${OUT_DIR}/arch/arm64/boot/dts/vendor/qcom/ -name "*kona-v2.1*.dtb" | head -n 1)
     if [ -n "$KONA_DTB" ] && [ -f "$KONA_DTB" ]; then
         cp "$KONA_DTB" anykernel/dtb
@@ -222,7 +218,7 @@ fi
 echo "[*] Zipping EXTREME++ Kernel..."
 cd anykernel
 KSU_TAG="NoRoot"
-[ "$ENABLE_KSU" -eq 1 ] && KSU_TAG="SukiSU"
+[ "$ENABLE_KSU" -eq 1 ] && KSU_TAG="Official_KSU"
 ZIP_NAME="EXTREME_HyperOS_munch_${KSU_TAG}_$(date +'%d%b%Y_%H%M').zip"
 
 rm -rf .git
