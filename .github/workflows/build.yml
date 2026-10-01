@@ -45,12 +45,6 @@ jobs:
         run: |
           git clone --depth=1 -b android17-aptusitu https://github.com/AstideLabs/android_kernel_xiaomi_sm8250 kernel
 
-      - name: "🩹 Apply EXTREME++ CPU/GPU Patches"
-        run: |
-          cd kernel
-          python3 ../patches/apply-cpu-cap.py arch/arm64/boot/dts/vendor/qcom/kona.dtsi
-          python3 ../patches/apply-gpu-opp.py arch/arm64/boot/dts/vendor/qcom/kona-gpu.dtsi
-
       - name: "⚙️ Inject PandeyJI Custom Build Script"
         run: |
           cp patches/build_kernel.sh kernel/
@@ -79,7 +73,7 @@ jobs:
           fi
           
           # Fix path export for release
-          ZIP_FILE=$(find "$GITHUB_WORKSPACE" -maxdepth 3 -name "EXTREME_HyperOS_munch_*.zip" | head -n 1)
+          ZIP_FILE=$(find "$GITHUB_WORKSPACE" -maxdepth 3 -name "*munch_*.zip" | head -n 1)
           if [ -n "$ZIP_FILE" ] && [ -f "$ZIP_FILE" ]; then
             echo "ZIP_PATH=${ZIP_FILE}" >> $GITHUB_ENV
             echo "✅ ZIP located: $ZIP_FILE"
