@@ -47,11 +47,9 @@ jobs:
 
       - name: "🩹 Apply EXTREME++ CPU/GPU Patches"
         run: |
-          cp patches/apply-cpu-cap.py kernel/
-          cp patches/apply-gpu-opp.py kernel/
           cd kernel
-          python3 apply-cpu-cap.py || true
-          python3 apply-gpu-opp.py || true
+          python3 ../patches/apply-cpu-cap.py arch/arm64/boot/dts/vendor/qcom/kona.dtsi
+          python3 ../patches/apply-gpu-opp.py arch/arm64/boot/dts/vendor/qcom/kona-gpu.dtsi
 
       - name: "⚙️ Inject PandeyJI Custom Build Script"
         run: |

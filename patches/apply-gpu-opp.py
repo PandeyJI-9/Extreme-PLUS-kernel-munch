@@ -99,6 +99,5 @@ def patch(path):
     return True
 
 if __name__ == '__main__':
-    if len(sys.argv) < 2:
-        sys.exit(0)
-    sys.exit(0 if patch(sys.argv[1]) else 0)
+    target = sys.argv[1] if len(sys.argv) >= 2 else "arch/arm64/boot/dts/vendor/qcom/kona-gpu.dtsi"
+    sys.exit(0 if patch(target) else 1)
