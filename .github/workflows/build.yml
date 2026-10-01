@@ -13,6 +13,8 @@ jobs:
   build:
     name: "Compile → Release"
     runs-on: ubuntu-22.04
+    permissions:
+      contents: write
     # 🔥 FIX 1: Increased timeout so GitHub doesn't silently cancel the workflow
     timeout-minutes: 180 
 
@@ -103,3 +105,9 @@ jobs:
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
             -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
             -d text="✅ <b>EXTREME++ Build #${{ github.run_number }} Completed!</b>%0A📥 Kernel is ready for testing." -d parse_mode="HTML" || true
+          if [ -n "${{ env.ZIP_PATH }}" ] && [ -f "${{ env.ZIP_PATH }}" ]; then
+            curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendDocument" \
+              -F chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
+              -F document=@"${{ env.ZIP_PATH }}" \
+              -F caption="📦 EXTREME++ Build #${{ github.run_number }} Flashable ZIP" || true
+          fi
