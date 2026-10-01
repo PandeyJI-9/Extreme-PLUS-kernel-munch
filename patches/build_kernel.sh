@@ -74,6 +74,49 @@ if [ "$ENABLE_KSU" -eq 1 ]; then
     grep -q "source \"drivers/kernelsu/Kconfig\"" drivers/Kconfig || echo 'source "drivers/kernelsu/Kconfig"' >> drivers/Kconfig
     # Force obj-y as requested by the user to prevent linking errors at vmlinux stage
     grep -q "obj-y += kernelsu/" drivers/Makefile || echo 'obj-y += kernelsu/' >> drivers/Makefile
+
+    # =====================================================================
+    # RKSU ↔ AstideLabs Compatibility Fix
+    # AstideLabs kernel has OLD KernelSU hooks baked into fs/read_write.c,
+    # fs/exec.c, fs/open.c using static_key_true types + different function
+    # signatures. RKSU doesn't provide these symbols → linker crashes with
+    # "undefined symbol: ksu_is_init_rc_hook_enabled" at vmlinux stage.
+    # Fix: Strip old hooks, inject RKSU-compatible wrappers.
+    # =====================================================================
+    echo "[*] Patching AstideLabs KSU hooks for RKSU compatibility..."
+
+    # --- fs/read_write.c ---
+    # Old hooks: extern struct static_key_true ksu_is_init_rc_hook_enabled;
+    #            extern int ksu_handle_sys_read(unsigned int fd);
+    # RKSU has:  int ksu_handle_sys_read(unsigned int fd, char __user **buf_ptr, size_t *count_ptr);
+    # RKSU does NOT have ksu_is_init_rc_hook_enabled at all.
+    # Fix: Remove old extern block and the static_branch call, replace with simple CONFIG_KSU guard.
+    sed -i '/#ifdef CONFIG_KSU/{
+        N;N;N;N;N;N;N;N
+        /ksu_is_init_rc_hook_enabled.*ksu_handle_sys_read.*SYSCALL_DEFINE3(read/{
+            s|#ifdef CONFIG_KSU\nextern struct static_key_true ksu_is_init_rc_hook_enabled;\nextern __attribute__((cold)) int ksu_handle_sys_read(unsigned int fd);\n#endif\nSYSCALL_DEFINE3(read, unsigned int, fd, char __user \*, buf, size_t, count)\n{\n#ifdef CONFIG_KSU\n\tif (static_branch_unlikely(\&ksu_is_init_rc_hook_enabled))\n\t\tksu_handle_sys_read(fd);|SYSCALL_DEFINE3(read, unsigned int, fd, char __user *, buf, size_t, count)\n{|
+        }
+    }' fs/read_write.c 2>/dev/null || true
+
+    # Simpler approach: just nuke the problematic lines individually
+    sed -i '/extern struct static_key_true ksu_is_init_rc_hook_enabled/d' fs/read_write.c 2>/dev/null || true
+    sed -i '/extern.*ksu_handle_sys_read.*unsigned int fd)/d' fs/read_write.c 2>/dev/null || true
+    sed -i '/static_branch_unlikely.*ksu_is_init_rc_hook_enabled/d' fs/read_write.c 2>/dev/null || true
+    sed -i '/ksu_handle_sys_read(fd)/d' fs/read_write.c 2>/dev/null || true
+
+    # --- fs/exec.c ---
+    # Old hooks use: extern struct static_key_true ksu_su_compat_enabled;
+    # RKSU has:      bool ksu_su_compat_enabled (plain bool, not static_key)
+    # Fix: Replace static_key_true with plain bool extern, and static_branch_likely with plain if
+    sed -i 's/extern struct static_key_true ksu_su_compat_enabled;/extern bool ksu_su_compat_enabled;/g' fs/exec.c 2>/dev/null || true
+    sed -i 's/static_branch_likely(\&ksu_su_compat_enabled)/ksu_su_compat_enabled/g' fs/exec.c 2>/dev/null || true
+
+    # --- fs/open.c ---
+    sed -i 's/extern struct static_key_true ksu_su_compat_enabled;/extern bool ksu_su_compat_enabled;/g' fs/open.c 2>/dev/null || true
+    sed -i 's/static_branch_likely(\&ksu_su_compat_enabled)/ksu_su_compat_enabled/g' fs/open.c 2>/dev/null || true
+    sed -i 's/static_branch_unlikely(\&ksu_su_compat_enabled)/ksu_su_compat_enabled/g' fs/open.c 2>/dev/null || true
+
+    echo "[+] RKSU compatibility patches applied to fs/ hooks."
 fi
 
 # ------------------------------------------
