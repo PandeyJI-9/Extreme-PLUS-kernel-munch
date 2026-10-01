@@ -1,7 +1,13 @@
 name: 📜 Auto-Generate & Post Changelog
 
 on:
-  workflow_dispatch: # Manual trigger
+  workflow_dispatch:
+    inputs:
+      notify:
+        description: 'Send to Telegram?'
+        required: false
+        type: boolean
+        default: true
 
 jobs:
   update_changelog:
