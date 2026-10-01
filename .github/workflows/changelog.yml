@@ -85,21 +85,21 @@ jobs:
           SAFE_COMMITS=$(echo "${{ env.TG_COMMITS }}" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g')
           
           CAPTION="🔥 <b>EXTREME++ Kernel Update Changelog</b>
-
-🗓 <b>Date:</b> $(date +"%d/%m/%Y")
-👤 <b>Maintainer:</b> @pandey_ji_8
-📱 <b>Device:</b> POCO F4 (munch)
-
-🛠 <b>Latest Changes:</b>
-${SAFE_COMMITS}
-
-━━━━━━━━━━━━━━━━━━
-🔗 <b>Changelog Links:</b>
-• <a href=\"${BLOB_LINK}\">View on GitHub</a>
-• <a href=\"${RAW_LINK}\">Direct Raw File</a>
-
-🌐 <b>Raw Link:</b>
-${RAW_LINK}"
+          
+          🗓 <b>Date:</b> $(date +"%d/%m/%Y")
+          👤 <b>Maintainer:</b> @pandey_ji_8
+          📱 <b>Device:</b> POCO F4 (munch)
+          
+          🛠 <b>Latest Changes:</b>
+          ${SAFE_COMMITS}
+          
+          ━━━━━━━━━━━━━━━━━━
+          🔗 <b>Changelog Links:</b>
+          • <a href=\"${BLOB_LINK}\">View on GitHub</a>
+          • <a href=\"${RAW_LINK}\">Direct Raw File</a>
+          
+          🌐 <b>Raw Link:</b>
+          ${RAW_LINK}"
           
           echo "[*] Sending Changelog to Telegram..."
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
