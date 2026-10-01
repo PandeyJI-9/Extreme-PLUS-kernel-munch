@@ -81,41 +81,63 @@ if [ "$ENABLE_KSU" -eq 1 ]; then
     # fs/exec.c, fs/open.c using static_key_true types + different function
     # signatures. RKSU doesn't provide these symbols → linker crashes with
     # "undefined symbol: ksu_is_init_rc_hook_enabled" at vmlinux stage.
-    # Fix: Strip old hooks, inject RKSU-compatible wrappers.
+    # Fix: Cleanly strip the incompatible old hooks using exact Python matching.
     # =====================================================================
     echo "[*] Patching AstideLabs KSU hooks for RKSU compatibility..."
 
-    # --- fs/read_write.c ---
-    # Old hooks: extern struct static_key_true ksu_is_init_rc_hook_enabled;
-    #            extern int ksu_handle_sys_read(unsigned int fd);
-    # RKSU has:  int ksu_handle_sys_read(unsigned int fd, char __user **buf_ptr, size_t *count_ptr);
-    # RKSU does NOT have ksu_is_init_rc_hook_enabled at all.
-    # Fix: Remove old extern block and the static_branch call, replace with simple CONFIG_KSU guard.
-    sed -i '/#ifdef CONFIG_KSU/{
-        N;N;N;N;N;N;N;N
-        /ksu_is_init_rc_hook_enabled.*ksu_handle_sys_read.*SYSCALL_DEFINE3(read/{
-            s|#ifdef CONFIG_KSU\nextern struct static_key_true ksu_is_init_rc_hook_enabled;\nextern __attribute__((cold)) int ksu_handle_sys_read(unsigned int fd);\n#endif\nSYSCALL_DEFINE3(read, unsigned int, fd, char __user \*, buf, size_t, count)\n{\n#ifdef CONFIG_KSU\n\tif (static_branch_unlikely(\&ksu_is_init_rc_hook_enabled))\n\t\tksu_handle_sys_read(fd);|SYSCALL_DEFINE3(read, unsigned int, fd, char __user *, buf, size_t, count)\n{|
-        }
-    }' fs/read_write.c 2>/dev/null || true
+    python3 -c '
+# 1. Clean fs/read_write.c
+try:
+    with open("fs/read_write.c", "r") as f:
+        c = f.read()
 
-    # Simpler approach: just nuke the problematic lines individually
-    sed -i '/extern struct static_key_true ksu_is_init_rc_hook_enabled/d' fs/read_write.c 2>/dev/null || true
-    sed -i '/extern.*ksu_handle_sys_read.*unsigned int fd)/d' fs/read_write.c 2>/dev/null || true
-    sed -i '/static_branch_unlikely.*ksu_is_init_rc_hook_enabled/d' fs/read_write.c 2>/dev/null || true
-    sed -i '/ksu_handle_sys_read(fd)/d' fs/read_write.c 2>/dev/null || true
+    bad_extern = """#ifdef CONFIG_KSU
+extern struct static_key_true ksu_is_init_rc_hook_enabled;
+extern __attribute__((cold)) int ksu_handle_sys_read(unsigned int fd);
+#endif"""
 
-    # --- fs/exec.c ---
-    # Old hooks use: extern struct static_key_true ksu_su_compat_enabled;
-    # RKSU has:      bool ksu_su_compat_enabled (plain bool, not static_key)
-    # Fix: Replace static_key_true with plain bool extern, and static_branch_likely with plain if
-    sed -i 's/extern struct static_key_true ksu_su_compat_enabled;/extern bool ksu_su_compat_enabled;/g' fs/exec.c 2>/dev/null || true
-    sed -i 's/static_branch_likely(\&ksu_su_compat_enabled)/ksu_su_compat_enabled/g' fs/exec.c 2>/dev/null || true
+    bad_hook = """#ifdef CONFIG_KSU
+\tif (static_branch_unlikely(&ksu_is_init_rc_hook_enabled))
+\t\tksu_handle_sys_read(fd);
+#endif"""
 
-    # --- fs/open.c ---
-    sed -i 's/extern struct static_key_true ksu_su_compat_enabled;/extern bool ksu_su_compat_enabled;/g' fs/open.c 2>/dev/null || true
-    sed -i 's/static_branch_likely(\&ksu_su_compat_enabled)/ksu_su_compat_enabled/g' fs/open.c 2>/dev/null || true
-    sed -i 's/static_branch_unlikely(\&ksu_su_compat_enabled)/ksu_su_compat_enabled/g' fs/open.c 2>/dev/null || true
+    if bad_extern in c:
+        c = c.replace(bad_extern, "")
+        print("[+] Cleaned up bad extern in fs/read_write.c")
+    if bad_hook in c:
+        c = c.replace(bad_hook, "")
+        print("[+] Cleaned up bad hook in fs/read_write.c")
 
+    with open("fs/read_write.c", "w") as f:
+        f.write(c)
+except Exception as e:
+    print("[-] Note on fs/read_write.c:", e)
+
+# 2. Clean fs/exec.c
+try:
+    with open("fs/exec.c", "r") as f:
+        c = f.read()
+    c = c.replace("extern struct static_key_true ksu_su_compat_enabled;", "extern bool ksu_su_compat_enabled;")
+    c = c.replace("static_branch_likely(&ksu_su_compat_enabled)", "ksu_su_compat_enabled")
+    with open("fs/exec.c", "w") as f:
+        f.write(c)
+    print("[+] Successfully adapted fs/exec.c for RKSU")
+except Exception as e:
+    print("[-] Note on fs/exec.c:", e)
+
+# 3. Clean fs/open.c
+try:
+    with open("fs/open.c", "r") as f:
+        c = f.read()
+    c = c.replace("extern struct static_key_true ksu_su_compat_enabled;", "extern bool ksu_su_compat_enabled;")
+    c = c.replace("static_branch_likely(&ksu_su_compat_enabled)", "ksu_su_compat_enabled")
+    c = c.replace("static_branch_unlikely(&ksu_su_compat_enabled)", "ksu_su_compat_enabled")
+    with open("fs/open.c", "w") as f:
+        f.write(c)
+    print("[+] Successfully adapted fs/open.c for RKSU")
+except Exception as e:
+    print("[-] Note on fs/open.c:", e)
+'
     echo "[+] RKSU compatibility patches applied to fs/ hooks."
 fi
 
