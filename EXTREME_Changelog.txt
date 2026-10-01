@@ -2,7 +2,20 @@ Kernel Specific Changes:
 Build type: EXTREME++ Stable / Performance
 Device name: POCO F4
 Device codename: munch
-Kernel maintainer: PandeyJI-9
+Kernel maintainer: @pandey_ji_8
+
+==========01/10/2026==========
+* Update changelog.yml
+* Update changelog.yml
+* 📝 docs: Auto-updated EXTREME++ changelog
+* Create changelog.yml
+* fix: inject FakeDreamer 10-step UV OPP table & speed bins into both kona-gpu.dtsi and kona-v2-gpu.dtsi
+* Update send_rksu.yml
+* Update send_rksu.yml
+* Update send_rksu.yml
+* fix: make cpufreq driver patch C89-compliant to fix -Wdeclaration-after-statement
+* fix: strictly cap CPU Prime Core to 2841600 (2.84 GHz) in driver and kona.dtsi
+
 
 ==========01/10/2026==========
 * Create changelog.yml
