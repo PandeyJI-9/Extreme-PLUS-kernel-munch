@@ -10,6 +10,7 @@ trap 'echo "❌ [ERROR] Script failed on line $LINENO"; exit 1' ERR
 
 if [ -z "$1" ]; then
     echo "[!] Error: No device specified."
+    echo "Usage: $0 <device_name> [ksu]"
     exit 1
 fi
 
@@ -35,13 +36,10 @@ export CCACHE_EXEC=$(command -v ccache)
 export USE_CCACHE=1
 
 # ------------------------------------------
-# 🚀 THE RAM FIX LOGIC
+# 🚀 SYSTEM CORES SETUP (Full Speed to prevent deadlock)
 # ------------------------------------------
 TOTAL_CORES=$(nproc --all)
-SAFE_CORES=$((TOTAL_CORES / 2))
-if [ "$SAFE_CORES" -lt 1 ]; then SAFE_CORES=1; fi
-
-echo "[*] System Cores: ${TOTAL_CORES} | Safe Cores for Compilation: ${SAFE_CORES}"
+echo "[*] System Cores: ${TOTAL_CORES} | Running at FULL SPEED!"
 echo "[*] Cleaning previous builds..."
 rm -rf "${OUT_DIR}" anykernel
 mkdir -p "${OUT_DIR}"
@@ -51,7 +49,7 @@ find . -type f \( -name "dtbo.img" -o -name "Image" -o -name "Image.gz" \) -dele
 # 1. Baseband & Network Guard
 # ------------------------------------------
 echo "[*] Injecting Baseband-guard Setup..."
-if ! wget -qO- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash; then
+if ! wget -qO- https://raw.githubusercontent.com/vc-teahouse/Baseband-guard/main/setup.sh | bash; then
     echo "❌ [ERROR] Baseband-guard download failed!"
     exit 1
 fi
@@ -61,15 +59,14 @@ if ! grep -q "selinux,baseband_guard" security/Kconfig; then
 fi
 
 # ------------------------------------------
-# 2. LIGHTWEIGHT ROOT (Official KernelSU)
+# 2. RKSU (RootHide KernelSU) Setup
 # ------------------------------------------
 if [ "$ENABLE_KSU" -eq 1 ]; then
-    echo "[*] Injecting Official Vanilla KernelSU (Lightweight & Stable)..."
-    if ! curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s main; then
-        echo "❌ [ERROR] KernelSU script execution failed!"
+    echo "[*] Injecting RKSU (RootHide KernelSU) Source..."
+    if ! curl -LSs "https://raw.githubusercontent.com/rsuntk/KernelSU/main/kernel/setup.sh" | bash -s main; then
+        echo "❌ [ERROR] RKSU script execution failed!"
         exit 1
     fi
-    # No aggressive Makefile hacks needed for Official KSU. It is naturally stable.
 fi
 
 # ------------------------------------------
@@ -97,11 +94,12 @@ echo "[*] Injecting Custom Configs Safely..."
 scripts/config --file "${OUT_DIR}/.config" -e BBG
 
 if [ "$ENABLE_KSU" -eq 1 ]; then
-    echo "[*] Enabling KPROBES and Standard KSU..."
+    echo "[*] Enabling KPROBES and RKSU..."
     scripts/config --file "${OUT_DIR}/.config" -e KPROBES -e HAVE_KPROBES -e KPROBE_EVENTS
     scripts/config --file "${OUT_DIR}/.config" -e KSU
 fi
 
+# Essential HyperOS configs + Disabled LTO to save base RAM
 scripts/config --file "${OUT_DIR}/.config" \
     --set-str STATIC_USERMODEHELPER_PATH /system/bin/micd \
     -e PERF_CRITICAL_RT_TASK -e SF_BINDER -e OVERLAY_FS -e MIGT \
@@ -114,10 +112,10 @@ make -j"${TOTAL_CORES}" "${MAKE_OPTS[@]}" olddefconfig
 # ------------------------------------------
 # 5. Build Kernel Image & DTBO
 # ------------------------------------------
-echo "[*] Compiling Kernel Image (Using ${SAFE_CORES} threads to save RAM)..."
-make -j"${SAFE_CORES}" "${MAKE_OPTS[@]}" Image
+echo "[*] Compiling Kernel Image (Full Speed - Using ${TOTAL_CORES} threads)..."
+make -j"${TOTAL_CORES}" "${MAKE_OPTS[@]}" Image
 
-echo "[*] Compiling DTBs & DTBO (Full threads)..."
+echo "[*] Compiling DTBs & DTBO (Full Speed - Using ${TOTAL_CORES} threads)..."
 make -j"${TOTAL_CORES}" "${MAKE_OPTS[@]}" dtbs
 
 # ------------------------------------------
@@ -218,7 +216,7 @@ fi
 echo "[*] Zipping EXTREME++ Kernel..."
 cd anykernel
 KSU_TAG="NoRoot"
-[ "$ENABLE_KSU" -eq 1 ] && KSU_TAG="Official_KSU"
+[ "$ENABLE_KSU" -eq 1 ] && KSU_TAG="RKSU"
 ZIP_NAME="EXTREME_HyperOS_munch_${KSU_TAG}_$(date +'%d%b%Y_%H%M').zip"
 
 rm -rf .git
