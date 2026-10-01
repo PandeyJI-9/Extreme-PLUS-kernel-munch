@@ -1,4 +1,4 @@
-name: 🔥 EXTREME++ Build & Release beta
+name: 🔥 EXTREME++ Build & Release
 
 on:
   workflow_dispatch:
@@ -56,16 +56,16 @@ jobs:
           cp patches/build_kernel.sh kernel/
           chmod +x kernel/build_kernel.sh
 
-      # 🔥 FIX 2: THE MASTER ZRAM/SWAP HACK (Prevents 1m 58s Compiler Deadlock)
+      # 🔥 FIX 2: THE MASTER ZRAM/SWAP HACK (Fixed for GitHub OverlayFS)
       - name: "💾 Allocate 10GB Swap Memory (Anti-Crash Hack)"
         run: |
           echo "[*] Checking current RAM..."
           free -h
-          echo "[*] Injecting 10GB Virtual RAM (Swap)..."
-          sudo fallocate -l 10G /swapfile
-          sudo chmod 600 /swapfile
-          sudo mkswap /swapfile
-          sudo swapon /swapfile
+          echo "[*] Injecting 10GB Virtual RAM (Swap) on SSD..."
+          sudo fallocate -l 10G /mnt/swapfile
+          sudo chmod 600 /mnt/swapfile
+          sudo mkswap /mnt/swapfile
+          sudo swapon /mnt/swapfile
           echo "[*] New RAM Capacity:"
           free -h
 
