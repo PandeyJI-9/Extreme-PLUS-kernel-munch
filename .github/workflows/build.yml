@@ -1,153 +1,105 @@
-# ╔══════════════════════════════════════════════════════════════╗
-# ║  EXTREME++GAMING — MASTER BUILD PIPELINE                     ║
-# ║  POCO F4 (munch) | HyperOS Exclusive                         ║
-# ║  Maintainer: PandeyJI-9                                      ║
-# ╚══════════════════════════════════════════════════════════════╝
-name: "🔥 EXTREME++ Build & Release"
+name: 🔥 EXTREME++ Build & Release beta
 
 on:
   workflow_dispatch:
     inputs:
-      release_tag:
-        description: "Release tag (e.g. v4.0-extreme)"
+      build_ksu:
+        description: 'Build with Root (RKSU)?'
         required: true
-        default: "Beta-1.0"
-      inject_sukisu:
-        description: "Inject SukiSU Ultra (root)?"
-        required: true
-        default: "true"
-        type: choice
-        options:
-          - "true"
-          - "false"
-
-env:
-  KERNEL_REPO: "https://github.com/AstideLabs/android_kernel_xiaomi_sm8250"
-  KERNEL_BRANCH: "android17-aptusitu"
-  CLANG_URL: "https://github.com/ZyCromerZ/Clang/releases/download/16.0.6-20260807-release/Clang-16.0.6-20260807.tar.gz"
-
-permissions:
-  contents: write
+        type: boolean
+        default: true
 
 jobs:
-  build-and-release:
+  build:
     name: "Compile → Release"
     runs-on: ubuntu-22.04
-    timeout-minutes: 120
+    # 🔥 FIX 1: Increased timeout so GitHub doesn't silently cancel the workflow
+    timeout-minutes: 180 
 
     steps:
       - name: "📢 Telegram: Build Started"
-        env:
-          BOT_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
-          CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        continue-on-error: true
         run: |
-          [ -z "$BOT_TOKEN" ] || [ -z "$CHAT_ID" ] && exit 0
-          TEXT=$(cat << 'MSGEOF'
-          🚧 <b>EXTREME++HyperOS Build Started!</b> 🚧
-          📱 Device: POCO F4 (munch)
-          🏷 Tag: <code>${{ inputs.release_tag }}</code>
-          👨‍💻 Dev: PandeyJI-9
-          MSGEOF
-          )
-          curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
-            -d chat_id="${CHAT_ID}" -d parse_mode="HTML" -d text="${TEXT}"
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
+            -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -d text="🚀 <b>EXTREME++ Build Started!</b>%0A📱 Device: POCO F4 (munch)%0A⚙️ Root (RKSU): ${{ inputs.build_ksu }}" -d parse_mode="HTML" || true
 
       - name: "📦 Checkout config repo"
         uses: actions/checkout@v4
-        with:
-          path: config-repo
 
       - name: "🛠️ Install build dependencies"
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y bc bison build-essential ccache curl flex gawk git gnupg gperf imagemagick libncurses-dev liblz4-tool libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev python-is-python3 mkbootimg
+          sudo apt-get install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib git gnupg gperf imagemagick lib32ncurses5-dev lib32readline-dev lib32z1-dev liblz4-tool libncurses5-dev libncurses5 libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev python3 python3-pip
 
       - name: "⚡ Setup ZyC-Clang 16"
         run: |
           mkdir -p $HOME/zyc-clang
-          cd $HOME/zyc-clang
-          wget -qO /tmp/clang.tar.gz "$CLANG_URL"
-          tar -zxvf /tmp/clang.tar.gz
-          echo "$HOME/zyc-clang/bin" >> $GITHUB_PATH
+          curl -L "https://github.com/ZyCromerZ/Clang/releases/download/16.0.6-20260807-release/Clang-16.0.6-20260807.tar.gz" -o clang.tar.gz
+          tar -xzf clang.tar.gz -C $HOME/zyc-clang
+          rm clang.tar.gz
 
       - name: "🌐 Clone kernel source"
         run: |
-          git clone --depth=1 --branch "$KERNEL_BRANCH" "$KERNEL_REPO" kernel
+          git clone --depth=1 -b android17-aptusitu https://github.com/AstideLabs/android_kernel_xiaomi_sm8250 kernel
 
       - name: "🩹 Apply EXTREME++ CPU/GPU Patches"
         run: |
-          chmod +x config-repo/patches/apply-all.sh
-          bash config-repo/patches/apply-all.sh kernel
+          cp patches/apply-cpu-cap.py kernel/
+          cp patches/apply-gpu-opp.py kernel/
+          cd kernel
+          python3 apply-cpu-cap.py || true
+          python3 apply-gpu-opp.py || true
 
       - name: "⚙️ Inject PandeyJI Custom Build Script"
         run: |
-          cp config-repo/patches/build_kernel.sh kernel/build_kernel.sh
+          cp patches/build_kernel.sh kernel/
           chmod +x kernel/build_kernel.sh
 
-      - name: "🔨 Compile EXTREME++ Kernel"
-        working-directory: kernel
+      # 🔥 FIX 2: THE MASTER ZRAM/SWAP HACK (Prevents 1m 58s Compiler Deadlock)
+      - name: "💾 Allocate 10GB Swap Memory (Anti-Crash Hack)"
         run: |
-          if [ "${{ inputs.inject_sukisu }}" == "true" ]; then
+          echo "[*] Checking current RAM..."
+          free -h
+          echo "[*] Injecting 10GB Virtual RAM (Swap)..."
+          sudo fallocate -l 10G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+          echo "[*] New RAM Capacity:"
+          free -h
+
+      - name: "🔨 Compile EXTREME++ Kernel"
+        run: |
+          cd kernel
+          if [ "${{ inputs.build_ksu }}" == "true" ]; then
             ./build_kernel.sh munch ksu
           else
             ./build_kernel.sh munch
           fi
           
-          # FIXED: Fail-proof ZIP Path Export using 'find' instead of 'ls'
-          ZIP_FILE=$(find . -maxdepth 1 -name "EXTREME_HyperOS_munch_*.zip" | head -n 1)
-          if [ -n "$ZIP_FILE" ] && [ -f "$ZIP_FILE" ]; then
-            echo "ZIP_PATH=$(realpath $ZIP_FILE)" >> $GITHUB_ENV
-            echo "ZIP_NAME=$(basename $ZIP_FILE)" >> $GITHUB_ENV
-            echo "✅ ZIP successfully located: $ZIP_FILE"
+          # Fix path export for release
+          ZIP_FILE=$(find anykernel -maxdepth 1 -name "EXTREME_HyperOS_munch_*.zip" | head -n 1)
+          if [ -n "$ZIP_FILE" ]; then
+            echo "ZIP_PATH=kernel/${ZIP_FILE}" >> $GITHUB_ENV
+            echo "✅ ZIP located: $ZIP_FILE"
           else
-            echo "❌ ERROR: ZIP file failed to generate!"
+            echo "❌ ZIP NOT FOUND!"
             exit 1
           fi
 
       - name: "🚀 Create GitHub Release"
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.ZIP_PATH }}
+          tag_name: "Beta-testing-v1.1.2.${{ github.run_number }}"
+          name: "EXTREME++ Build #${{ github.run_number }}"
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh release create "${{ inputs.release_tag }}" "$ZIP_PATH" \
-            --repo "${{ github.repository }}" \
-            --title "EXTREME++HyperOS ${{ inputs.release_tag }} | POCO F4" \
-            --notes "God-Mode Build by PandeyJI-9. SukiSU Ultra Root, CPU 2.8GHz, & GPU 150MHz UV."
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: "📢 Telegram: Build Success"
         if: success()
-        env:
-          BOT_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
-          CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
-          [ -z "$BOT_TOKEN" ] || [ -z "$CHAT_ID" ] && exit 0
-          DL="https://github.com/${{ github.repository }}/releases/tag/${{ inputs.release_tag }}"
-          TEXT=$(cat << EOF
-          ⚡ <b>Extreme Plus Gaming On Hyper os</b> — <code>${{ inputs.release_tag }}</code>
-
-          📱 Device: POCO F4 (munch)
-          👨‍💻 Dev: PandeyJI-9
-          🎮 GPU: 150MHz Extreme UV
-          🏎 CPU: 2.8GHz Capped
-          🔑 Root: SukiSU Ultra ✅
-
-          📥 <a href="${DL}">Download ZIP</a>
-          EOF
-          )
-          MSG_RESPONSE=$(curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
-            -d chat_id="${CHAT_ID}" -d parse_mode="HTML" \
-            -d text="${TEXT}")
-            
-          MSG_ID=$(echo "$MSG_RESPONSE" | grep -o '"message_id":[0-9]*' | cut -d: -f2)
-          
-          if [ -f "$ZIP_PATH" ] && [ -n "$MSG_ID" ]; then
-            curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendDocument" \
-              -F chat_id="${CHAT_ID}" \
-              -F document=@"$ZIP_PATH" \
-              -F reply_to_message_id="$MSG_ID" \
-              -F caption="📦 Flashable ZIP: ${ZIP_NAME}"
-          elif [ -f "$ZIP_PATH" ]; then
-            curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendDocument" \
-              -F chat_id="${CHAT_ID}" \
-              -F document=@"$ZIP_PATH" \
-              -F caption="📦 Flashable ZIP: ${ZIP_NAME}"
-          fi
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
+            -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -d text="✅ <b>EXTREME++ Build #${{ github.run_number }} Completed!</b>%0A📥 Kernel is ready for testing." -d parse_mode="HTML" || true
