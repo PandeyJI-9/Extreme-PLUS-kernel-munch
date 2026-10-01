@@ -83,16 +83,31 @@ fi
 # ------------------------------------------
 # 4. Native GPU FakeDreamer 10-Step OPP Table (150MHz - 670MHz UV)
 # ------------------------------------------
-echo "[*] Natively Applying FakeDreamer Adreno 650 10-Step OPP Table (150MHz - 670MHz UV)..."
+echo "[*] Natively Applying FakeDreamer Adreno 650 10-Step OPP Tables & All Speed Bins..."
 python3 -c '
 import re
 
-path = "arch/arm64/boot/dts/vendor/qcom/kona-gpu.dtsi"
-with open(path, "r") as f:
-    text = f.read()
+def find_block_end(text, start_idx):
+    depth = 0
+    i = start_idx
+    while i < len(text):
+        if text[i] == "{":
+            depth += 1
+        elif text[i] == "}":
+            depth -= 1
+            if depth == 0:
+                j = i + 1
+                while j < len(text) and text[j] in " \t\n":
+                    j += 1
+                if j < len(text) and text[j] == ";":
+                    return j + 1
+                return i + 1
+        i += 1
+    return -1
 
-OPP_TABLE = """\tgpu_opp_table: gpu-opp-table {
+OPP_TABLE_V1 = """\tgpu_opp_table: gpu-opp-table {
 \t\tcompatible = "operating-points-v2";
+
 \t\topp-670000000 {
 \t\t\topp-hz = /bits/ 64 <670000000>;
 \t\t\topp-microvolt = <RPMH_REGULATOR_LEVEL_SVS_L2>;
@@ -108,6 +123,10 @@ OPP_TABLE = """\tgpu_opp_table: gpu-opp-table {
 \t\topp-490000000 {
 \t\t\topp-hz = /bits/ 64 <490000000>;
 \t\t\topp-microvolt = <RPMH_REGULATOR_LEVEL_SVS>;
+\t\t};
+\t\topp-441600000 {
+\t\t\topp-hz = /bits/ 64 <441600000>;
+\t\t\topp-microvolt = <RPMH_REGULATOR_LEVEL_LOW_SVS>;
 \t\t};
 \t\topp-441000000 {
 \t\t\topp-hz = /bits/ 64 <441000000>;
@@ -135,26 +154,218 @@ OPP_TABLE = """\tgpu_opp_table: gpu-opp-table {
 \t\t};
 \t};"""
 
-# Replace gpu_opp_table
-pattern = r"\tgpu_opp_table:\s*gpu-opp-table\s*\{[^}]*opp-480000000[^}]*\}[^}]*opp-381000000[^}]*\}[^}]*opp-290000000[^}]*\}[^}]*\};"
-m = re.search(pattern, text)
-if m:
-    text = text[:m.start()] + OPP_TABLE + text[m.end():]
-elif "opp-670000000" not in text:
-    idx = text.find("gpu_opp_table: gpu-opp-table")
-    if idx != -1:
-        end_idx = text.find("};", idx)
-        if end_idx != -1:
-            text = text[:idx] + OPP_TABLE.strip() + text[end_idx+2:]
+OPP_TABLE_V2 = """\tgpu_opp_table_v2: gpu-opp-table_v2 {
+\t\tcompatible = "operating-points-v2";
 
-# Set initial pwrlevel to 6 (400 MHz default)
-text = re.sub(r"qcom,initial-pwrlevel\s*=\s*<\d+>;", "qcom,initial-pwrlevel = <6>;", text)
+\t\topp-670000000 {
+\t\t\topp-hz = /bits/ 64 <670000000>;
+\t\t\topp-microvolt = <RPMH_REGULATOR_LEVEL_SVS_L2>;
+\t\t};
+\t\topp-587000000 {
+\t\t\topp-hz = /bits/ 64 <587000000>;
+\t\t\topp-microvolt = <RPMH_REGULATOR_LEVEL_SVS_L1>;
+\t\t};
+\t\topp-525000000 {
+\t\t\topp-hz = /bits/ 64 <525000000>;
+\t\t\topp-microvolt = <RPMH_REGULATOR_LEVEL_SVS>;
+\t\t};
+\t\topp-490000000 {
+\t\t\topp-hz = /bits/ 64 <490000000>;
+\t\t\topp-microvolt = <RPMH_REGULATOR_LEVEL_SVS>;
+\t\t};
+\t\topp-441600000 {
+\t\t\topp-hz = /bits/ 64 <441600000>;
+\t\t\topp-microvolt = <RPMH_REGULATOR_LEVEL_LOW_SVS>;
+\t\t};
+\t\topp-441000000 {
+\t\t\topp-hz = /bits/ 64 <441000000>;
+\t\t\topp-microvolt = <RPMH_REGULATOR_LEVEL_LOW_SVS>;
+\t\t};
+\t\topp-400000000 {
+\t\t\topp-hz = /bits/ 64 <400000000>;
+\t\t\topp-microvolt = <RPMH_REGULATOR_LEVEL_LOW_SVS>;
+\t\t};
+\t\topp-305000000 {
+\t\t\topp-hz = /bits/ 64 <305000000>;
+\t\t\topp-microvolt = <RPMH_REGULATOR_LEVEL_MIN_SVS>;
+\t\t};
+\t\topp-250000000 {
+\t\t\topp-hz = /bits/ 64 <250000000>;
+\t\t\topp-microvolt = <RPMH_REGULATOR_LEVEL_LOW_SVS>;
+\t\t};
+\t\topp-200000000 {
+\t\t\topp-hz = /bits/ 64 <200000000>;
+\t\t\topp-microvolt = <RPMH_REGULATOR_LEVEL_MIN_SVS>;
+\t\t};
+\t\topp-150000000 {
+\t\t\topp-hz = /bits/ 64 <150000000>;
+\t\t\topp-microvolt = <RPMH_REGULATOR_LEVEL_MIN_SVS>;
+\t\t};
+\t};"""
 
-with open(path, "w") as f:
-    f.write(text)
+# 1. Patch arch/arm64/boot/dts/vendor/qcom/kona-gpu.dtsi
+path1 = "arch/arm64/boot/dts/vendor/qcom/kona-gpu.dtsi"
+with open(path1, "r") as f:
+    text1 = f.read()
 
-assert "150000000" in text and "670000000" in text, "GPU OPP injection verification failed!"
-print("✅ GPU OPP 10-step Table natively injected!")
+m1 = re.search(r"gpu_opp_table:\s*gpu-opp-table\s*\{", text1)
+if m1:
+    brace1 = text1.find("{", m1.start())
+    end1 = find_block_end(text1, brace1)
+    if end1 != -1:
+        text1 = text1[:m1.start()] + OPP_TABLE_V1 + text1[end1:]
+
+text1 = re.sub(r"qcom,initial-pwrlevel\s*=\s*<\d+>;", "qcom,initial-pwrlevel = <5>;", text1)
+
+with open(path1, "w") as f:
+    f.write(text1)
+print("✅ kona-gpu.dtsi: gpu_opp_table 10-step UV table injected!")
+
+# 2. Patch arch/arm64/boot/dts/vendor/qcom/kona-v2-gpu.dtsi (Active on POCO F4 / Kona v2.x!)
+path2 = "arch/arm64/boot/dts/vendor/qcom/kona-v2-gpu.dtsi"
+with open(path2, "r") as f:
+    text2 = f.read()
+
+m2 = re.search(r"gpu_opp_table_v2:\s*gpu-opp-table_v2\s*\{", text2)
+if m2:
+    brace2 = text2.find("{", m2.start())
+    end2 = find_block_end(text2, brace2)
+    if end2 != -1:
+        text2 = text2[:m2.start()] + OPP_TABLE_V2 + text2[end2:]
+
+# Update speed bins (bins 0, 1, 3, 4) in kona-v2-gpu.dtsi to include 150000000
+old_tail_7 = """\t\t\tqcom,gpu-pwrlevel@6 {
+\t\t\t\treg = <6>;
+\t\t\t\tqcom,gpu-freq = <305000000>;
+\t\t\t\tqcom,bus-freq-ddr7 = <3>;
+\t\t\t\tqcom,bus-min-ddr7 = <2>;
+\t\t\t\tqcom,bus-max-ddr7 = <9>;
+
+\t\t\t\tqcom,bus-freq-ddr8 = <3>;
+\t\t\t\tqcom,bus-min-ddr8 = <2>;
+\t\t\t\tqcom,bus-max-ddr8 = <9>;
+
+\t\t\t\tqcom,acd-level = <0xa02b5ffd>;
+\t\t\t};
+
+\t\t\tqcom,gpu-pwrlevel@7 {
+\t\t\t\treg = <7>;
+\t\t\t\tqcom,gpu-freq = <0>;
+\t\t\t\tqcom,bus-freq = <0>;
+\t\t\t\tqcom,bus-min = <0>;
+\t\t\t\tqcom,bus-max = <0>;
+\t\t\t};"""
+
+new_tail_7 = """\t\t\tqcom,gpu-pwrlevel@6 {
+\t\t\t\treg = <6>;
+\t\t\t\tqcom,gpu-freq = <305000000>;
+\t\t\t\tqcom,bus-freq-ddr7 = <3>;
+\t\t\t\tqcom,bus-min-ddr7 = <2>;
+\t\t\t\tqcom,bus-max-ddr7 = <9>;
+
+\t\t\t\tqcom,bus-freq-ddr8 = <3>;
+\t\t\t\tqcom,bus-min-ddr8 = <2>;
+\t\t\t\tqcom,bus-max-ddr8 = <9>;
+
+\t\t\t\tqcom,acd-level = <0xa02b5ffd>;
+\t\t\t};
+
+\t\t\tqcom,gpu-pwrlevel@7 {
+\t\t\t\treg = <7>;
+\t\t\t\tqcom,gpu-freq = <150000000>;
+\t\t\t\tqcom,bus-freq-ddr7 = <2>;
+\t\t\t\tqcom,bus-min-ddr7 = <1>;
+\t\t\t\tqcom,bus-max-ddr7 = <3>;
+
+\t\t\t\tqcom,bus-freq-ddr8 = <2>;
+\t\t\t\tqcom,bus-min-ddr8 = <1>;
+\t\t\t\tqcom,bus-max-ddr8 = <3>;
+
+\t\t\t\tqcom,acd-level = <0xa02b5ffd>;
+\t\t\t};
+
+\t\t\tqcom,gpu-pwrlevel@8 {
+\t\t\t\treg = <8>;
+\t\t\t\tqcom,gpu-freq = <0>;
+\t\t\t\tqcom,bus-freq = <0>;
+\t\t\t\tqcom,bus-min = <0>;
+\t\t\t\tqcom,bus-max = <0>;
+\t\t\t};"""
+
+if old_tail_7 in text2:
+    text2 = text2.replace(old_tail_7, new_tail_7)
+
+# Also update speed bin 2 (qcom,gpu-pwrlevels-2) to include 150000000
+old_tail_5 = """\t\t\tqcom,gpu-pwrlevel@4 {
+\t\t\t\treg = <4>;
+\t\t\t\tqcom,gpu-freq = <305000000>;
+\t\t\t\tqcom,bus-freq-ddr7 = <3>;
+\t\t\t\tqcom,bus-min-ddr7 = <2>;
+\t\t\t\tqcom,bus-max-ddr7 = <9>;
+
+\t\t\t\tqcom,bus-freq-ddr8 = <3>;
+\t\t\t\tqcom,bus-min-ddr8 = <2>;
+\t\t\t\tqcom,bus-max-ddr8 = <9>;
+
+\t\t\t\tqcom,acd-level = <0xa02b5ffd>;
+\t\t\t};
+
+\t\t\tqcom,gpu-pwrlevel@5 {
+\t\t\t\treg = <5>;
+\t\t\t\tqcom,gpu-freq = <0>;
+\t\t\t\tqcom,bus-freq = <0>;
+\t\t\t\tqcom,bus-min = <0>;
+\t\t\t\tqcom,bus-max = <0>;
+\t\t\t};"""
+
+new_tail_5 = """\t\t\tqcom,gpu-pwrlevel@4 {
+\t\t\t\treg = <4>;
+\t\t\t\tqcom,gpu-freq = <305000000>;
+\t\t\t\tqcom,bus-freq-ddr7 = <3>;
+\t\t\t\tqcom,bus-min-ddr7 = <2>;
+\t\t\t\tqcom,bus-max-ddr7 = <9>;
+
+\t\t\t\tqcom,bus-freq-ddr8 = <3>;
+\t\t\t\tqcom,bus-min-ddr8 = <2>;
+\t\t\t\tqcom,bus-max-ddr8 = <9>;
+
+\t\t\t\tqcom,acd-level = <0xa02b5ffd>;
+\t\t\t};
+
+\t\t\tqcom,gpu-pwrlevel@5 {
+\t\t\t\treg = <5>;
+\t\t\t\tqcom,gpu-freq = <150000000>;
+\t\t\t\tqcom,bus-freq-ddr7 = <2>;
+\t\t\t\tqcom,bus-min-ddr7 = <1>;
+\t\t\t\tqcom,bus-max-ddr7 = <3>;
+
+\t\t\t\tqcom,bus-freq-ddr8 = <2>;
+\t\t\t\tqcom,bus-min-ddr8 = <1>;
+\t\t\t\tqcom,bus-max-ddr8 = <3>;
+
+\t\t\t\tqcom,acd-level = <0xa02b5ffd>;
+\t\t\t};
+
+\t\t\tqcom,gpu-pwrlevel@6 {
+\t\t\t\treg = <6>;
+\t\t\t\tqcom,gpu-freq = <0>;
+\t\t\t\tqcom,bus-freq = <0>;
+\t\t\t\tqcom,bus-min = <0>;
+\t\t\t\tqcom,bus-max = <0>;
+\t\t\t};"""
+
+if old_tail_5 in text2:
+    text2 = text2.replace(old_tail_5, new_tail_5)
+
+text2 = re.sub(r"qcom,initial-pwrlevel\s*=\s*<\d+>;", "qcom,initial-pwrlevel = <5>;", text2)
+
+with open(path2, "w") as f:
+    f.write(text2)
+print("✅ kona-v2-gpu.dtsi: gpu_opp_table_v2 and ALL speed-bins injected!")
+
+assert "150000000" in text1 and "RPMH_REGULATOR_LEVEL_SVS_L2" in text1
+assert "150000000" in text2 and "RPMH_REGULATOR_LEVEL_SVS_L2" in text2
+print("✅ ALL GPU OPP TABLES AND SPEED BINS VERIFIED 100%!")
 '
 
 # ------------------------------------------

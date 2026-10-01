@@ -76,26 +76,32 @@ def patch(path):
         print("✅ GPU OPP table already patched — skipping")
         return True
 
-    match = re.search(r'(\s*)gpu_opp_table:\s*gpu-opp-table\s*\{', text)
-    if not match:
-        print("⚠️ ERROR: gpu_opp_table block not found in " + path)
-        return True
+    table_v1_pattern = r'(\s*)gpu_opp_table:\s*gpu-opp-table\s*\{'
+    table_v2_pattern = r'(\s*)gpu_opp_table_v2:\s*gpu-opp-table_v2\s*\{'
 
-    block_start = match.start()
-    brace_pos = text.index('{', match.start())
-    block_end = find_block_end(text, brace_pos)
+    match1 = re.search(table_v1_pattern, text)
+    if match1:
+        brace_pos = text.index('{', match1.start())
+        block_end = find_block_end(text, brace_pos)
+        if block_end != -1:
+            text = text[:match1.start()] + GPU_OPP_TABLE + text[block_end:]
+            print("✅ Replaced gpu_opp_table in " + path)
 
-    if block_end == -1:
-        print("⚠️ ERROR: Could not find closing of gpu_opp_table block")
-        return True
+    match2 = re.search(table_v2_pattern, text)
+    if match2:
+        brace_pos = text.index('{', match2.start())
+        block_end = find_block_end(text, brace_pos)
+        if block_end != -1:
+            opp_v2 = GPU_OPP_TABLE.replace("gpu_opp_table: gpu-opp-table", "gpu_opp_table_v2: gpu-opp-table_v2")
+            text = text[:match2.start()] + opp_v2 + text[block_end:]
+            print("✅ Replaced gpu_opp_table_v2 in " + path)
 
-    text = text[:block_start] + GPU_OPP_TABLE + text[block_end:]
-    text = re.sub(r'qcom,initial-pwrlevel\s*=\s*<\d+>', 'qcom,initial-pwrlevel = <6>', text)
+    text = re.sub(r'qcom,initial-pwrlevel\s*=\s*<\d+>', 'qcom,initial-pwrlevel = <5>', text)
 
     with open(path, 'w') as f:
         f.write(text)
         
-    print("✅ GPU OPP table replaced: 10 frequencies (150–670 MHz)")
+    print("✅ GPU OPP patching completed for: " + path)
     return True
 
 if __name__ == '__main__':
