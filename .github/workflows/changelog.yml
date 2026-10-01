@@ -1,0 +1,60 @@
+name: 📜 Auto-Generate EXTREME++ Changelog
+
+on:
+  workflow_dispatch: # Jab tu chahe tab manual trigger kar sakta hai
+
+jobs:
+  update_changelog:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # Repo me file push karne ke liye zaroori hai
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Pura git history download karega taaki commits read kar sake
+
+      - name: 📝 Build Pro Developer Changelog
+        run: |
+          CHANGELOG_FILE="EXTREME_Changelog.txt"
+          TEMP_FILE="temp_log.txt"
+          CURRENT_DATE=$(date +"%d/%m/%Y")
+          
+          # 1. Pro Header Injection (Tere branding ke sath)
+          echo "Kernel Specific Changes:" > $TEMP_FILE
+          echo "Build type: EXTREME++ Stable / Performance" >> $TEMP_FILE
+          echo "Device name: POCO F4" >> $TEMP_FILE
+          echo "Device codename: munch" >> $TEMP_FILE
+          echo "Kernel maintainer: PandeyJI-9" >> $TEMP_FILE
+          echo "" >> $TEMP_FILE
+          
+          # 2. Date Divider (RisingOS format)
+          echo "==========${CURRENT_DATE}==========" >> $TEMP_FILE
+          
+          # 3. Git Commits Scan (Last 10 commits uthayega aur * ke sath format karega)
+          # %s ka matlab sirf commit message aayega, faltu ka hash ya author nahi
+          git log -n 10 --no-merges --pretty=format:"* %s" >> $TEMP_FILE
+          echo "" >> $TEMP_FILE
+          echo "" >> $TEMP_FILE
+          
+          # 4. History Retention (Agar file pehle se hai, toh usko naye update ke neeche jod do)
+          if [ -f "$CHANGELOG_FILE" ]; then
+            # Pehle 6 lines (Header) hata ke baki ki purani history preserve karega
+            tail -n +7 "$CHANGELOG_FILE" >> $TEMP_FILE
+          fi
+          
+          # 5. Final Output
+          mv $TEMP_FILE $CHANGELOG_FILE
+          echo "✅ EXTREME++ Changelog created successfully!"
+          cat $CHANGELOG_FILE
+
+      - name: 🚀 Push Changelog to Repository
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add EXTREME_Changelog.txt
+          
+          # Agar koi naya change nahi hai toh workflow crash na ho
+          git commit -m "📝 docs: Auto-updated EXTREME++ changelog" || echo "No changes to commit"
+          git push
