@@ -119,7 +119,8 @@ def find_block_end(text, start_idx):
             depth -= 1
             if depth == 0:
                 j = i + 1
-                while j < len(text) and text[j] in " \t\n":
+                while j < len(text) and text[j] in " 	
+":
                     j += 1
                 if j < len(text) and text[j] == ";":
                     return j + 1
@@ -128,58 +129,67 @@ def find_block_end(text, start_idx):
     return -1
 
 OPP_TABLE_BODY = """
-\t\topp-670000000 {
-\t\t\topp-hz = /bits/ 64 <670000000>;
-\t\t\topp-microvolt = <RPMH_REGULATOR_LEVEL_SVS_L2>;
-\t\t};
-\t\topp-587000000 {
-\t\t\topp-hz = /bits/ 64 <587000000>;
-\t\t\topp-microvolt = <RPMH_REGULATOR_LEVEL_SVS_L1>;
-\t\t};
-\t\topp-525000000 {
-\t\t\topp-hz = /bits/ 64 <525000000>;
-\t\t\topp-microvolt = <RPMH_REGULATOR_LEVEL_SVS>;
-\t\t};
-\t\topp-490000000 {
-\t\t\topp-hz = /bits/ 64 <490000000>;
-\t\t\topp-microvolt = <RPMH_REGULATOR_LEVEL_SVS>;
-\t\t};
-\t\topp-441600000 {
-\t\t\topp-hz = /bits/ 64 <441600000>;
-\t\t\topp-microvolt = <RPMH_REGULATOR_LEVEL_LOW_SVS>;
-\t\t};
-\t\topp-400000000 {
-\t\t\topp-hz = /bits/ 64 <400000000>;
-\t\t\topp-microvolt = <RPMH_REGULATOR_LEVEL_LOW_SVS>;
-\t\t};
-\t\topp-305000000 {
-\t\t\topp-hz = /bits/ 64 <305000000>;
-\t\t\topp-microvolt = <RPMH_REGULATOR_LEVEL_MIN_SVS>;
-\t\t};
-\t\topp-250000000 {
-\t\t\topp-hz = /bits/ 64 <250000000>;
-\t\t\topp-microvolt = <RPMH_REGULATOR_LEVEL_MIN_SVS>;
-\t\t};
-\t\topp-200000000 {
-\t\t\topp-hz = /bits/ 64 <200000000>;
-\t\t\topp-microvolt = <RPMH_REGULATOR_LEVEL_MIN_SVS>;
-\t\t};
-\t\topp-150000000 {
-\t\t\topp-hz = /bits/ 64 <150000000>;
-\t\t\topp-microvolt = <RPMH_REGULATOR_LEVEL_MIN_SVS>;
-\t\t};
-\t};"""
+		opp-670000000 {
+			opp-hz = /bits/ 64 <670000000>;
+			opp-microvolt = <RPMH_REGULATOR_LEVEL_SVS_L2>;
+		};
+		opp-587000000 {
+			opp-hz = /bits/ 64 <587000000>;
+			opp-microvolt = <RPMH_REGULATOR_LEVEL_SVS_L1>;
+		};
+		opp-525000000 {
+			opp-hz = /bits/ 64 <525000000>;
+			opp-microvolt = <RPMH_REGULATOR_LEVEL_SVS>;
+		};
+		opp-490000000 {
+			opp-hz = /bits/ 64 <490000000>;
+			opp-microvolt = <RPMH_REGULATOR_LEVEL_SVS>;
+		};
+		opp-441600000 {
+			opp-hz = /bits/ 64 <441600000>;
+			opp-microvolt = <RPMH_REGULATOR_LEVEL_LOW_SVS>;
+		};
+		opp-400000000 {
+			opp-hz = /bits/ 64 <400000000>;
+			opp-microvolt = <RPMH_REGULATOR_LEVEL_LOW_SVS>;
+		};
+		opp-305000000 {
+			opp-hz = /bits/ 64 <305000000>;
+			opp-microvolt = <RPMH_REGULATOR_LEVEL_MIN_SVS>;
+		};
+		opp-250000000 {
+			opp-hz = /bits/ 64 <250000000>;
+			opp-microvolt = <RPMH_REGULATOR_LEVEL_MIN_SVS>;
+		};
+		opp-200000000 {
+			opp-hz = /bits/ 64 <200000000>;
+			opp-microvolt = <RPMH_REGULATOR_LEVEL_MIN_SVS>;
+		};
+		opp-150000000 {
+			opp-hz = /bits/ 64 <150000000>;
+			opp-microvolt = <RPMH_REGULATOR_LEVEL_MIN_SVS>;
+		};
+	};"""
 
-OPP_TABLE_V2 = "\tgpu_opp_table_v2: gpu-opp-table_v2 {\n\t\tcompatible = \"operating-points-v2\";" + OPP_TABLE_BODY
+OPP_TABLE_V2 = "	gpu_opp_table_v2: gpu-opp-table_v2 {
+		compatible = "operating-points-v2";" + OPP_TABLE_BODY
 
-PWRLEVELS_10_BIN = """
+bins = [
+    (0, 0),
+    (1, 1),
+    (2, 3),
+    (3, 2),
+    (4, 4),
+]
+
+BIN_TEMPLATE = """		qcom,gpu-pwrlevels-{BIN_IDX} {{
 			#address-cells = <1>;
 			#size-cells = <0>;
-			qcom,speed-bin = <{BIN}>;
+			qcom,speed-bin = <{SPEED_BIN}>;
 			qcom,initial-pwrlevel = <6>;
 			qcom,throttle-pwrlevel = <1>;
 
-			qcom,gpu-pwrlevel@0 {
+			qcom,gpu-pwrlevel@0 {{
 				reg = <0>;
 				qcom,gpu-freq = <670000000>;
 				qcom,bus-freq-ddr7 = <11>;
@@ -189,9 +199,9 @@ PWRLEVELS_10_BIN = """
 				qcom,bus-min-ddr8 = <11>;
 				qcom,bus-max-ddr8 = <11>;
 				qcom,acd-level = <0x802b5ffd>;
-			};
+			}};
 
-			qcom,gpu-pwrlevel@1 {
+			qcom,gpu-pwrlevel@1 {{
 				reg = <1>;
 				qcom,gpu-freq = <587000000>;
 				qcom,bus-freq-ddr7 = <11>;
@@ -201,9 +211,9 @@ PWRLEVELS_10_BIN = """
 				qcom,bus-min-ddr8 = <11>;
 				qcom,bus-max-ddr8 = <11>;
 				qcom,acd-level = <0x802b5ffd>;
-			};
+			}};
 
-			qcom,gpu-pwrlevel@2 {
+			qcom,gpu-pwrlevel@2 {{
 				reg = <2>;
 				qcom,gpu-freq = <525000000>;
 				qcom,bus-freq-ddr7 = <9>;
@@ -213,9 +223,9 @@ PWRLEVELS_10_BIN = """
 				qcom,bus-min-ddr8 = <8>;
 				qcom,bus-max-ddr8 = <11>;
 				qcom,acd-level = <0x802b5ffd>;
-			};
+			}};
 
-			qcom,gpu-pwrlevel@3 {
+			qcom,gpu-pwrlevel@3 {{
 				reg = <3>;
 				qcom,gpu-freq = <490000000>;
 				qcom,bus-freq-ddr7 = <9>;
@@ -225,9 +235,9 @@ PWRLEVELS_10_BIN = """
 				qcom,bus-min-ddr8 = <7>;
 				qcom,bus-max-ddr8 = <9>;
 				qcom,acd-level = <0xa02b5ffd>;
-			};
+			}};
 
-			qcom,gpu-pwrlevel@4 {
+			qcom,gpu-pwrlevel@4 {{
 				reg = <4>;
 				qcom,gpu-freq = <441600000>;
 				qcom,bus-freq-ddr7 = <9>;
@@ -237,9 +247,9 @@ PWRLEVELS_10_BIN = """
 				qcom,bus-min-ddr8 = <7>;
 				qcom,bus-max-ddr8 = <9>;
 				qcom,acd-level = <0xa02b5ffd>;
-			};
+			}};
 
-			qcom,gpu-pwrlevel@5 {
+			qcom,gpu-pwrlevel@5 {{
 				reg = <5>;
 				qcom,gpu-freq = <400000000>;
 				qcom,bus-freq-ddr7 = <7>;
@@ -249,9 +259,9 @@ PWRLEVELS_10_BIN = """
 				qcom,bus-min-ddr8 = <6>;
 				qcom,bus-max-ddr8 = <9>;
 				qcom,acd-level = <0xa02b5ffd>;
-			};
+			}};
 
-			qcom,gpu-pwrlevel@6 {
+			qcom,gpu-pwrlevel@6 {{
 				reg = <6>;
 				qcom,gpu-freq = <305000000>;
 				qcom,bus-freq-ddr7 = <3>;
@@ -260,9 +270,10 @@ PWRLEVELS_10_BIN = """
 				qcom,bus-freq-ddr8 = <3>;
 				qcom,bus-min-ddr8 = <2>;
 				qcom,bus-max-ddr8 = <9>;
-			};
+				qcom,acd-level = <0xa02b5ffd>;
+			}};
 
-			qcom,gpu-pwrlevel@7 {
+			qcom,gpu-pwrlevel@7 {{
 				reg = <7>;
 				qcom,gpu-freq = <250000000>;
 				qcom,bus-freq-ddr7 = <3>;
@@ -271,9 +282,10 @@ PWRLEVELS_10_BIN = """
 				qcom,bus-freq-ddr8 = <3>;
 				qcom,bus-min-ddr8 = <2>;
 				qcom,bus-max-ddr8 = <9>;
-			};
+				qcom,acd-level = <0xa02b5ffd>;
+			}};
 
-			qcom,gpu-pwrlevel@8 {
+			qcom,gpu-pwrlevel@8 {{
 				reg = <8>;
 				qcom,gpu-freq = <200000000>;
 				qcom,bus-freq-ddr7 = <2>;
@@ -282,9 +294,10 @@ PWRLEVELS_10_BIN = """
 				qcom,bus-freq-ddr8 = <2>;
 				qcom,bus-min-ddr8 = <1>;
 				qcom,bus-max-ddr8 = <3>;
-			};
+				qcom,acd-level = <0xa02b5ffd>;
+			}};
 
-			qcom,gpu-pwrlevel@9 {
+			qcom,gpu-pwrlevel@9 {{
 				reg = <9>;
 				qcom,gpu-freq = <150000000>;
 				qcom,bus-freq-ddr7 = <2>;
@@ -293,79 +306,74 @@ PWRLEVELS_10_BIN = """
 				qcom,bus-freq-ddr8 = <2>;
 				qcom,bus-min-ddr8 = <1>;
 				qcom,bus-max-ddr8 = <3>;
-			};
+				qcom,acd-level = <0xa02b5ffd>;
+			}};
 
-			qcom,gpu-pwrlevel@10 {
+			qcom,gpu-pwrlevel@10 {{
 				reg = <10>;
 				qcom,gpu-freq = <0>;
 				qcom,bus-freq = <0>;
 				qcom,bus-min = <0>;
 				qcom,bus-max = <0>;
-			};
-		};"""
+			}};
+		}};"""
 
-# 1. Patch arch/arm64/boot/dts/vendor/qcom/kona-v2-gpu.dtsi (Active on POCO F4 / Kona v2.x SM8250-AC!)
-path2 = "arch/arm64/boot/dts/vendor/qcom/kona-v2-gpu.dtsi"
-if os.path.isfile(path2):
-    with open(path2, "r") as f:
-        t2 = f.read()
+ALL_BINS_BLOCK = "	qcom,gpu-pwrlevel-bins {
+		compatible = "qcom,gpu-pwrlevel-bins";
+		#address-cells = <1>;
+		#size-cells = <0>;
 
-    m2 = re.search(r"gpu_opp_table_v2:\s*gpu-opp-table_v2\s*\{", t2)
-    if m2:
-        b2 = t2.find("{", m2.start())
-        e2 = find_block_end(t2, b2)
-        if e2 != -1:
-            t2 = t2[:m2.start()] + OPP_TABLE_V2 + t2[e2:]
+" + "
 
-    # Replace all speed bins (bins 0, 1, 2, 3, 4) with full 10-step tables
-    matches = list(re.finditer(r"(qcom,gpu-pwrlevels-(\d+)\s*\{)", t2))
-    for m in reversed(matches):
-        bin_idx = m.group(2)
-        end = find_block_end(t2, m.end() - 1)
-        old_block = t2[m.start():end]
-        sb_match = re.search(r"qcom,speed-bin\s*=\s*<(\d+)>;", old_block)
-        sb_val = sb_match.group(1) if sb_match else bin_idx
-        new_block = "\t\tqcom,gpu-pwrlevels-" + bin_idx + " {" + PWRLEVELS_10_BIN.replace("{BIN}", sb_val)
-        t2 = t2[:m.start()] + new_block + t2[end:]
+".join(BIN_TEMPLATE.format(BIN_IDX=b[0], SPEED_BIN=b[1]) for b in bins) + "
+	};"
 
-    t2 = re.sub(r"qcom,initial-pwrlevel\s*=\s*<\d+>;", "qcom,initial-pwrlevel = <6>;", t2)
-    with open(path2, "w") as f:
-        f.write(t2)
+# 1. Patch arch/arm64/boot/dts/vendor/qcom/kona-v2-gpu.dtsi
+path_v2 = "arch/arm64/boot/dts/vendor/qcom/kona-v2-gpu.dtsi"
+if os.path.isfile(path_v2):
+    with open(path_v2, "r") as f:
+        t_v2 = f.read()
+
+    m_opp = re.search(r"gpu_opp_table_v2:\s*gpu-opp-table_v2\s*\{", t_v2)
+    if m_opp:
+        b_opp = t_v2.find("{", m_opp.start())
+        e_opp = find_block_end(t_v2, b_opp)
+        if e_opp != -1:
+            t_v2 = t_v2[:m_opp.start()] + OPP_TABLE_V2 + t_v2[e_opp:]
+
+    m_bins = re.search(r"qcom,gpu-pwrlevel-bins\s*\{", t_v2)
+    if m_bins:
+        b_bins = t_v2.find("{", m_bins.start())
+        e_bins = find_block_end(t_v2, b_bins)
+        if e_bins != -1:
+            t_v2 = t_v2[:m_bins.start()] + ALL_BINS_BLOCK + t_v2[e_bins:]
+
+    t_v2 = re.sub(r"qcom,initial-pwrlevel\s*=\s*<\d+>;", "qcom,initial-pwrlevel = <6>;", t_v2)
+    with open(path_v2, "w") as f:
+        f.write(t_v2)
     print("✅ kona-v2-gpu.dtsi: Full 10-step UV OPP table + ALL 5 speed bins injected!")
 
+# 2. Patch arch/arm64/boot/dts/vendor/qcom/kona-v2.1-gpu.dtsi (Target for POCO F4 / SM8250-AC Kona v2.1)
+path_v21 = "arch/arm64/boot/dts/vendor/qcom/kona-v2.1-gpu.dtsi"
+if os.path.isfile(path_v21):
+    t_v21 = """&msm_gpu {
+	qcom,chipid = <0x06050002>;
+
+	/* GPU OPP data */
+	operating-points-v2 = <&gpu_opp_table_v2>;
+
+	qcom,initial-pwrlevel = <6>;
+	/delete-node/qcom,gpu-pwrlevel-bins;
+
+	/* Power levels bins */
+""" + ALL_BINS_BLOCK + "
+};
+"
+    with open(path_v21, "w") as f:
+        f.write(t_v21)
+    print("✅ kona-v2.1-gpu.dtsi: Full 10-step UV OPP table + ALL 5 speed bins injected!")
+
 print("✅ ALL GPU OPP TABLES AND SPEED BINS VERIFIED 100% (FakeDreamer Pure DTS)!")
-
-# 2. Patch drivers/gpu/msm/kgsl_pwrctrl.c (prevent zeroing stats in gpubusy_show and gpu_busy_percentage_show for FKM load monitoring)
-path_pwrctrl_c = "drivers/gpu/msm/kgsl_pwrctrl.c"
-if os.path.isfile(path_pwrctrl_c):
-    with open(path_pwrctrl_c, "r") as f:
-        t_c = f.read()
-
-    # In gpubusy_show: remove stats zeroing on !AXI_ON
-    old_gpubusy = """	if (!test_bit(KGSL_PWRFLAGS_AXI_ON, &device->pwrctrl.power_flags)) {
-		stats->busy_old = 0;
-		stats->total_old = 0;
-	}
-	return ret;"""
-    new_gpubusy = """	return ret;"""
-    if old_gpubusy in t_c:
-        t_c = t_c.replace(old_gpubusy, new_gpubusy, 1)
-        print("✅ kgsl_pwrctrl.c: gpubusy_show patched (anti-zeroing for FKM)")
-
-    # In gpu_busy_percentage_show: remove stats zeroing on !AXI_ON
-    old_percent = """	/* Reset the stats if GPU is OFF */
-	if (!test_bit(KGSL_PWRFLAGS_AXI_ON, &device->pwrctrl.power_flags)) {
-		stats->busy_old = 0;
-		stats->total_old = 0;
-	}
-	return ret;"""
-    new_percent = """	return ret;"""
-    if old_percent in t_c:
-        t_c = t_c.replace(old_percent, new_percent, 1)
-        print("✅ kgsl_pwrctrl.c: gpu_busy_percentage_show patched (anti-zeroing for FKM)")
-
-    with open(path_pwrctrl_c, "w") as f:
-        f.write(t_c)
 EOF
 
 
