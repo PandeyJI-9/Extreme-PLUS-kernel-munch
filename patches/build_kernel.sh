@@ -177,7 +177,7 @@ PWRLEVELS_10_BIN = """
 			#address-cells = <1>;
 			#size-cells = <0>;
 			qcom,speed-bin = <{BIN}>;
-			qcom,initial-pwrlevel = <9>;
+			qcom,initial-pwrlevel = <6>;
 			qcom,throttle-pwrlevel = <1>;
 
 			qcom,gpu-pwrlevel@0 {
@@ -261,7 +261,6 @@ PWRLEVELS_10_BIN = """
 				qcom,bus-freq-ddr8 = <3>;
 				qcom,bus-min-ddr8 = <2>;
 				qcom,bus-max-ddr8 = <9>;
-				qcom,acd-level = <0xa02b5ffd>;
 			};
 
 			qcom,gpu-pwrlevel@7 {
@@ -273,7 +272,6 @@ PWRLEVELS_10_BIN = """
 				qcom,bus-freq-ddr8 = <3>;
 				qcom,bus-min-ddr8 = <2>;
 				qcom,bus-max-ddr8 = <9>;
-				qcom,acd-level = <0xa02b5ffd>;
 			};
 
 			qcom,gpu-pwrlevel@8 {
@@ -285,7 +283,6 @@ PWRLEVELS_10_BIN = """
 				qcom,bus-freq-ddr8 = <2>;
 				qcom,bus-min-ddr8 = <1>;
 				qcom,bus-max-ddr8 = <3>;
-				qcom,acd-level = <0xa02b5ffd>;
 			};
 
 			qcom,gpu-pwrlevel@9 {
@@ -297,7 +294,6 @@ PWRLEVELS_10_BIN = """
 				qcom,bus-freq-ddr8 = <2>;
 				qcom,bus-min-ddr8 = <1>;
 				qcom,bus-max-ddr8 = <3>;
-				qcom,acd-level = <0xa02b5ffd>;
 			};
 
 			qcom,gpu-pwrlevel@10 {
@@ -313,7 +309,7 @@ PWRLEVELS_10_LEGACY = """\t\tqcom,gpu-pwrlevels {
 			#address-cells = <1>;
 			#size-cells = <0>;
 			compatible = "qcom,gpu-pwrlevels";
-			qcom,initial-pwrlevel = <9>;
+			qcom,initial-pwrlevel = <6>;
 			qcom,throttle-pwrlevel = <1>;
 
 			qcom,gpu-pwrlevel@0 {
@@ -397,7 +393,6 @@ PWRLEVELS_10_LEGACY = """\t\tqcom,gpu-pwrlevels {
 				qcom,bus-freq-ddr8 = <3>;
 				qcom,bus-min-ddr8 = <2>;
 				qcom,bus-max-ddr8 = <9>;
-				qcom,acd-level = <0xa02b5ffd>;
 			};
 
 			qcom,gpu-pwrlevel@7 {
@@ -409,7 +404,6 @@ PWRLEVELS_10_LEGACY = """\t\tqcom,gpu-pwrlevels {
 				qcom,bus-freq-ddr8 = <3>;
 				qcom,bus-min-ddr8 = <2>;
 				qcom,bus-max-ddr8 = <9>;
-				qcom,acd-level = <0xa02b5ffd>;
 			};
 
 			qcom,gpu-pwrlevel@8 {
@@ -421,7 +415,6 @@ PWRLEVELS_10_LEGACY = """\t\tqcom,gpu-pwrlevels {
 				qcom,bus-freq-ddr8 = <2>;
 				qcom,bus-min-ddr8 = <1>;
 				qcom,bus-max-ddr8 = <3>;
-				qcom,acd-level = <0xa02b5ffd>;
 			};
 
 			qcom,gpu-pwrlevel@9 {
@@ -433,7 +426,6 @@ PWRLEVELS_10_LEGACY = """\t\tqcom,gpu-pwrlevels {
 				qcom,bus-freq-ddr8 = <2>;
 				qcom,bus-min-ddr8 = <1>;
 				qcom,bus-max-ddr8 = <3>;
-				qcom,acd-level = <0xa02b5ffd>;
 			};
 
 			qcom,gpu-pwrlevel@10 {
@@ -510,6 +502,7 @@ v2_1_content = """&soc {
 &msm_gpu {
 \tqcom,chipid = <0x06050002>;
 \toperating-points-v2 = <&gpu_opp_table_v2_1>;
+\tqcom,initial-pwrlevel = <6>;
 };
 """
 with open(path3, "w") as f:
@@ -530,6 +523,37 @@ if os.path.isfile(path_adreno):
         inc_patch = "#include <linux/of_fdt.h>\n#include <linux/pm_opp.h>"
         if inc_target in t_adreno:
             t_adreno = t_adreno.replace(inc_target, inc_patch, 1)
+
+    # Non-fatal dev_pm_opp_of_add_table (prevent DTBO clash panic)
+    opp_target = """	/* ADD the GPU OPP table if we define it */
+	if (of_find_property(device->pdev->dev.of_node,
+			"operating-points-v2", NULL)) {
+		ret = dev_pm_opp_of_add_table(&device->pdev->dev);
+		if (ret) {
+			dev_err(device->dev,
+				"Unable to set the GPU OPP table: %d\n", ret);
+			return ret;
+		}
+	}"""
+    opp_patch = """	/* ADD the GPU OPP table if we define it */
+	if (of_find_property(device->pdev->dev.of_node,
+			"operating-points-v2", NULL)) {
+		ret = dev_pm_opp_of_add_table(&device->pdev->dev);
+		if (ret && ret != -EEXIST) {
+			dev_warn(device->dev,
+				"Unable to set the GPU OPP table: %d (continuing with C enforcement)\n", ret);
+		}
+	}"""
+    if opp_target in t_adreno:
+        t_adreno = t_adreno.replace(opp_target, opp_patch, 1)
+
+    # Bulletproof bounds check in adreno_of_get_initial_pwrlevel
+    b_target = """	if (init_level < 0 || init_level > pwr->num_pwrlevels)
+		init_level = 1;"""
+    b_patch = """	if (init_level < 0 || (pwr->num_pwrlevels > 0 && init_level >= pwr->num_pwrlevels - 1))
+		init_level = (pwr->num_pwrlevels > 6) ? 6 : 1;"""
+    if b_target in t_adreno:
+        t_adreno = t_adreno.replace(b_target, b_patch, 1)
 
     # Inject adreno_enforce_extreme_pwrlevels definition
     if "adreno_enforce_extreme_pwrlevels" not in t_adreno:
@@ -613,28 +637,28 @@ static void adreno_enforce_extreme_pwrlevels(struct adreno_device *adreno_dev)
 	pwr->pwrlevels[6].bus_freq = 3;
 	pwr->pwrlevels[6].bus_min = 2;
 	pwr->pwrlevels[6].bus_max = 9;
-	pwr->pwrlevels[6].acd_level = 0xa02b5ffd;
+	pwr->pwrlevels[6].acd_level = 0;
 
 	/* Level 7: 250 MHz (Low Idle) */
 	pwr->pwrlevels[7].gpu_freq = 250000000;
 	pwr->pwrlevels[7].bus_freq = 3;
 	pwr->pwrlevels[7].bus_min = 2;
 	pwr->pwrlevels[7].bus_max = 9;
-	pwr->pwrlevels[7].acd_level = 0xa02b5ffd;
+	pwr->pwrlevels[7].acd_level = 0;
 
 	/* Level 8: 200 MHz (Ultra Low Idle) */
 	pwr->pwrlevels[8].gpu_freq = 200000000;
 	pwr->pwrlevels[8].bus_freq = 2;
 	pwr->pwrlevels[8].bus_min = 1;
 	pwr->pwrlevels[8].bus_max = 3;
-	pwr->pwrlevels[8].acd_level = 0xa02b5ffd;
+	pwr->pwrlevels[8].acd_level = 0;
 
 	/* Level 9: 150 MHz (Lowest Active UV State) */
 	pwr->pwrlevels[9].gpu_freq = 150000000;
 	pwr->pwrlevels[9].bus_freq = 2;
 	pwr->pwrlevels[9].bus_min = 1;
 	pwr->pwrlevels[9].bus_max = 3;
-	pwr->pwrlevels[9].acd_level = 0xa02b5ffd;
+	pwr->pwrlevels[9].acd_level = 0;
 
 	/* Level 10: 0 MHz (Power Off) */
 	pwr->pwrlevels[10].gpu_freq = 0;
@@ -695,13 +719,15 @@ static void adreno_enforce_extreme_pwrlevels(struct adreno_device *adreno_dev)
         if legacy_target in t_adreno:
             t_adreno = t_adreno.replace(legacy_target, legacy_patch, 1)
 
-        # Enforce in adreno_of_get_power
+        # Enforce in adreno_of_get_power with safe fallback
         power_target = """	if (adreno_of_get_pwrlevels(adreno_dev, node))
 		return -EINVAL;"""
-        power_patch = """	if (adreno_of_get_pwrlevels(adreno_dev, node))
-		return -EINVAL;
-
-	adreno_enforce_extreme_pwrlevels(adreno_dev);"""
+        power_patch = """	if (adreno_of_get_pwrlevels(adreno_dev, node)) {
+		dev_warn(device->dev, "adreno_of_get_pwrlevels failed, falling back to EXTREME++ UV\n");
+		adreno_enforce_extreme_pwrlevels(adreno_dev);
+	} else {
+		adreno_enforce_extreme_pwrlevels(adreno_dev);
+	}"""
         if power_target in t_adreno:
             t_adreno = t_adreno.replace(power_target, power_patch, 1)
 
@@ -980,7 +1006,7 @@ fi
 if [ -d /data/adb ]; then
     mkdir -p /data/adb/service.d
     ui_print "  -> Installing EXTREME++ Joyose & Performance Service...";
-    cp -f 00-extreme-performance.sh /data/adb/service.d/00-extreme-performance.sh
+    cp -f 00-extreme-performance.sh /data/adb/service.d/00-extreme-performance.sh 2>/dev/null || cp -f $home/00-extreme-performance.sh /data/adb/service.d/00-extreme-performance.sh 2>/dev/null
     chmod 755 /data/adb/service.d/00-extreme-performance.sh
     chown root:root /data/adb/service.d/00-extreme-performance.sh 2>/dev/null
 fi
@@ -993,7 +1019,8 @@ cat > anykernel/00-extreme-performance.sh << 'EOF'
 #  POCO F4 (munch) | HyperOS / MIUI
 # ═══════════════════════════════════════════════════════════════
 
-# Wait for Android framework to fully boot
+(
+# Wait for Android framework to fully boot in background without blocking init
 while [ "$(getprop sys.boot_completed)" != "1" ]; do
     sleep 3
 done
@@ -1026,6 +1053,7 @@ chmod 666 /sys/class/kgsl/kgsl-3d0/gpu_min_clock 2>/dev/null
 chmod 666 /sys/class/kgsl/kgsl-3d0/gpu_max_clock 2>/dev/null
 
 echo "EXTREME++: Joyose optimized & thermal performance mode active!" > /dev/kmsg
+) &
 EOF
 chmod 755 anykernel/00-extreme-performance.sh
 
