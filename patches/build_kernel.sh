@@ -144,10 +144,6 @@ OPP_TABLE_BODY = """
 \t\t\topp-hz = /bits/ 64 <441600000>;
 \t\t\topp-microvolt = <RPMH_REGULATOR_LEVEL_LOW_SVS>;
 \t\t};
-\t\topp-441000000 {
-\t\t\topp-hz = /bits/ 64 <441000000>;
-\t\t\topp-microvolt = <RPMH_REGULATOR_LEVEL_LOW_SVS>;
-\t\t};
 \t\topp-400000000 {
 \t\t\topp-hz = /bits/ 64 <400000000>;
 \t\t\topp-microvolt = <RPMH_REGULATOR_LEVEL_LOW_SVS>;
@@ -158,7 +154,7 @@ OPP_TABLE_BODY = """
 \t\t};
 \t\topp-250000000 {
 \t\t\topp-hz = /bits/ 64 <250000000>;
-\t\t\topp-microvolt = <RPMH_REGULATOR_LEVEL_LOW_SVS>;
+\t\t\topp-microvolt = <RPMH_REGULATOR_LEVEL_MIN_SVS>;
 \t\t};
 \t\topp-200000000 {
 \t\t\topp-hz = /bits/ 64 <200000000>;
@@ -572,7 +568,7 @@ static void adreno_enforce_extreme_pwrlevels(struct adreno_device *adreno_dev)
 	};
 	static const unsigned long opp_volts[10] = {
 		224, 192, 128, 128, 64,
-		64, 48, 64, 48, 48
+		64, 48, 48, 48, 48
 	};
 
 	ddr = of_fdt_get_ddrtype();
@@ -744,6 +740,38 @@ if os.path.isfile(path_pwrctrl_h):
     with open(path_pwrctrl_h, "w") as f:
         f.write(t_h)
     print("✅ kgsl_pwrctrl.h: Expanded KGSL_MAX_PWRLEVELS to 16 (anti-overflow)")
+
+# 6. Patch drivers/gpu/msm/kgsl_pwrctrl.c (prevent zeroing stats in gpubusy_show and gpu_busy_percentage_show for FKM load monitoring)
+path_pwrctrl_c = "drivers/gpu/msm/kgsl_pwrctrl.c"
+if os.path.isfile(path_pwrctrl_c):
+    with open(path_pwrctrl_c, "r") as f:
+        t_c = f.read()
+
+    # In gpubusy_show: remove stats zeroing on !AXI_ON
+    old_gpubusy = """	if (!test_bit(KGSL_PWRFLAGS_AXI_ON, &device->pwrctrl.power_flags)) {
+		stats->busy_old = 0;
+		stats->total_old = 0;
+	}
+	return ret;"""
+    new_gpubusy = """	return ret;"""
+    if old_gpubusy in t_c:
+        t_c = t_c.replace(old_gpubusy, new_gpubusy, 1)
+        print("✅ kgsl_pwrctrl.c: gpubusy_show patched (anti-zeroing for FKM)")
+
+    # In gpu_busy_percentage_show: remove stats zeroing on !AXI_ON
+    old_percent = """	/* Reset the stats if GPU is OFF */
+	if (!test_bit(KGSL_PWRFLAGS_AXI_ON, &device->pwrctrl.power_flags)) {
+		stats->busy_old = 0;
+		stats->total_old = 0;
+	}
+	return ret;"""
+    new_percent = """	return ret;"""
+    if old_percent in t_c:
+        t_c = t_c.replace(old_percent, new_percent, 1)
+        print("✅ kgsl_pwrctrl.c: gpu_busy_percentage_show patched (anti-zeroing for FKM)")
+
+    with open(path_pwrctrl_c, "w") as f:
+        f.write(t_c)
 
 print("✅ ALL GPU OPP TABLES, SPEED BINS, AND C DRIVER ENFORCEMENT APPLIED 100%!")
 EOF
@@ -997,6 +1025,15 @@ split_boot;
 
 flash_boot;
 flash_generic dtbo;
+
+# Direct block flashing fallback for dtbo if flashed via FKM / automated app flashers
+if [ -f dtbo.img ]; then
+    for dtbo_node in /dev/block/bootdevice/by-name/dtbo /dev/block/bootdevice/by-name/dtbo_a /dev/block/bootdevice/by-name/dtbo_b /dev/block/by-name/dtbo /dev/block/by-name/dtbo_a /dev/block/by-name/dtbo_b; do
+        if [ -b "$dtbo_node" ]; then
+            dd if=dtbo.img of="$dtbo_node" bs=4096 2>/dev/null || true
+        fi
+    done
+fi
 ## end boot install
 
 # Install post-boot optimization script into /data/adb/service.d for KSU/ReSukiSU/Magisk
@@ -1051,6 +1088,8 @@ chmod 666 /sys/class/kgsl/kgsl-3d0/min_pwrlevel 2>/dev/null
 chmod 666 /sys/class/kgsl/kgsl-3d0/max_pwrlevel 2>/dev/null
 chmod 666 /sys/class/kgsl/kgsl-3d0/gpu_min_clock 2>/dev/null
 chmod 666 /sys/class/kgsl/kgsl-3d0/gpu_max_clock 2>/dev/null
+chmod 444 /sys/class/kgsl/kgsl-3d0/gpubusy 2>/dev/null
+chmod 444 /sys/class/kgsl/kgsl-3d0/gpu_busy_percentage 2>/dev/null
 
 echo "EXTREME++: Joyose optimized & thermal performance mode active!" > /dev/kmsg
 ) &
