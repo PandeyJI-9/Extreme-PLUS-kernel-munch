@@ -47,7 +47,7 @@ jobs:
 
       - name: "⚙️ Inject PandeyJI Custom Build Script"
         run: |
-          cp patches/build_kernel.sh kernel/
+          cp patches/* kernel/
           chmod +x kernel/build_kernel.sh
 
       # 🔥 FIX 2: THE MASTER ZRAM/SWAP HACK (Fixed for GitHub OverlayFS)
