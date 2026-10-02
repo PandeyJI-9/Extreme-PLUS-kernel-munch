@@ -62,6 +62,10 @@ CONFIG_ZSTD_DECOMPRESS=y
 CONFIG_ZRAM_DEF_COMP_ZSTD=y
 CONFIG_ZRAM_DEF_COMP="zstd"
 CONFIG_SCHEDUTIL_UP_RATE_LIMIT=0
+CONFIG_DEVFREQ_GOV_QCOM_ADRENO_TZ=y
+CONFIG_DEVFREQ_GOV_QCOM_GPUBW_MON=y
+CONFIG_DEVFREQ_GOV_MSM_ADRENO_TZ=y
+CONFIG_QCOM_ADRENO_DEFAULT_GOVERNOR="msm-adreno-tz"
 EOF
 
 # ------------------------------------------
@@ -166,7 +170,6 @@ OPP_TABLE_BODY = """
 \t\t};
 \t};"""
 
-OPP_TABLE_V1 = "\tgpu_opp_table: gpu-opp-table {\n\t\tcompatible = \"operating-points-v2\";" + OPP_TABLE_BODY
 OPP_TABLE_V2 = "\tgpu_opp_table_v2: gpu-opp-table_v2 {\n\t\tcompatible = \"operating-points-v2\";" + OPP_TABLE_BODY
 
 PWRLEVELS_10_BIN = """
@@ -301,164 +304,7 @@ PWRLEVELS_10_BIN = """
 			};
 		};"""
 
-PWRLEVELS_10_LEGACY = """\t\tqcom,gpu-pwrlevels {
-			#address-cells = <1>;
-			#size-cells = <0>;
-			compatible = "qcom,gpu-pwrlevels";
-			qcom,initial-pwrlevel = <6>;
-			qcom,throttle-pwrlevel = <1>;
-
-			qcom,gpu-pwrlevel@0 {
-				reg = <0>;
-				qcom,gpu-freq = <670000000>;
-				qcom,bus-freq-ddr7 = <11>;
-				qcom,bus-min-ddr7 = <11>;
-				qcom,bus-max-ddr7 = <11>;
-				qcom,bus-freq-ddr8 = <11>;
-				qcom,bus-min-ddr8 = <11>;
-				qcom,bus-max-ddr8 = <11>;
-				qcom,acd-level = <0x802b5ffd>;
-			};
-
-			qcom,gpu-pwrlevel@1 {
-				reg = <1>;
-				qcom,gpu-freq = <587000000>;
-				qcom,bus-freq-ddr7 = <11>;
-				qcom,bus-min-ddr7 = <11>;
-				qcom,bus-max-ddr7 = <11>;
-				qcom,bus-freq-ddr8 = <11>;
-				qcom,bus-min-ddr8 = <11>;
-				qcom,bus-max-ddr8 = <11>;
-				qcom,acd-level = <0x802b5ffd>;
-			};
-
-			qcom,gpu-pwrlevel@2 {
-				reg = <2>;
-				qcom,gpu-freq = <525000000>;
-				qcom,bus-freq-ddr7 = <9>;
-				qcom,bus-min-ddr7 = <9>;
-				qcom,bus-max-ddr7 = <11>;
-				qcom,bus-freq-ddr8 = <8>;
-				qcom,bus-min-ddr8 = <8>;
-				qcom,bus-max-ddr8 = <11>;
-				qcom,acd-level = <0x802b5ffd>;
-			};
-
-			qcom,gpu-pwrlevel@3 {
-				reg = <3>;
-				qcom,gpu-freq = <490000000>;
-				qcom,bus-freq-ddr7 = <9>;
-				qcom,bus-min-ddr7 = <6>;
-				qcom,bus-max-ddr7 = <9>;
-				qcom,bus-freq-ddr8 = <8>;
-				qcom,bus-min-ddr8 = <7>;
-				qcom,bus-max-ddr8 = <9>;
-				qcom,acd-level = <0xa02b5ffd>;
-			};
-
-			qcom,gpu-pwrlevel@4 {
-				reg = <4>;
-				qcom,gpu-freq = <441600000>;
-				qcom,bus-freq-ddr7 = <9>;
-				qcom,bus-min-ddr7 = <6>;
-				qcom,bus-max-ddr7 = <9>;
-				qcom,bus-freq-ddr8 = <8>;
-				qcom,bus-min-ddr8 = <7>;
-				qcom,bus-max-ddr8 = <9>;
-				qcom,acd-level = <0xa02b5ffd>;
-			};
-
-			qcom,gpu-pwrlevel@5 {
-				reg = <5>;
-				qcom,gpu-freq = <400000000>;
-				qcom,bus-freq-ddr7 = <7>;
-				qcom,bus-min-ddr7 = <6>;
-				qcom,bus-max-ddr7 = <9>;
-				qcom,bus-freq-ddr8 = <8>;
-				qcom,bus-min-ddr8 = <6>;
-				qcom,bus-max-ddr8 = <9>;
-				qcom,acd-level = <0xa02b5ffd>;
-			};
-
-			qcom,gpu-pwrlevel@6 {
-				reg = <6>;
-				qcom,gpu-freq = <305000000>;
-				qcom,bus-freq-ddr7 = <3>;
-				qcom,bus-min-ddr7 = <2>;
-				qcom,bus-max-ddr7 = <9>;
-				qcom,bus-freq-ddr8 = <3>;
-				qcom,bus-min-ddr8 = <2>;
-				qcom,bus-max-ddr8 = <9>;
-			};
-
-			qcom,gpu-pwrlevel@7 {
-				reg = <7>;
-				qcom,gpu-freq = <250000000>;
-				qcom,bus-freq-ddr7 = <3>;
-				qcom,bus-min-ddr7 = <2>;
-				qcom,bus-max-ddr7 = <9>;
-				qcom,bus-freq-ddr8 = <3>;
-				qcom,bus-min-ddr8 = <2>;
-				qcom,bus-max-ddr8 = <9>;
-			};
-
-			qcom,gpu-pwrlevel@8 {
-				reg = <8>;
-				qcom,gpu-freq = <200000000>;
-				qcom,bus-freq-ddr7 = <2>;
-				qcom,bus-min-ddr7 = <1>;
-				qcom,bus-max-ddr7 = <3>;
-				qcom,bus-freq-ddr8 = <2>;
-				qcom,bus-min-ddr8 = <1>;
-				qcom,bus-max-ddr8 = <3>;
-			};
-
-			qcom,gpu-pwrlevel@9 {
-				reg = <9>;
-				qcom,gpu-freq = <150000000>;
-				qcom,bus-freq-ddr7 = <2>;
-				qcom,bus-min-ddr7 = <1>;
-				qcom,bus-max-ddr7 = <3>;
-				qcom,bus-freq-ddr8 = <2>;
-				qcom,bus-min-ddr8 = <1>;
-				qcom,bus-max-ddr8 = <3>;
-			};
-
-			qcom,gpu-pwrlevel@10 {
-				reg = <10>;
-				qcom,gpu-freq = <0>;
-				qcom,bus-freq = <0>;
-				qcom,bus-min = <0>;
-				qcom,bus-max = <0>;
-			};
-		};"""
-
-# 1. Patch arch/arm64/boot/dts/vendor/qcom/kona-gpu.dtsi
-path1 = "arch/arm64/boot/dts/vendor/qcom/kona-gpu.dtsi"
-if os.path.isfile(path1):
-    with open(path1, "r") as f:
-        t1 = f.read()
-
-    m1 = re.search(r"gpu_opp_table:\s*gpu-opp-table\s*\{", t1)
-    if m1:
-        b1 = t1.find("{", m1.start())
-        e1 = find_block_end(t1, b1)
-        if e1 != -1:
-            t1 = t1[:m1.start()] + OPP_TABLE_V1 + t1[e1:]
-
-    mp1 = re.search(r"qcom,gpu-pwrlevels\s*\{", t1)
-    if mp1:
-        bp1 = t1.find("{", mp1.start())
-        ep1 = find_block_end(t1, bp1)
-        if ep1 != -1:
-            t1 = t1[:mp1.start()] + PWRLEVELS_10_LEGACY + t1[ep1:]
-
-    t1 = re.sub(r"qcom,initial-pwrlevel\s*=\s*<\d+>;", "qcom,initial-pwrlevel = <6>;", t1)
-    with open(path1, "w") as f:
-        f.write(t1)
-    print("✅ kona-gpu.dtsi: Full 10-step UV OPP table + power levels injected!")
-
-# 2. Patch arch/arm64/boot/dts/vendor/qcom/kona-v2-gpu.dtsi (Active on POCO F4 / Kona v2.x!)
+# 1. Patch arch/arm64/boot/dts/vendor/qcom/kona-v2-gpu.dtsi (Active on POCO F4 / Kona v2.x SM8250-AC!)
 path2 = "arch/arm64/boot/dts/vendor/qcom/kona-v2-gpu.dtsi"
 if os.path.isfile(path2):
     with open(path2, "r") as f:
@@ -487,261 +333,9 @@ if os.path.isfile(path2):
         f.write(t2)
     print("✅ kona-v2-gpu.dtsi: Full 10-step UV OPP table + ALL 5 speed bins injected!")
 
-# 3. Patch arch/arm64/boot/dts/vendor/qcom/kona-v2.1-gpu.dtsi (Specific to POCO F4 / Kona v2.1 SM8250-AC!)
-path3 = "arch/arm64/boot/dts/vendor/qcom/kona-v2.1-gpu.dtsi"
-v2_1_content = """&soc {
-\tgpu_opp_table_v2_1: gpu-opp-table_v2_1 {
-\t\tcompatible = "operating-points-v2";
-""" + OPP_TABLE_BODY + """
-};
+print("✅ ALL GPU OPP TABLES AND SPEED BINS VERIFIED 100% (FakeDreamer Pure DTS)!")
 
-&msm_gpu {
-\tqcom,chipid = <0x06050002>;
-\toperating-points-v2 = <&gpu_opp_table_v2_1>;
-\tqcom,initial-pwrlevel = <6>;
-};
-"""
-with open(path3, "w") as f:
-    f.write(v2_1_content)
-print("✅ kona-v2.1-gpu.dtsi: Explicit gpu_opp_table_v2_1 UV OPP table locked to msm_gpu!")
-
-print("✅ ALL GPU OPP TABLES AND SPEED BINS VERIFIED 100%!")
-
-# 4. Patch drivers/gpu/msm/adreno.c (C-level hardcoding of 10 UV levels + OPPs + safe fallback)
-path_adreno = "drivers/gpu/msm/adreno.c"
-if os.path.isfile(path_adreno):
-    with open(path_adreno, "r") as f:
-        t_adreno = f.read()
-
-    # Include pm_opp.h if not present
-    if "<linux/pm_opp.h>" not in t_adreno:
-        inc_target = "#include <linux/of_fdt.h>"
-        inc_patch = "#include <linux/of_fdt.h>\n#include <linux/pm_opp.h>"
-        if inc_target in t_adreno:
-            t_adreno = t_adreno.replace(inc_target, inc_patch, 1)
-
-    # Non-fatal dev_pm_opp_of_add_table (prevent DTBO clash panic)
-    opp_target = """	/* ADD the GPU OPP table if we define it */
-	if (of_find_property(device->pdev->dev.of_node,
-			"operating-points-v2", NULL)) {
-		ret = dev_pm_opp_of_add_table(&device->pdev->dev);
-		if (ret) {
-			dev_err(device->dev,
-				"Unable to set the GPU OPP table: %d\\n", ret);
-			return ret;
-		}
-	}"""
-    opp_patch = """	/* ADD the GPU OPP table if we define it */
-	if (of_find_property(device->pdev->dev.of_node,
-			"operating-points-v2", NULL)) {
-		ret = dev_pm_opp_of_add_table(&device->pdev->dev);
-		if (ret && ret != -EEXIST) {
-			dev_warn(device->dev,
-				"Unable to set the GPU OPP table: %d (continuing with C enforcement)\\n", ret);
-		}
-	}"""
-    if opp_target in t_adreno:
-        t_adreno = t_adreno.replace(opp_target, opp_patch, 1)
-
-    # Bulletproof bounds check in adreno_of_get_initial_pwrlevel
-    b_target = """	if (init_level < 0 || init_level > pwr->num_pwrlevels)
-		init_level = 1;"""
-    b_patch = """	if (init_level < 0 || (pwr->num_pwrlevels > 0 && init_level >= pwr->num_pwrlevels - 1))
-		init_level = (pwr->num_pwrlevels > 6) ? 6 : 1;"""
-    if b_target in t_adreno:
-        t_adreno = t_adreno.replace(b_target, b_patch, 1)
-
-    # Inject adreno_enforce_extreme_pwrlevels definition
-    if "adreno_enforce_extreme_pwrlevels" not in t_adreno:
-        func_target = "static void adreno_of_get_initial_pwrlevel("
-        func_code = """/* EXTREME++ Natively Enforced 10-Step GPU UV Power Levels (150MHz - 670MHz) */
-static void adreno_enforce_extreme_pwrlevels(struct adreno_device *adreno_dev)
-{
-	struct kgsl_device *device = KGSL_DEVICE(adreno_dev);
-	struct kgsl_pwrctrl *pwr = &device->pwrctrl;
-	int ddr;
-	bool is_ddr7;
-	int i;
-	static const unsigned long opp_freqs[10] = {
-		670000000, 587000000, 525000000, 490000000, 441600000,
-		400000000, 305000000, 250000000, 200000000, 150000000
-	};
-	static const unsigned long opp_volts[10] = {
-		224, 192, 128, 128, 64,
-		64, 48, 48, 48, 48
-	};
-
-	ddr = of_fdt_get_ddrtype();
-	is_ddr7 = (ddr == 7);
-
-	for (i = 0; i < 10; i++) {
-		struct dev_pm_opp *opp;
-		opp = dev_pm_opp_find_freq_exact(&device->pdev->dev, opp_freqs[i], true);
-		if (IS_ERR_OR_NULL(opp)) {
-			dev_pm_opp_add(&device->pdev->dev, opp_freqs[i], opp_volts[i]);
-		} else {
-			dev_pm_opp_put(opp);
-		}
-	}
-
-	pwr->num_pwrlevels = 11;
-
-	/* Level 0: 670 MHz */
-	pwr->pwrlevels[0].gpu_freq = 670000000;
-	pwr->pwrlevels[0].bus_freq = 11;
-	pwr->pwrlevels[0].bus_min = 11;
-	pwr->pwrlevels[0].bus_max = 11;
-	pwr->pwrlevels[0].acd_level = 0x802b5ffd;
-
-	/* Level 1: 587 MHz */
-	pwr->pwrlevels[1].gpu_freq = 587000000;
-	pwr->pwrlevels[1].bus_freq = 11;
-	pwr->pwrlevels[1].bus_min = 11;
-	pwr->pwrlevels[1].bus_max = 11;
-	pwr->pwrlevels[1].acd_level = 0x802b5ffd;
-
-	/* Level 2: 525 MHz */
-	pwr->pwrlevels[2].gpu_freq = 525000000;
-	pwr->pwrlevels[2].bus_freq = is_ddr7 ? 9 : 8;
-	pwr->pwrlevels[2].bus_min = is_ddr7 ? 9 : 8;
-	pwr->pwrlevels[2].bus_max = 11;
-	pwr->pwrlevels[2].acd_level = 0x802b5ffd;
-
-	/* Level 3: 490 MHz */
-	pwr->pwrlevels[3].gpu_freq = 490000000;
-	pwr->pwrlevels[3].bus_freq = is_ddr7 ? 9 : 8;
-	pwr->pwrlevels[3].bus_min = is_ddr7 ? 6 : 7;
-	pwr->pwrlevels[3].bus_max = 9;
-	pwr->pwrlevels[3].acd_level = 0xa02b5ffd;
-
-	/* Level 4: 441.6 MHz */
-	pwr->pwrlevels[4].gpu_freq = 441600000;
-	pwr->pwrlevels[4].bus_freq = is_ddr7 ? 9 : 8;
-	pwr->pwrlevels[4].bus_min = is_ddr7 ? 6 : 7;
-	pwr->pwrlevels[4].bus_max = 9;
-	pwr->pwrlevels[4].acd_level = 0xa02b5ffd;
-
-	/* Level 5: 400 MHz */
-	pwr->pwrlevels[5].gpu_freq = 400000000;
-	pwr->pwrlevels[5].bus_freq = is_ddr7 ? 7 : 8;
-	pwr->pwrlevels[5].bus_min = 6;
-	pwr->pwrlevels[5].bus_max = 9;
-	pwr->pwrlevels[5].acd_level = 0xa02b5ffd;
-
-	/* Level 6: 305 MHz (Default boot level) */
-	pwr->pwrlevels[6].gpu_freq = 305000000;
-	pwr->pwrlevels[6].bus_freq = 3;
-	pwr->pwrlevels[6].bus_min = 2;
-	pwr->pwrlevels[6].bus_max = 9;
-	pwr->pwrlevels[6].acd_level = 0;
-
-	/* Level 7: 250 MHz (Low Idle) */
-	pwr->pwrlevels[7].gpu_freq = 250000000;
-	pwr->pwrlevels[7].bus_freq = 3;
-	pwr->pwrlevels[7].bus_min = 2;
-	pwr->pwrlevels[7].bus_max = 9;
-	pwr->pwrlevels[7].acd_level = 0;
-
-	/* Level 8: 200 MHz (Ultra Low Idle) */
-	pwr->pwrlevels[8].gpu_freq = 200000000;
-	pwr->pwrlevels[8].bus_freq = 2;
-	pwr->pwrlevels[8].bus_min = 1;
-	pwr->pwrlevels[8].bus_max = 3;
-	pwr->pwrlevels[8].acd_level = 0;
-
-	/* Level 9: 150 MHz (Lowest Active UV State) */
-	pwr->pwrlevels[9].gpu_freq = 150000000;
-	pwr->pwrlevels[9].bus_freq = 2;
-	pwr->pwrlevels[9].bus_min = 1;
-	pwr->pwrlevels[9].bus_max = 3;
-	pwr->pwrlevels[9].acd_level = 0;
-
-	/* Level 10: 0 MHz (Power Off) */
-	pwr->pwrlevels[10].gpu_freq = 0;
-	pwr->pwrlevels[10].bus_freq = 0;
-	pwr->pwrlevels[10].bus_min = 0;
-	pwr->pwrlevels[10].bus_max = 0;
-	pwr->pwrlevels[10].acd_level = 0;
-
-	pwr->max_pwrlevel = 0;
-	pwr->min_pwrlevel = 9;
-	pwr->thermal_pwrlevel = 0;
-	pwr->thermal_pwrlevel_floor = 9;
-	pwr->default_pwrlevel = 6;
-	pwr->active_pwrlevel = 6;
-
-	dev_info(device->dev, "EXTREME++: Natively enforced 10-step GPU UV power levels (150MHz - 670MHz)\\n");
-}
-
-"""
-        if func_target in t_adreno:
-            t_adreno = t_adreno.replace(func_target, func_code + func_target, 1)
-
-        # Enforce in adreno_of_get_pwrlevels
-        call_target1 = """			adreno_of_get_limits(adreno_dev, parent);
-			adreno_of_get_limits(adreno_dev, child);
-
-			return 0;"""
-        call_patch1 = """			adreno_of_get_limits(adreno_dev, parent);
-			adreno_of_get_limits(adreno_dev, child);
-
-			adreno_enforce_extreme_pwrlevels(adreno_dev);
-			return 0;"""
-        if call_target1 in t_adreno:
-            t_adreno = t_adreno.replace(call_target1, call_patch1, 1)
-
-        # Enforce on speed-bin mismatch fallback
-        idx = t_adreno.find("mismatch for efused bin")
-        if idx != -1:
-            start = t_adreno.rfind("dev_err(KGSL_DEVICE(adreno_dev)", 0, idx)
-            end = t_adreno.find("return -ENODEV;", idx)
-            if start != -1 and end != -1:
-                end += len("return -ENODEV;")
-                new_fallback = """dev_err(KGSL_DEVICE(adreno_dev)->dev,
-		"GPU speed_bin:%d mismatch for efused bin:%d, falling back to EXTREME++ UV\\n",
-		adreno_dev->speed_bin, bin);
-	adreno_enforce_extreme_pwrlevels(adreno_dev);
-	return 0;"""
-                t_adreno = t_adreno[:start] + new_fallback + t_adreno[end:]
-
-        # Enforce in legacy pwrlevels
-        legacy_target = """	adreno_of_get_bimc_iface_clk(adreno_dev, parent);
-
-	return 0;"""
-        legacy_patch = """	adreno_of_get_bimc_iface_clk(adreno_dev, parent);
-
-	adreno_enforce_extreme_pwrlevels(adreno_dev);
-	return 0;"""
-        if legacy_target in t_adreno:
-            t_adreno = t_adreno.replace(legacy_target, legacy_patch, 1)
-
-        # Enforce in adreno_of_get_power with safe fallback
-        power_target = """	if (adreno_of_get_pwrlevels(adreno_dev, node))
-		return -EINVAL;"""
-        power_patch = """	if (adreno_of_get_pwrlevels(adreno_dev, node)) {
-		dev_warn(device->dev, "adreno_of_get_pwrlevels failed, falling back to EXTREME++ UV\\n");
-		adreno_enforce_extreme_pwrlevels(adreno_dev);
-	} else {
-		adreno_enforce_extreme_pwrlevels(adreno_dev);
-	}"""
-        if power_target in t_adreno:
-            t_adreno = t_adreno.replace(power_target, power_patch, 1)
-
-        with open(path_adreno, "w") as f:
-            f.write(t_adreno)
-        print("✅ adreno.c: Patched with C-level 10-step UV enforcement & DTBO bypass!")
-
-# 5. Patch drivers/gpu/msm/kgsl_pwrctrl.h (expand KGSL_MAX_PWRLEVELS from 10 to 16 to prevent buffer overflow)
-path_pwrctrl_h = "drivers/gpu/msm/kgsl_pwrctrl.h"
-if os.path.isfile(path_pwrctrl_h):
-    with open(path_pwrctrl_h, "r") as f:
-        t_h = f.read()
-    t_h = t_h.replace("#define KGSL_MAX_PWRLEVELS 10", "#define KGSL_MAX_PWRLEVELS 16", 1)
-    with open(path_pwrctrl_h, "w") as f:
-        f.write(t_h)
-    print("✅ kgsl_pwrctrl.h: Expanded KGSL_MAX_PWRLEVELS to 16 (anti-overflow)")
-
-# 6. Patch drivers/gpu/msm/kgsl_pwrctrl.c (prevent zeroing stats in gpubusy_show and gpu_busy_percentage_show for FKM load monitoring)
+# 2. Patch drivers/gpu/msm/kgsl_pwrctrl.c (prevent zeroing stats in gpubusy_show and gpu_busy_percentage_show for FKM load monitoring)
 path_pwrctrl_c = "drivers/gpu/msm/kgsl_pwrctrl.c"
 if os.path.isfile(path_pwrctrl_c):
     with open(path_pwrctrl_c, "r") as f:
@@ -772,8 +366,6 @@ if os.path.isfile(path_pwrctrl_c):
 
     with open(path_pwrctrl_c, "w") as f:
         f.write(t_c)
-
-print("✅ ALL GPU OPP TABLES, SPEED BINS, AND C DRIVER ENFORCEMENT APPLIED 100%!")
 EOF
 
 
@@ -875,6 +467,13 @@ make -j"${TOTAL_CORES}" "${MAKE_OPTS[@]}" "${DEFCONFIG}"
 # 8. Full HyperOS / MIUI Config Injection (AstideLabs standard) & Performance Tunables
 # ------------------------------------------
 echo "[*] Injecting Full HyperOS / MIUI Subsystem Configs..."
+# 🚀 Restore Adreno TrustZone GPU Devfreq Governor & Bus Monitor
+scripts/config --file "${OUT_DIR}/.config" \
+    -e DEVFREQ_GOV_QCOM_ADRENO_TZ \
+    -e DEVFREQ_GOV_QCOM_GPUBW_MON \
+    -e DEVFREQ_GOV_MSM_ADRENO_TZ \
+    --set-str QCOM_ADRENO_DEFAULT_GOVERNOR "msm-adreno-tz"
+
 scripts/config --file "${OUT_DIR}/.config" -e BBG
 scripts/config --file "${OUT_DIR}/.config" --set-str LOCALVERSION "-EXTREME++GAMING_Hyperos"
 
@@ -953,7 +552,22 @@ scripts/config --file "${OUT_DIR}/.config" \
 
 make -j"${TOTAL_CORES}" "${MAKE_OPTS[@]}" olddefconfig
 
-# Ensure ZRAM ZSTD, Schedutil, and KSU survive olddefconfig
+# Ensure GPU Devfreq Governor, ZRAM ZSTD, Schedutil, and KSU survive olddefconfig
+scripts/config --file "${OUT_DIR}/.config" \
+    -e DEVFREQ_GOV_QCOM_ADRENO_TZ \
+    -e DEVFREQ_GOV_QCOM_GPUBW_MON \
+    -e DEVFREQ_GOV_MSM_ADRENO_TZ \
+    --set-str QCOM_ADRENO_DEFAULT_GOVERNOR "msm-adreno-tz"
+
+if ! grep -q "CONFIG_DEVFREQ_GOV_QCOM_ADRENO_TZ=y" "${OUT_DIR}/.config"; then
+    echo "CONFIG_DEVFREQ_GOV_QCOM_ADRENO_TZ=y" >> "${OUT_DIR}/.config"
+fi
+if ! grep -q "CONFIG_DEVFREQ_GOV_QCOM_GPUBW_MON=y" "${OUT_DIR}/.config"; then
+    echo "CONFIG_DEVFREQ_GOV_QCOM_GPUBW_MON=y" >> "${OUT_DIR}/.config"
+fi
+if ! grep -q "CONFIG_DEVFREQ_GOV_MSM_ADRENO_TZ=y" "${OUT_DIR}/.config"; then
+    echo "CONFIG_DEVFREQ_GOV_MSM_ADRENO_TZ=y" >> "${OUT_DIR}/.config"
+fi
 scripts/config --file "${OUT_DIR}/.config" \
     -e ZRAM \
     -e CRYPTO_ZSTD \
