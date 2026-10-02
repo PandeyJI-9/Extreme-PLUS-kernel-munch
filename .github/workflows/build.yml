@@ -86,7 +86,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: ${{ env.ZIP_PATH }}
-          tag_name: "Beta-testing-v1.1.2.${{ github.run_number }}"
+          tag_name: "Stable-testing-v1.1.2.${{ github.run_number }}"
           name: "EXTREME++ Build #${{ github.run_number }}"
           body: |
             ## 🚀 EXTREME++ GAMING HyperOS Kernel
@@ -131,7 +131,7 @@ jobs:
           ctx = ssl._create_unverified_context()
           token = os.environ.get('GITHUB_TOKEN')
           repo = os.environ.get('GITHUB_REPOSITORY')
-          current_tag = 'Beta-testing-v1.1.2.${{ github.run_number }}'
+          current_tag = 'Stable-testing-v1.1.2.${{ github.run_number }}'
 
           req = urllib.request.Request(f'https://api.github.com/repos/{repo}/releases', headers={
               'Authorization': f'token {token}',

@@ -177,7 +177,7 @@ PWRLEVELS_10_BIN = """
 			#address-cells = <1>;
 			#size-cells = <0>;
 			qcom,speed-bin = <{BIN}>;
-			qcom,initial-pwrlevel = <6>;
+			qcom,initial-pwrlevel = <9>;
 			qcom,throttle-pwrlevel = <1>;
 
 			qcom,gpu-pwrlevel@0 {
@@ -313,7 +313,7 @@ PWRLEVELS_10_LEGACY = """\t\tqcom,gpu-pwrlevels {
 			#address-cells = <1>;
 			#size-cells = <0>;
 			compatible = "qcom,gpu-pwrlevels";
-			qcom,initial-pwrlevel = <6>;
+			qcom,initial-pwrlevel = <9>;
 			qcom,throttle-pwrlevel = <1>;
 
 			qcom,gpu-pwrlevel@0 {
@@ -465,7 +465,7 @@ if os.path.isfile(path1):
         if ep1 != -1:
             t1 = t1[:mp1.start()] + PWRLEVELS_10_LEGACY + t1[ep1:]
 
-    t1 = re.sub(r"qcom,initial-pwrlevel\s*=\s*<\d+>;", "qcom,initial-pwrlevel = <6>;", t1)
+    t1 = re.sub(r"qcom,initial-pwrlevel\s*=\s*<\d+>;", "qcom,initial-pwrlevel = <9>;", t1)
     with open(path1, "w") as f:
         f.write(t1)
     print("✅ kona-gpu.dtsi: Full 10-step UV OPP table + power levels injected!")
@@ -494,7 +494,7 @@ if os.path.isfile(path2):
         new_block = "\t\tqcom,gpu-pwrlevels-" + bin_idx + " {" + PWRLEVELS_10_BIN.replace("{BIN}", sb_val)
         t2 = t2[:m.start()] + new_block + t2[end:]
 
-    t2 = re.sub(r"qcom,initial-pwrlevel\s*=\s*<\d+>;", "qcom,initial-pwrlevel = <6>;", t2)
+    t2 = re.sub(r"qcom,initial-pwrlevel\s*=\s*<\d+>;", "qcom,initial-pwrlevel = <9>;", t2)
     with open(path2, "w") as f:
         f.write(t2)
     print("✅ kona-v2-gpu.dtsi: Full 10-step UV OPP table + ALL 5 speed bins injected!")
@@ -645,8 +645,10 @@ static void adreno_enforce_extreme_pwrlevels(struct adreno_device *adreno_dev)
 
 	pwr->max_pwrlevel = 0;
 	pwr->min_pwrlevel = 9;
-	pwr->default_pwrlevel = 6;
-	pwr->active_pwrlevel = 6;
+	pwr->thermal_pwrlevel = 0;
+	pwr->thermal_pwrlevel_floor = 9;
+	pwr->default_pwrlevel = 9;
+	pwr->active_pwrlevel = 9;
 
 	dev_info(device->dev, "EXTREME++: Natively enforced 10-step GPU UV power levels (150MHz - 670MHz)\\n");
 }
@@ -707,13 +709,81 @@ static void adreno_enforce_extreme_pwrlevels(struct adreno_device *adreno_dev)
             f.write(t_adreno)
         print("✅ adreno.c: Patched with C-level 10-step UV enforcement & DTBO bypass!")
 
-# 5. Patch drivers/gpu/msm/kgsl_pwrctrl.c (Joyose / mi_thermald sysfs interceptors)
+# 5. Patch drivers/gpu/msm/kgsl_pwrctrl.h (expand KGSL_MAX_PWRLEVELS from 10 to 16 to prevent buffer overflow)
+path_pwrctrl_h = "drivers/gpu/msm/kgsl_pwrctrl.h"
+if os.path.isfile(path_pwrctrl_h):
+    with open(path_pwrctrl_h, "r") as f:
+        t_h = f.read()
+    t_h = t_h.replace("#define KGSL_MAX_PWRLEVELS 10", "#define KGSL_MAX_PWRLEVELS 16", 1)
+    with open(path_pwrctrl_h, "w") as f:
+        f.write(t_h)
+    print("✅ kgsl_pwrctrl.h: Expanded KGSL_MAX_PWRLEVELS to 16 (anti-overflow)")
+
+# 6. Patch drivers/gpu/msm/kgsl_pwrctrl.c (Smart Joyose / Root filters & responsive gpubusy)
 path_pwrctrl = "drivers/gpu/msm/kgsl_pwrctrl.c"
 if os.path.isfile(path_pwrctrl):
     with open(path_pwrctrl, "r") as f:
         t_pwrctrl = f.read()
 
-    # Block max_pwrlevel_store
+    # Include cred.h for uid_eq & GLOBAL_ROOT_UID
+    if "<linux/cred.h>" not in t_pwrctrl:
+        t_pwrctrl = "#include <linux/cred.h>\n" + t_pwrctrl
+
+    # Set UPDATE_BUSY_VAL to 100000 (100ms) for real-time responsive GPU load reporting in FKM
+    t_pwrctrl = t_pwrctrl.replace("#define UPDATE_BUSY_VAL\t\t1000000", "#define UPDATE_BUSY_VAL\t\t100000", 1)
+
+    # Patch gpubusy_show to never report fake 0/0 and use live accumulators
+    idx_busy = t_pwrctrl.find("static ssize_t gpubusy_show(")
+    if idx_busy != -1:
+        end_busy = t_pwrctrl.find("return ret;\n}", idx_busy) + len("return ret;\n}")
+        gpubusy_patch = """static ssize_t gpubusy_show(struct device *dev,
+				struct device_attribute *attr, char *buf)
+{
+	struct kgsl_device *device = dev_get_drvdata(dev);
+	struct kgsl_clk_stats *stats = &device->pwrctrl.clk_stats;
+	unsigned int busy = stats->busy_old;
+	unsigned int total = stats->total_old;
+
+	/* EXTREME++: If periodic window hasn't rolled over, report live accumulators */
+	if (total == 0 && stats->total > 0) {
+		busy = (unsigned int)stats->busy;
+		total = (unsigned int)stats->total;
+	}
+
+	return scnprintf(buf, PAGE_SIZE, "%7u %7u\\n", busy, total);
+}"""
+        t_pwrctrl = t_pwrctrl[:idx_busy] + gpubusy_patch + t_pwrctrl[end_busy:]
+
+    # Patch _adjust_pwrlevel to ensure thermal_pwrlevel_floor allows level 9 (150 MHz)
+    adjust_target = """static unsigned int _adjust_pwrlevel(struct kgsl_pwrctrl *pwr, int level,
+					struct kgsl_pwr_constraint *pwrc,
+					int popp)
+{
+	unsigned int max_pwrlevel = max_t(unsigned int, pwr->thermal_pwrlevel,
+					pwr->max_pwrlevel);
+	unsigned int min_pwrlevel = min_t(unsigned int,
+					pwr->thermal_pwrlevel_floor,
+					pwr->min_pwrlevel);"""
+    adjust_patch = """static unsigned int _adjust_pwrlevel(struct kgsl_pwrctrl *pwr, int level,
+					struct kgsl_pwr_constraint *pwrc,
+					int popp)
+{
+	unsigned int max_pwrlevel;
+	unsigned int min_pwrlevel;
+
+	/* EXTREME++: Allow full idle drop to lowest active UV level (num_pwrlevels - 2 = 150MHz) */
+	if (pwr->thermal_pwrlevel_floor < pwr->num_pwrlevels - 2)
+		pwr->thermal_pwrlevel_floor = pwr->num_pwrlevels - 2;
+
+	max_pwrlevel = max_t(unsigned int, pwr->thermal_pwrlevel,
+					pwr->max_pwrlevel);
+	min_pwrlevel = min_t(unsigned int,
+					pwr->thermal_pwrlevel_floor,
+					pwr->min_pwrlevel);"""
+    if adjust_target in t_pwrctrl:
+        t_pwrctrl = t_pwrctrl.replace(adjust_target, adjust_patch, 1)
+
+    # Smart max_pwrlevel_store: Root/FKM full manual control; clamp mi_thermald throttling
     max_store_target = """static ssize_t max_pwrlevel_store(struct device *dev,
 				struct device_attribute *attr,
 				const char *buf, size_t count)
@@ -745,15 +815,39 @@ if os.path.isfile(path_pwrctrl):
 				struct device_attribute *attr,
 				const char *buf, size_t count)
 {
-	/* EXTREME++ Joyose / User-Space Blocker:
-	 * Lock max GPU power level strictly at 0 (670 MHz peak capability).
-	 */
+	struct kgsl_device *device = dev_get_drvdata(dev);
+	struct kgsl_pwrctrl *pwr = &device->pwrctrl;
+	int ret;
+	unsigned int level = 0;
+
+	ret = kgsl_sysfs_store(buf, &level);
+	if (ret)
+		return ret;
+
+	/* EXTREME++: Allow Root/FKM full control; clamp mi_thermald throttling */
+	if (!uid_eq(current_uid(), GLOBAL_ROOT_UID)) {
+		if (level > 1)
+			level = 1;
+	}
+
+	mutex_lock(&device->mutex);
+
+	/* You can't set a maximum power level lower than the minimum */
+	if (level > pwr->min_pwrlevel)
+		level = pwr->min_pwrlevel;
+
+	pwr->max_pwrlevel = level;
+
+	/* Update the current level using the new limit */
+	kgsl_pwrctrl_pwrlevel_change(device, pwr->active_pwrlevel);
+	mutex_unlock(&device->mutex);
+
 	return count;
 }"""
     if max_store_target in t_pwrctrl:
         t_pwrctrl = t_pwrctrl.replace(max_store_target, max_store_patch, 1)
 
-    # Block min_pwrlevel_store
+    # Smart min_pwrlevel_store: Root/FKM full control; Joyose idle (>=6) maps to 150MHz (level 9), gaming boost (<6) allowed
     min_store_target = """static ssize_t min_pwrlevel_store(struct device *dev,
 				struct device_attribute *attr, const char *buf,
 				size_t count)
@@ -775,51 +869,31 @@ if os.path.isfile(path_pwrctrl):
 				size_t count)
 {
 	struct kgsl_device *device = dev_get_drvdata(dev);
-	/* EXTREME++ Joyose / User-Space Blocker:
-	 * Keep lowest idle power level unlocked at 150 MHz (level 9).
+	int ret;
+	unsigned int level = 0;
+
+	ret = kgsl_sysfs_store(buf, &level);
+	if (ret)
+		return ret;
+
+	/* EXTREME++ Smart Joyose / Root Filter:
+	 * If Root (UID 0 / FKM), allow setting any valid min power level.
+	 * If Non-Root (Joyose / OS), stock idle (level >= 6) maps to 150 MHz (level 9).
+	 * If Joyose gaming boost (level < 6), allow it!
 	 */
-	kgsl_pwrctrl_min_pwrlevel_set(device, 0);
+	if (!uid_eq(current_uid(), GLOBAL_ROOT_UID)) {
+		if (level >= 6)
+			level = device->pwrctrl.num_pwrlevels - 2;
+	}
+
+	kgsl_pwrctrl_min_pwrlevel_set(device, level);
+
 	return count;
 }"""
     if min_store_target in t_pwrctrl:
         t_pwrctrl = t_pwrctrl.replace(min_store_target, min_store_patch, 1)
 
-    # Ensure kgsl_pwrctrl_min_pwrlevel_set maintains lowest active level
-    min_set_target = """static void kgsl_pwrctrl_min_pwrlevel_set(struct kgsl_device *device,
-					int level)
-{
-	struct kgsl_pwrctrl *pwr = &device->pwrctrl;
-
-	mutex_lock(&device->mutex);
-	if (level > pwr->num_pwrlevels - 2)
-		level = pwr->num_pwrlevels - 2;
-
-	/* You can't set a minimum power level lower than the maximum */
-	if (level < pwr->max_pwrlevel)
-		level = pwr->max_pwrlevel;
-
-	pwr->min_pwrlevel = level;
-
-	/* Update the current level using the new limit */
-	kgsl_pwrctrl_pwrlevel_change(device, pwr->active_pwrlevel);
-
-	mutex_unlock(&device->mutex);
-}"""
-    min_set_patch = """static void __maybe_unused kgsl_pwrctrl_min_pwrlevel_set(struct kgsl_device *device,
-					int level)
-{
-	struct kgsl_pwrctrl *pwr = &device->pwrctrl;
-
-	mutex_lock(&device->mutex);
-	/* EXTREME++: Lock min_pwrlevel to lowest active level (num_pwrlevels - 2) */
-	pwr->min_pwrlevel = pwr->num_pwrlevels - 2;
-	kgsl_pwrctrl_pwrlevel_change(device, pwr->active_pwrlevel);
-	mutex_unlock(&device->mutex);
-}"""
-    if min_set_target in t_pwrctrl:
-        t_pwrctrl = t_pwrctrl.replace(min_set_target, min_set_patch, 1)
-
-    # Block min_clock_mhz_store (Xiaomi /sys/kernel/gpu/gpu_min_clock link)
+    # Smart min_clock_mhz_store: Root/FKM full control; Joyose idle (<=305) maps to 150MHz, gaming boost (>305) allowed
     min_clk_target = """static ssize_t min_clock_mhz_store(struct device *dev,
 				struct device_attribute *attr,
 				const char *buf, size_t count)
@@ -846,16 +920,36 @@ if os.path.isfile(path_pwrctrl):
 				const char *buf, size_t count)
 {
 	struct kgsl_device *device = dev_get_drvdata(dev);
-	/* EXTREME++ Joyose Blocker:
-	 * Drop Joyose forced stock min clock (e.g. 305 MHz) to allow 150 MHz UV idle.
+	int level, ret;
+	unsigned int freq;
+	struct kgsl_pwrctrl *pwr = &device->pwrctrl;
+
+	ret = kgsl_sysfs_store(buf, &freq);
+	if (ret)
+		return ret;
+
+	/* EXTREME++ Smart Joyose / Root Filter:
+	 * If Root (UID 0 / FKM), allow setting exact frequency.
+	 * If Non-Root (Joyose), <= 305 MHz maps to 150 MHz idle UV.
+	 * If > 305 MHz (Joyose gaming boost), allow the boost!
 	 */
-	kgsl_pwrctrl_min_pwrlevel_set(device, 0);
+	if (!uid_eq(current_uid(), GLOBAL_ROOT_UID)) {
+		if (freq <= 305)
+			freq = 150;
+	}
+
+	freq *= 1000000;
+	level = _get_nearest_pwrlevel(pwr, freq);
+
+	if (level >= 0)
+		kgsl_pwrctrl_min_pwrlevel_set(device, level);
+
 	return count;
 }"""
     if min_clk_target in t_pwrctrl:
         t_pwrctrl = t_pwrctrl.replace(min_clk_target, min_clk_patch, 1)
 
-    # Block max_clock_mhz_store (Xiaomi /sys/kernel/gpu/gpu_max_clock link)
+    # Smart max_clock_mhz_store: Root/FKM full control; clamp mi_thermald throttling below 587MHz
     max_clk_target = """static ssize_t max_clock_mhz_store(struct device *dev,
 				struct device_attribute *attr,
 				const char *buf, size_t count)
@@ -877,9 +971,23 @@ if os.path.isfile(path_pwrctrl):
 				struct device_attribute *attr,
 				const char *buf, size_t count)
 {
-	/* EXTREME++ Joyose Blocker:
-	 * Drop Joyose artificial throttling; real thermal control remains in-kernel.
-	 */
+	struct kgsl_device *device = dev_get_drvdata(dev);
+	unsigned int val = 0;
+	int ret;
+
+	ret = kgsl_sysfs_store(buf, &val);
+	if (ret)
+		return ret;
+
+	/* EXTREME++: Allow Root/FKM full control; clamp mi_thermald throttling */
+	if (!uid_eq(current_uid(), GLOBAL_ROOT_UID)) {
+		if (val < 587)
+			val = 587;
+	}
+
+	val *= 1000000;
+	kgsl_pwrctrl_max_clock_set(device, val);
+
 	return count;
 }"""
     if max_clk_target in t_pwrctrl:
@@ -887,18 +995,30 @@ if os.path.isfile(path_pwrctrl):
 
     with open(path_pwrctrl, "w") as f:
         f.write(t_pwrctrl)
-    print("✅ kgsl_pwrctrl.c: Patched with Joyose/sysfs interceptor!")
+    print("✅ kgsl_pwrctrl.c: Patched with smart Joyose / Root sysfs interceptor & responsive gpubusy!")
 
-# 6. Patch drivers/gpu/msm/kgsl_pwrscale.c (devfreq frequency clamp)
+# 7. Patch drivers/gpu/msm/kgsl_pwrscale.c (idle slumber drop & devfreq frequency clamp)
 path_pwrscale = "drivers/gpu/msm/kgsl_pwrscale.c"
 if os.path.isfile(path_pwrscale):
     with open(path_pwrscale, "r") as f:
         t_pwrscale = f.read()
 
+    target_sleep = "\tpsc->popp_level = 0;\n\tclear_bit(POPP_PUSH, &device->pwrscale.popp_state);\n\n\t/* to call devfreq_suspend_device() from a kernel thread */"
+    patch_sleep = """\tpsc->popp_level = 0;
+\tclear_bit(POPP_PUSH, &device->pwrscale.popp_state);
+
+\t/* EXTREME++: Force idle UV power level (150 MHz) before entering slumber */
+\tif (device->pwrctrl.num_pwrlevels >= 2)
+\t\tkgsl_pwrctrl_pwrlevel_change(device, device->pwrctrl.num_pwrlevels - 2);
+
+\t/* to call devfreq_suspend_device() from a kernel thread */"""
+    if target_sleep in t_pwrscale:
+        t_pwrscale = t_pwrscale.replace(target_sleep, patch_sleep, 1)
+
     devfreq_target = "\trec_freq = *freq;\n\n\tmutex_lock(&device->mutex);"
     devfreq_patch = """\trec_freq = *freq;
 	/* EXTREME++: Intercept devfreq target and clamp to UV range [150MHz - 670MHz] */
-	if (rec_freq < 150000000)
+	if (rec_freq > 0 && rec_freq < 150000000)
 		rec_freq = 150000000;
 	else if (rec_freq > 670000000)
 		rec_freq = 670000000;
@@ -909,7 +1029,105 @@ if os.path.isfile(path_pwrscale):
 
     with open(path_pwrscale, "w") as f:
         f.write(t_pwrscale)
-    print("✅ kgsl_pwrscale.c: Patched with devfreq frequency clamp!")
+    print("✅ kgsl_pwrscale.c: Patched with idle slumber drop & devfreq clamp!")
+
+# 8. Patch drivers/devfreq/governor_msm_adreno_tz.c (responsive idle step-down & WebGL burst)
+path_gov = "drivers/devfreq/governor_msm_adreno_tz.c"
+if os.path.isfile(path_gov):
+    with open(path_gov, "r") as f:
+        t_gov = f.read()
+
+    idx_gov = t_gov.find("static int tz_get_target_freq(")
+    if idx_gov != -1:
+        end_gov = t_gov.find("return 0;\n}", idx_gov) + len("return 0;\n}")
+        gov_patch = """static int tz_get_target_freq(struct devfreq *devfreq, unsigned long *freq)
+{
+	int result = 0;
+	struct devfreq_msm_adreno_tz_data *priv = devfreq->data;
+	struct devfreq_dev_status *stats = &devfreq->last_status;
+	int val = 0, level = 0;
+	unsigned int scm_data[4];
+	int context_count = 0;
+
+	/* keeps stats.private_data == NULL   */
+	result = devfreq_update_stats(devfreq);
+	if (result) {
+		pr_err(TAG "get_status failed %d\\n", result);
+		return result;
+	}
+
+	*freq = stats->current_frequency;
+	priv->bin.total_time += stats->total_time;
+	priv->bin.busy_time += stats->busy_time;
+
+	if (stats->private_data)
+		context_count =  *((int *)stats->private_data);
+
+	/* Update the GPU load statistics */
+	compute_work_load(stats, priv, devfreq);
+
+	if ((stats->total_time == 0) || (priv->bin.total_time < FLOOR)) {
+		return 0;
+	}
+
+	/* EXTREME++: Idle UV Step-Down:
+	 * If GPU has no active work (busy < MIN_BUSY), dynamically step down toward
+	 * the lowest UV frequency (Level 9 / 150 MHz) instead of staying frozen.
+	 */
+	if ((unsigned int) priv->bin.busy_time < MIN_BUSY) {
+		level = devfreq_get_freq_level(devfreq, stats->current_frequency);
+		if (level >= 0 && level < devfreq->profile->max_state - 1) {
+			level++;
+			*freq = devfreq->profile->freq_table[level];
+		}
+		priv->bin.total_time = 0;
+		priv->bin.busy_time = 0;
+		return 0;
+	}
+
+	level = devfreq_get_freq_level(devfreq, stats->current_frequency);
+	if (level < 0) {
+		pr_err(TAG "bad freq %ld\\n", stats->current_frequency);
+		return level;
+	}
+
+	/* EXTREME++: High-Load / WebGL / CSS Blur / Gaming Burst:
+	 * If busy time exceeds 20ms or busy percentage > 50%, burst instantly
+	 * to Level 0 (670 MHz peak) to eliminate all rendering lag.
+	 */
+	if (!priv->disable_busy_time_burst &&
+			(priv->bin.busy_time > 20000 ||
+			 (priv->bin.total_time > 0 &&
+			  (priv->bin.busy_time * 100) / priv->bin.total_time > 50))) {
+		val = -1 * level;
+	} else {
+		scm_data[0] = level;
+		scm_data[1] = priv->bin.total_time;
+		scm_data[2] = priv->bin.busy_time;
+		scm_data[3] = context_count;
+		__secure_tz_update_entry3(scm_data, sizeof(scm_data),
+					&val, sizeof(val), priv);
+	}
+	priv->bin.total_time = 0;
+	priv->bin.busy_time = 0;
+
+	/*
+	 * If the decision is to move to a different level, make sure the GPU
+	 * frequency changes.
+	 */
+	if (val) {
+		level += val;
+		level = max(level, 0);
+		level = min_t(int, level, devfreq->profile->max_state - 1);
+	}
+
+	*freq = devfreq->profile->freq_table[level];
+	return 0;
+}"""
+        t_gov = t_gov[:idx_gov] + gov_patch + t_gov[end_gov:]
+        with open(path_gov, "w") as f:
+            f.write(t_gov)
+        print("✅ governor_msm_adreno_tz.c: Patched with dynamic idle UV step-down & high-load WebGL burst!")
 
 print("✅ ALL GPU OPP TABLES, SPEED BINS, AND C DRIVER LOCKS APPLIED 100%!")
 EOF
