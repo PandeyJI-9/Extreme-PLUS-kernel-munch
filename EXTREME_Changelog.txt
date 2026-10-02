@@ -4,7 +4,13 @@ Device name: POCO F4
 Device codename: munch
 Kernel maintainer: @pandey_ji_8
 
-==========02/10/2026==========
+==========02/10/2026 (Build #59)==========
+* feat(gpu): C-level 10-step power levels & OPP injection in adreno.c bypassing stock DTBO truncation
+* fix(gmu): restrict ACD levels strictly to top 6 steps (levels 0-5) to prevent GMU HFI buffer overflow
+* fix(gmu): relax DCVS level bounds check in kgsl_gmu.c to eliminate RPMh DCVS rejection
+* fix(gpu): full 150MHz idle drop & 670MHz peak scaling with native msm-adreno-tz devfreq governor
+
+==========02/10/2026 (Build #58)==========
 * fix(gpu): revert kgsl sysfs and governor overrides to stock, restore native devfreq scaling & add Joyose boot service optimizer
 * fix(gpu): expand KGSL_MAX_PWRLEVELS to 16, fix gpubusy load reporting, idle UV drop & smart Joyose filter
 * docs: add comprehensive HyperOS 1-4 & Android 14-17 compatibility matrix and AOSP/MIUI notices
