@@ -103,9 +103,10 @@ jobs:
 
             ### ⚡ Performance & Thermal Optimizations
             - 🏎 **CPU Frequency Cap:** Prime Core hard-capped at **2.84 GHz** (`2841600`) via `qcom-cpufreq-hw` driver & `kona.dtsi` to eliminate 3.2 GHz thermal throttle spikes.
-            - 🎮 **GPU Undervolt (UV):** FakeDreamer **10-Step OPP Table (150 MHz – 670 MHz)** applied across all Kona speed-bins with RPMh safe voltage mapping:
-              - Peak 670 MHz undervolted to `SVS_L2` (smooth sustained 60/90/120 FPS).
-              - Added Ultra-Low idle states: `250 MHz`, `200 MHz`, `150 MHz` for maximum battery savings.
+            - 🎮 **GPU Undervolt (UV) & OS-Independent Lock:** FakeDreamer **10-Step OPP Table (150 MHz – 670 MHz)** applied with RPMh safe voltage mapping:
+              - **C-Level Kernel Driver Enforcement:** `drivers/gpu/msm/adreno.c` hardcodes all 10 power levels natively to bypass HyperOS 3/4 DTBO overlays and vendor partitions.
+              - **Joyose & User-Space Blocker:** `/sys/class/kgsl/kgsl-3d0/max_pwrlevel`, `min_pwrlevel`, and Xiaomi `/sys/kernel/gpu/gpu_min_clock`/`max_clock` interceptors drop artificial user-space throttling.
+              - **Ultra-Low Idle States:** `250 MHz`, `200 MHz`, `150 MHz` for maximum battery efficiency.
               - `KGSL_MAX_PWRLEVELS` expanded to 16 for full 10-step frequency scaling.
             - 🚀 **Zero Heat Policy:** 100% untouched stock thermal-engine, trip points, and TSENS. Hardware-safe sustained gaming.
             - 🧠 **Memory & Responsiveness:**
@@ -119,6 +120,40 @@ jobs:
             1. Boot into custom recovery (TWRP / OrangeFox).
             2. Flash the kernel ZIP (`split_boot` method preserves stock HyperOS ramdisk).
             3. Reboot system and install **ReSukiSU / KernelSU Manager**.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: "🧹 Clean Old GitHub Releases (Keep Latest Only)"
+        if: success()
+        run: |
+          python3 -c "
+          import urllib.request, json, os, ssl
+          ctx = ssl._create_unverified_context()
+          token = os.environ.get('GITHUB_TOKEN')
+          repo = os.environ.get('GITHUB_REPOSITORY')
+          current_tag = 'Beta-testing-v1.1.2.${{ github.run_number }}'
+
+          req = urllib.request.Request(f'https://api.github.com/repos/{repo}/releases', headers={
+              'Authorization': f'token {token}',
+              'Accept': 'application/vnd.github.v3+json',
+              'User-Agent': 'Release-Cleaner'
+          })
+          try:
+              with urllib.request.urlopen(req, context=ctx) as resp:
+                  releases = json.loads(resp.read().decode())
+              for r in releases:
+                  if r.get('tag_name') != current_tag:
+                      print(f'Deleting old release {r.get(\"tag_name\")} (ID: {r.get(\"id\")})...')
+                      del_req = urllib.request.Request(f'https://api.github.com/repos/{repo}/releases/{r[\"id\"]}', headers={
+                          'Authorization': f'token {token}',
+                          'Accept': 'application/vnd.github.v3+json',
+                          'User-Agent': 'Release-Cleaner'
+                      }, method='DELETE')
+                      urllib.request.urlopen(del_req, context=ctx)
+                      print(f'Successfully deleted release {r.get(\"id\")}')
+          except Exception as e:
+              print(f'Note on release cleanup: {e}')
+          "
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

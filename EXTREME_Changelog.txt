@@ -4,6 +4,9 @@ Device name: POCO F4
 Device codename: munch
 Kernel maintainer: @pandey_ji_8
 
+==========02/10/2026==========
+* feat: C-level GPU UV driver hardcoding (150MHz - 670MHz) & Joyose blocker to bypass HyperOS 3 DTBO overlay traps
+
 ==========01/10/2026==========
 * feat: native GPU 10-step UV across all speed bins & kona-v2.1, 6GB RAM ZSTD + schedutil zero-lag, pro release notes, and fixed changelog links
 * fix: inject FakeDreamer 10-step UV OPP table & speed bins into both kona-gpu.dtsi and kona-v2-gpu.dtsi
