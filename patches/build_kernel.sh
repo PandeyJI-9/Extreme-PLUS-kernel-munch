@@ -774,9 +774,11 @@ if os.path.isfile(path_pwrctrl):
 				struct device_attribute *attr, const char *buf,
 				size_t count)
 {
+	struct kgsl_device *device = dev_get_drvdata(dev);
 	/* EXTREME++ Joyose / User-Space Blocker:
 	 * Keep lowest idle power level unlocked at 150 MHz (level 9).
 	 */
+	kgsl_pwrctrl_min_pwrlevel_set(device, 0);
 	return count;
 }"""
     if min_store_target in t_pwrctrl:
@@ -803,7 +805,7 @@ if os.path.isfile(path_pwrctrl):
 
 	mutex_unlock(&device->mutex);
 }"""
-    min_set_patch = """static void kgsl_pwrctrl_min_pwrlevel_set(struct kgsl_device *device,
+    min_set_patch = """static void __maybe_unused kgsl_pwrctrl_min_pwrlevel_set(struct kgsl_device *device,
 					int level)
 {
 	struct kgsl_pwrctrl *pwr = &device->pwrctrl;
@@ -843,9 +845,11 @@ if os.path.isfile(path_pwrctrl):
 				struct device_attribute *attr,
 				const char *buf, size_t count)
 {
+	struct kgsl_device *device = dev_get_drvdata(dev);
 	/* EXTREME++ Joyose Blocker:
 	 * Drop Joyose forced stock min clock (e.g. 305 MHz) to allow 150 MHz UV idle.
 	 */
+	kgsl_pwrctrl_min_pwrlevel_set(device, 0);
 	return count;
 }"""
     if min_clk_target in t_pwrctrl:
