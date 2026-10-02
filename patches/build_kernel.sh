@@ -531,7 +531,7 @@ if os.path.isfile(path_adreno):
 		ret = dev_pm_opp_of_add_table(&device->pdev->dev);
 		if (ret) {
 			dev_err(device->dev,
-				"Unable to set the GPU OPP table: %d\n", ret);
+				"Unable to set the GPU OPP table: %d\\n", ret);
 			return ret;
 		}
 	}"""
@@ -541,7 +541,7 @@ if os.path.isfile(path_adreno):
 		ret = dev_pm_opp_of_add_table(&device->pdev->dev);
 		if (ret && ret != -EEXIST) {
 			dev_warn(device->dev,
-				"Unable to set the GPU OPP table: %d (continuing with C enforcement)\n", ret);
+				"Unable to set the GPU OPP table: %d (continuing with C enforcement)\\n", ret);
 		}
 	}"""
     if opp_target in t_adreno:
@@ -723,7 +723,7 @@ static void adreno_enforce_extreme_pwrlevels(struct adreno_device *adreno_dev)
         power_target = """	if (adreno_of_get_pwrlevels(adreno_dev, node))
 		return -EINVAL;"""
         power_patch = """	if (adreno_of_get_pwrlevels(adreno_dev, node)) {
-		dev_warn(device->dev, "adreno_of_get_pwrlevels failed, falling back to EXTREME++ UV\n");
+		dev_warn(device->dev, "adreno_of_get_pwrlevels failed, falling back to EXTREME++ UV\\n");
 		adreno_enforce_extreme_pwrlevels(adreno_dev);
 	} else {
 		adreno_enforce_extreme_pwrlevels(adreno_dev);
