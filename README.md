@@ -1,13 +1,14 @@
 <div align="center">
 
 # ⚡ EXTREME++ GAMING KERNEL ⚡
-### Ultimate Performance & Thermal Engineering for POCO F4 (munch)
-**Target: Xiaomi HyperOS & MIUI | Android 13 — 17**
+### Next-Gen Engineered Performance & Thermal Perfection for POCO F4 (munch / munch-in)
+**Official HyperOS Flagship Custom Kernel | Android 14 — 17**
 
 [![Build Status](https://img.shields.io/github/actions/workflow/status/PandeyJI-9/Extreme-PLUS-kernel-munch/build.yml?branch=main&style=for-the-badge&logo=github&label=Build%20%26%20Release&color=00c853)](https://github.com/PandeyJI-9/Extreme-PLUS-kernel-munch/actions)
 [![Kernel Version](https://img.shields.io/badge/Linux_Kernel-4.19.xxx_Non--GKI-007acc?style=for-the-badge&logo=linux&logoColor=white)](https://github.com/PandeyJI-9/Extreme-PLUS-kernel-munch)
 [![Device](https://img.shields.io/badge/POCO_F4-munch%20%2F%20munch--in-ff6f00?style=for-the-badge&logo=xiaomi&logoColor=white)](https://github.com/PandeyJI-9/Extreme-PLUS-kernel-munch)
 [![SoC](https://img.shields.io/badge/Snapdragon_870-SM8250--AC%20(Kona%20v2.1)-red?style=for-the-badge&logo=qualcomm&logoColor=white)](https://www.qualcomm.com/products/application/smartphones/snapdragon-8-series-mobile-platforms/snapdragon-870-5g-mobile-platform)
+[![Compatibility](https://img.shields.io/badge/HyperOS-1.0%20%7C%202.0%20%7C%203.0%20%7C%204.0-success?style=for-the-badge&logo=android&logoColor=white)](https://github.com/PandeyJI-9/Extreme-PLUS-kernel-munch)
 [![Root](https://img.shields.io/badge/Root-ReSukiSU%20%2B%20SuSFS-9c27b0?style=for-the-badge&logo=android&logoColor=white)](https://github.com/ReSukiSU/ReSukiSU)
 [![Telegram](https://img.shields.io/badge/Community-Telegram_Support-29b6f6?style=for-the-badge&logo=telegram&logoColor=white)](https://t.me/Extremeplus_Support)
 
@@ -21,9 +22,30 @@
 
 ## 📖 Overview
 
-**EXTREME++ GAMING** is a bespoke, ultra-optimized custom kernel specifically engineered for the **POCO F4 (codename: munch / munch-in)** powered by the **Snapdragon 870 (SM8250-AC / Kona v2.1)**. 
+**EXTREME++ GAMING** is a bespoke, ultra-optimized custom kernel specifically engineered for the **POCO F4 / Redmi K40S (codename: munch / munch-in)** powered by the **Qualcomm Snapdragon 870 5G (SM8250-AC / Kona v2.1)**.
 
 While OEM stock kernels suffer from aggressive thermal throttling, unoptimized voltage tables, lazy frequency governors, and user-space bloatware intervention, **EXTREME++** breaks through hardware bottlenecks. By modifying kernel C drivers natively, injecting granular 10-step GPU voltage tables, and enforcing hard kernel-space locks, this kernel guarantees smooth 120 FPS sustained gaming, instant touch reaction, and exceptional battery conservation.
+
+---
+
+## 📱 ROM & Android Compatibility Matrix
+
+EXTREME++ Kernel is built with **OS-independent C-driver locks** that guarantee native boot and undervolt enforcement across all major HyperOS iterations:
+
+| ROM / OS Family | Supported Generations | Android Base | Status | Technical Details |
+| :--- | :--- | :---: | :---: | :--- |
+| **Xiaomi HyperOS** | **HyperOS 1.0, 2.0, 3.0, 4.0** | **Android 14, 15, 16, 17** | 🟢 **100% Fully Working** | Seamless out-of-the-box boot. Native C-level hooks in `adreno.c` bypass stock DTBO overrides and neutralize Joyose thermal traps. |
+| **MIUI** | MIUI 13, MIUI 14 | Android 12, 13 | 🟡 **Bootable (Untested)** | Architecture preserves standard split_boot; may boot properly on MIUI but is not actively tested or officially validated. |
+| **AOSP / Custom ROMs** | LineageOS, EvolutionX, PixelOS, etc. | Android 14+ | ⏳ **In Active Development** | *For AOSP users: I will work soon on AOSP!* A dedicated AOSP branch with customized defconfig and ramdisk logic is coming soon. |
+
+> [!TIP]
+> **All HyperOS versions (1.0, 2.0, 3.0, 4.0) on Android 14, 15, 16, and 17 are 100% tested and verified!** Whether you are on early HyperOS 1 or cutting-edge HyperOS 4, the kernel boots flawlessly and maintains all hardware optimizations.
+> 
+> [!NOTE]
+> **MIUI Notice:** This kernel is heavily tuned for modern HyperOS core subsystems (MIGT, MIHW, RTMM, MILLET). While it might boot on legacy MIUI 13/14, testing is up to the user.
+> 
+> [!IMPORTANT]
+> **AOSP Users:** A dedicated AOSP build is currently in the pipeline and will be released in our [Telegram Support Group](https://t.me/Extremeplus_Support).
 
 ---
 
@@ -102,7 +124,7 @@ While OEM stock kernels suffer from aggressive thermal throttling, unoptimized v
 > [!IMPORTANT]
 > **Prerequisites:**
 > - Device: **POCO F4 / Redmi K40S (munch / munch-in)**
-> - ROM: **HyperOS (Android 14) or MIUI (Android 13)**
+> - ROM: **HyperOS 1.0, 2.0, 3.0, 4.0 (Android 14 — 17)**
 > - Always take a backup of your `boot` and `dtbo` partitions before flashing!
 
 ### Method 1: Custom Recovery (TWRP / OrangeFox) — *Recommended*
