@@ -5,6 +5,19 @@ Device codename: munch
 Kernel maintainer: @pandey_ji_8
 
 ==========02/10/2026==========
+* fix(gpu): revert kgsl sysfs and governor overrides to stock, restore native devfreq scaling & add Joyose boot service optimizer
+* fix(gpu): expand KGSL_MAX_PWRLEVELS to 16, fix gpubusy load reporting, idle UV drop & smart Joyose filter
+* docs: add comprehensive HyperOS 1-4 & Android 14-17 compatibility matrix and AOSP/MIUI notices
+* docs: overhaul README.md with pro XDA aesthetics and technical deep-dive
+* fix(kgsl): eliminate unused-function warning on kgsl_pwrctrl_min_pwrlevel_set
+* feat: C-level GPU UV driver hardcoding (150MHz - 670MHz) & Joyose blocker to bypass HyperOS 3 DTBO overlay traps
+* feat: native GPU 10-step UV across all speed bins & kona-v2.1, 6GB RAM ZSTD + schedutil zero-lag, pro release notes, and fixed changelog links
+* fix: inject FakeDreamer 10-step UV OPP table & speed bins into both kona-gpu.dtsi and kona-v2-gpu.dtsi
+* Update send_rksu.yml
+* Update send_rksu.yml
+
+
+==========02/10/2026==========
 * fix(gpu): expand KGSL_MAX_PWRLEVELS to 16, fix gpubusy load reporting, idle UV drop & smart Joyose filter
 * docs: add comprehensive HyperOS 1-4 & Android 14-17 compatibility matrix and AOSP/MIUI notices
 * docs: overhaul README.md with pro XDA aesthetics and technical deep-dive
