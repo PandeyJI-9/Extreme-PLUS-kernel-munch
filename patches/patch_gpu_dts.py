@@ -167,7 +167,6 @@ BIN_TEMPLATE = """		qcom,gpu-pwrlevels-{BIN_IDX} {{
 				qcom,bus-freq-ddr8 = <3>;
 				qcom,bus-min-ddr8 = <2>;
 				qcom,bus-max-ddr8 = <9>;
-				qcom,acd-level = <0xa02b5ffd>;
 			}};
 
 			qcom,gpu-pwrlevel@7 {{
@@ -179,7 +178,6 @@ BIN_TEMPLATE = """		qcom,gpu-pwrlevels-{BIN_IDX} {{
 				qcom,bus-freq-ddr8 = <3>;
 				qcom,bus-min-ddr8 = <2>;
 				qcom,bus-max-ddr8 = <9>;
-				qcom,acd-level = <0xa02b5ffd>;
 			}};
 
 			qcom,gpu-pwrlevel@8 {{
@@ -191,7 +189,6 @@ BIN_TEMPLATE = """		qcom,gpu-pwrlevels-{BIN_IDX} {{
 				qcom,bus-freq-ddr8 = <2>;
 				qcom,bus-min-ddr8 = <1>;
 				qcom,bus-max-ddr8 = <3>;
-				qcom,acd-level = <0xa02b5ffd>;
 			}};
 
 			qcom,gpu-pwrlevel@9 {{
@@ -203,7 +200,6 @@ BIN_TEMPLATE = """		qcom,gpu-pwrlevels-{BIN_IDX} {{
 				qcom,bus-freq-ddr8 = <2>;
 				qcom,bus-min-ddr8 = <1>;
 				qcom,bus-max-ddr8 = <3>;
-				qcom,acd-level = <0xa02b5ffd>;
 			}};
 
 			qcom,gpu-pwrlevel@10 {{

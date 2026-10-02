@@ -106,7 +106,89 @@ if [ -f "drivers/gpu/msm/kgsl_pwrctrl.h" ]; then
     echo "[+] Expanded KGSL_MAX_PWRLEVELS to 16 in drivers/gpu/msm/kgsl_pwrctrl.h"
 fi
 
+if [ -f "drivers/gpu/msm/kgsl_gmu.c" ]; then
+    sed -i 's/num_freqs > pri_rail->num || num_freqs > MAX_GX_LEVELS/num_freqs > MAX_GX_LEVELS/' drivers/gpu/msm/kgsl_gmu.c
+    echo "[+] Adjusted DCVS level bounds check in drivers/gpu/msm/kgsl_gmu.c"
+fi
+
 python3 patch_gpu_dts.py
+
+# Inject C-Level 10-Step Power Levels & OPP into drivers/gpu/msm/adreno.c
+python3 -c '
+path = "drivers/gpu/msm/adreno.c"
+with open(path, "r") as f:
+    text = f.read()
+
+if "adreno_enforce_extreme_10step_pwrlevels" not in text:
+    if "#include <linux/pm_opp.h>" not in text:
+        text = text.replace("#include <soc/qcom/scm.h>", "#include <soc/qcom/scm.h>\n#include <linux/pm_opp.h>", 1)
+
+    enforce_func = """/* ==========================================================
+ * EXTREME++ 10-Step C-Level Power Levels & OPP Injection
+ * Bypasses DTBO truncation and guarantees full 150-670MHz UV
+ * ========================================================== */
+static void adreno_enforce_extreme_10step_pwrlevels(struct adreno_device *adreno_dev)
+{
+\tstruct kgsl_device *device = KGSL_DEVICE(adreno_dev);
+\tstruct kgsl_pwrctrl *pwr = &device->pwrctrl;
+\tstatic const struct kgsl_pwrlevel extreme_levels[11] = {
+\t\t{ 670000000, 11, 11, 11, 0x802b5ffd },
+\t\t{ 587000000, 11, 11, 11, 0x802b5ffd },
+\t\t{ 525000000,  9,  9, 11, 0x802b5ffd },
+\t\t{ 490000000,  9,  6,  9, 0xa02b5ffd },
+\t\t{ 441600000,  9,  6,  9, 0xa02b5ffd },
+\t\t{ 400000000,  7,  6,  9, 0xa02b5ffd },
+\t\t{ 305000000,  3,  2,  9, 0 },
+\t\t{ 250000000,  3,  2,  9, 0 },
+\t\t{ 200000000,  2,  1,  3, 0 },
+\t\t{ 150000000,  2,  1,  3, 0 },
+\t\t{         0,  0,  0,  0, 0 },
+\t};
+
+\tmemcpy(pwr->pwrlevels, extreme_levels, sizeof(extreme_levels));
+\tpwr->num_pwrlevels = 11;
+\tpwr->active_pwrlevel = 6;
+\tpwr->default_pwrlevel = 6;
+\tpwr->max_pwrlevel = 0;
+\tpwr->min_pwrlevel = 9;
+\tpwr->thermal_pwrlevel = 0;
+\tpwr->thermal_pwrlevel_floor = 9;
+
+\t/* Register all 10 OPP frequencies with RPMh voltages */
+\tdev_pm_opp_add(&device->pdev->dev, 670000000, 224);
+\tdev_pm_opp_add(&device->pdev->dev, 587000000, 192);
+\tdev_pm_opp_add(&device->pdev->dev, 525000000, 128);
+\tdev_pm_opp_add(&device->pdev->dev, 490000000, 128);
+\tdev_pm_opp_add(&device->pdev->dev, 441600000, 64);
+\tdev_pm_opp_add(&device->pdev->dev, 400000000, 64);
+\tdev_pm_opp_add(&device->pdev->dev, 305000000, 48);
+\tdev_pm_opp_add(&device->pdev->dev, 250000000, 48);
+\tdev_pm_opp_add(&device->pdev->dev, 200000000, 48);
+\tdev_pm_opp_add(&device->pdev->dev, 150000000, 48);
+}
+
+"""
+    target = "static int adreno_of_get_legacy_pwrlevels("
+    text = text.replace(target, enforce_func + target, 1)
+
+    target_legacy = "\tadreno_of_get_bimc_iface_clk(adreno_dev, parent);\n\n\treturn 0;"
+    patch_legacy = "\tadreno_of_get_bimc_iface_clk(adreno_dev, parent);\n\tadreno_enforce_extreme_10step_pwrlevels(adreno_dev);\n\n\treturn 0;"
+    text = text.replace(target_legacy, patch_legacy, 1)
+
+    target_pwr = "\t\t\tadreno_of_get_limits(adreno_dev, parent);\n\t\t\tadreno_of_get_limits(adreno_dev, child);\n\n\t\t\treturn 0;"
+    patch_pwr = "\t\t\tadreno_of_get_limits(adreno_dev, parent);\n\t\t\tadreno_of_get_limits(adreno_dev, child);\n\t\t\tadreno_enforce_extreme_10step_pwrlevels(adreno_dev);\n\n\t\t\treturn 0;"
+    text = text.replace(target_pwr, patch_pwr, 1)
+
+    target_probe = "if (adreno_of_get_pwrlevels(adreno_dev, node))\n\t\treturn -EINVAL;"
+    patch_probe = "if (adreno_of_get_pwrlevels(adreno_dev, node))\n\t\treturn -EINVAL;\n\tadreno_enforce_extreme_10step_pwrlevels(adreno_dev);"
+    text = text.replace(target_probe, patch_probe, 1)
+
+    with open(path, "w") as f:
+        f.write(text)
+    print("✅ drivers/gpu/msm/adreno.c: Injected 10-Step C-Level Power Levels & OPP Table override!")
+else:
+    print("ℹ️ drivers/gpu/msm/adreno.c already has 10-step enforcement")
+'
 
 
 # ------------------------------------------
