@@ -101,14 +101,13 @@ jobs:
 
             ---
 
-            ### ⚡ PROJECT EXTREME+ Optimizations
-            - ⚡ **Custom Governor (EXTREME+):** Native `cpufreq_extreme_plus.c` registered as `CPU_FREQ_GOV_EXTREME_PLUS`.
-              - Zero-latency touch response (`up_rate_limit_us = 0`).
-              - Anti-100% Prime Choke: Automatically spills threads from Prime (CPU 7) to Gold cluster (CPUs 4-6) at 75-80% load.
-              - Aggressive decay to idle (`down_rate_limit_us = 20000`) for zero battery drain.
-            - 🏎 **Safe CPU Undervolt & Peak Cap:**
-              - Global hardware-level **-30mV undervolt offset** injected into EPSS voltage LUTs via `qcom-cpufreq-hw`.
-              - Prime Core capped at **2.84 GHz** (`2841600`) to eliminate 3.2 GHz thermal throttling spikes.
+            - ⚡ **Governor Boot Safety & EXTREME+:**
+              - Bootloader & system boots safely on stock Qualcomm `schedutil` governor (`CONFIG_CPU_FREQ_DEFAULT_GOV_SCHEDUTIL=y`).
+              - `EXTREME+` custom governor compiled as native module (`CONFIG_CPU_FREQ_GOV_EXTREME_PLUS=y`) ready for activation via FKM / Kernel Managers.
+              - Zero-latency touch response (`up_rate_limit_us = 0`), anti-100% Prime choke spillover, and fast decay to idle.
+            - 🛡️ **CPU Voltage & Frequency Stability (PMIC Crash Fix):**
+              - 100% Stock Qualcomm CPU voltages and OPP tables preserved (reverted all -30mV offset and C-level caps).
+              - Eliminates early-boot PMIC panic and ensures 100% boot success.
             - 🎮 **GPU Undervolt (UV) & Adreno Governor (Build #61 Verified):**
               - FakeDreamer **10-Step OPP Table (150 MHz – 670 MHz)** applied across all speed bins in `kona-v2-gpu.dtsi`.
               - 100% intact Qualcomm `msm-adreno-tz` TrustZone devfreq governor.

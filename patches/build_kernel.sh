@@ -68,7 +68,7 @@ CONFIG_DEVFREQ_GOV_QCOM_GPUBW_MON=y
 CONFIG_QCOM_ADRENO_DEFAULT_GOVERNOR="msm-adreno-tz"
 CONFIG_QCOM_KGSL=y
 CONFIG_CPU_FREQ_GOV_EXTREME_PLUS=y
-CONFIG_CPU_FREQ_DEFAULT_GOV_EXTREME_PLUS=y
+CONFIG_CPU_FREQ_DEFAULT_GOV_SCHEDUTIL=y
 EOF
 
 # ------------------------------------------
@@ -169,79 +169,8 @@ else:
     print("ℹ️ EXTREME+ governor already in drivers/cpufreq/Kconfig")
 '
 
-# ------------------------------------------
-# 5. Native CPU Peak Cap (2.84 GHz) & Safe Undervolt (-30mV offset)
-# ------------------------------------------
-echo "[*] Natively Applying CPU Peak Cap (2.84 GHz) & Safe Undervolt (-30mV offset)..."
-python3 -c '
-import re
-
-# 1. Patch kona.dtsi
-path_dts = "arch/arm64/boot/dts/vendor/qcom/kona.dtsi"
-with open(path_dts, "r") as f:
-    text_dts = f.read()
-
-marker = "qcom,skip-enable-check;"
-insertion = "\n\t\t\t/* EXTREME++: Cap Prime Core peak to 2.84 GHz (remove 3.187 GHz step) */\n\t\t\tqcom,freq-domain-max-freq = <2841600>;"
-if "qcom,freq-domain-max-freq" in text_dts:
-    text_dts = re.sub(r"qcom,freq-domain-max-freq\s*=\s*<[^>]+>;", "qcom,freq-domain-max-freq = <2841600>;", text_dts)
-else:
-    text_dts = text_dts.replace(marker, marker + insertion, 1)
-
-with open(path_dts, "w") as f:
-    f.write(text_dts)
-print("✅ CPU Prime Core max-freq cap (<2841600>) set in kona.dtsi")
-
-# 2. Patch drivers/cpufreq/qcom-cpufreq-hw.c (C89 compliant, UV + Max Cap)
-path_driver = "drivers/cpufreq/qcom-cpufreq-hw.c"
-with open(path_driver, "r") as f:
-    text_driver = f.read()
-
-if "max_freq_cap" not in text_driver:
-    target_decl = "\tu32 vc;\n\tunsigned long cpu;"
-    patch_decl = "\tu32 vc, max_freq_cap = 0, raw_volt, new_raw_volt, new_reg;\n\tunsigned long cpu;"
-    text_driver = text_driver.replace(target_decl, patch_decl, 1)
-
-    target_read = "spin_lock_init(&c->skip_data.lock);"
-    patch_read = """spin_lock_init(&c->skip_data.lock);
-\tof_property_read_u32(dev->of_node, "qcom,freq-domain-max-freq", &max_freq_cap);
-\tif (!max_freq_cap)
-\t\tmax_freq_cap = 2841600;"""
-    text_driver = text_driver.replace(target_read, patch_read, 1)
-
-    target_volt = """\t\tdata = readl_relaxed(base_volt + i * lut_row_size);
-\t\tvolt = (data & GENMASK(11, 0)) * 1000;
-\t\tvc = data & GENMASK(21, 16);"""
-
-    patch_volt = """\t\tdata = readl_relaxed(base_volt + i * lut_row_size);
-\t\traw_volt = data & GENMASK(11, 0);
-\t\tif (raw_volt > 650) {
-\t\t\tnew_raw_volt = raw_volt - 30; /* EXTREME+: -30mV safe CPU undervolt */
-\t\t\tnew_reg = (data & ~GENMASK(11, 0)) | (new_raw_volt & GENMASK(11, 0));
-\t\t\twritel_relaxed(new_reg, base_volt + i * lut_row_size);
-\t\t\tvolt = new_raw_volt * 1000;
-\t\t} else {
-\t\t\tvolt = raw_volt * 1000;
-\t\t}
-\t\tvc = data & GENMASK(21, 16);"""
-    text_driver = text_driver.replace(target_volt, patch_volt, 1)
-
-    target_break = "dev_dbg(dev, \"index=%d freq=%d, core_count %d\\n\","
-    patch_break = """if (max_freq_cap && c->table[i].frequency > max_freq_cap) {
-\t\t\tbreak;
-\t\t}
-\t\tdev_dbg(dev, \"index=%d freq=%d, core_count %d\\n\","""
-    text_driver = text_driver.replace(target_break, patch_break, 1)
-
-    with open(path_driver, "w") as f:
-        f.write(text_driver)
-    print("✅ qcom-cpufreq-hw driver patched (C89 compliant) with 2.84 GHz cap & -30mV CPU undervolt")
-else:
-    print("ℹ️ qcom-cpufreq-hw driver already patched")
-'
-
-# ------------------------------------------
-# 6. HyperOS Display DTS Patches
+## ------------------------------------------
+# 5. HyperOS Display DTS Patches
 # ------------------------------------------
 DTS_SOURCE="arch/arm64/boot/dts/vendor/qcom"
 echo "[*] Applying HyperOS / MIUI Display & Panel DTS patches..."
@@ -407,15 +336,17 @@ scripts/config --file "${OUT_DIR}/.config" \
     -e CPU_FREQ_GOV_SCHEDUTIL \
     --set-val SCHEDUTIL_UP_RATE_LIMIT 0 \
     -e CPU_FREQ_GOV_EXTREME_PLUS \
-    -e CPU_FREQ_DEFAULT_GOV_EXTREME_PLUS \
-    --set-str CPU_FREQ_DEFAULT_GOV "extreme_plus"
+    -d CPU_FREQ_DEFAULT_GOV_EXTREME_PLUS \
+    -e CPU_FREQ_DEFAULT_GOV_SCHEDUTIL \
+    --set-str CPU_FREQ_DEFAULT_GOV "schedutil"
 
 if ! grep -q "CONFIG_CPU_FREQ_GOV_EXTREME_PLUS=y" "${OUT_DIR}/.config"; then
     echo "CONFIG_CPU_FREQ_GOV_EXTREME_PLUS=y" >> "${OUT_DIR}/.config"
 fi
-if ! grep -q "CONFIG_CPU_FREQ_DEFAULT_GOV_EXTREME_PLUS=y" "${OUT_DIR}/.config"; then
-    echo "CONFIG_CPU_FREQ_DEFAULT_GOV_EXTREME_PLUS=y" >> "${OUT_DIR}/.config"
+if ! grep -q "CONFIG_CPU_FREQ_DEFAULT_GOV_SCHEDUTIL=y" "${OUT_DIR}/.config"; then
+    echo "CONFIG_CPU_FREQ_DEFAULT_GOV_SCHEDUTIL=y" >> "${OUT_DIR}/.config"
 fi
+sed -i '/CONFIG_CPU_FREQ_DEFAULT_GOV_EXTREME_PLUS/d' "${OUT_DIR}/.config"
 
 # 🔥 THE ULTIMATE KSU FIX: Ensuring CONFIG_KSU survives olddefconfig
 if [ "$ENABLE_KSU" -eq 1 ]; then
@@ -538,32 +469,15 @@ cat > anykernel/00-extreme-performance.sh << 'EOF'
 # ═══════════════════════════════════════════════════════════════
 
 (
-# Wait for Android framework to fully boot in background without blocking init
+# Wait for Android framework to fully complete boot in background without blocking init
 while [ "$(getprop sys.boot_completed)" != "1" ]; do
-    sleep 3
+    sleep 5
 done
 
-sleep 5
+# Extra settling delay to ensure all critical system daemons have initialized
+sleep 15
 
-# ── 1. Custom EXTREME+ Governor Activation & Core Tuning ──
-# Set EXTREME+ governor across all CPU clusters (Silver, Gold, Prime)
-for pol in /sys/devices/system/cpu/cpufreq/policy*; do
-    if [ -d "$pol" ]; then
-        chmod 666 "$pol/scaling_governor" 2>/dev/null
-        echo "extreme_plus" > "$pol/scaling_governor" 2>/dev/null || echo "schedutil" > "$pol/scaling_governor" 2>/dev/null
-    fi
-done
-
-# Tune EXTREME+ tunables: Zero latency ramp-up, fast decay to idle
-for gov_path in /sys/devices/system/cpu/cpufreq/policy*/extreme_plus; do
-    if [ -d "$gov_path" ]; then
-        echo 0 > "$gov_path/up_rate_limit_us" 2>/dev/null
-        echo 20000 > "$gov_path/down_rate_limit_us" 2>/dev/null
-        echo 75 > "$gov_path/hispeed_load" 2>/dev/null
-    fi
-done
-
-# ── 2. EAS Anti-100% Choke & Spillover Margins (WALT Migration) ──
+# ── 1. EAS Anti-100% Choke & Spillover Margins (WALT Migration) ──
 # Thresholds: Spill from Prime (core 7) to Gold (cores 4-6) at 75-80% load
 echo 75 80 > /proc/sys/kernel/sched_upmigrate 2>/dev/null
 echo 60 70 > /proc/sys/kernel/sched_downmigrate 2>/dev/null
@@ -617,7 +531,7 @@ if [ -f /sys/class/kgsl/kgsl-3d0/devfreq/governor ]; then
     echo "msm-adreno-tz" > /sys/class/kgsl/kgsl-3d0/devfreq/governor 2>/dev/null || true
 fi
 
-echo "PROJECT EXTREME+: Governor active, CPU UV (-30mV) & Joyose optimized!" > /dev/kmsg
+echo "PROJECT EXTREME+: Safe boot active, Joyose & Sniper optimized!" > /dev/kmsg
 
 # ── 8. Smart LMK Sniper Daemon (Continuous Background Protection) ──
 (
