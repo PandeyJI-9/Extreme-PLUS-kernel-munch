@@ -350,21 +350,21 @@ fi
 # ------------------------------------------
 # 9. Build Kernel Image & DTBs
 # ------------------------------------------
-echo "[*] Compiling Kernel Image..."
-make -j"${TOTAL_CORES}" "${MAKE_OPTS[@]}" Image
-
-echo "[*] Compiling DTBs & DTBO..."
-make -j"${TOTAL_CORES}" "${MAKE_OPTS[@]}" dtbs
+echo "[*] Compiling Kernel Image, DTBs, DTBO & Multi-DTB Image..."
+make -j"${TOTAL_CORES}" "${MAKE_OPTS[@]}" Image dtbs dtbo.img dtb
 
 # ------------------------------------------
-# 10. AnyKernel3 Setup (AstideLabs Kona Branch)
+# 10. AnyKernel3 Setup (FakeDreamer Munch Branch with Fallback)
 # ------------------------------------------
-echo "[*] Cloning AstideLabs AnyKernel3 (Kona branch)..."
-git clone --depth=1 https://github.com/AstideLabs/AnyKernel3 -b kona anykernel
+echo "[*] Cloning AnyKernel3 (Munch branch)..."
+if ! git clone --depth=1 https://github.com/re-noroi/anykernel3-test -b munch anykernel; then
+    echo "[!] Fallback to AstideLabs AnyKernel3..."
+    git clone --depth=1 https://github.com/AstideLabs/AnyKernel3 -b kona anykernel
+fi
 
 cat > anykernel/anykernel.sh << 'EOF'
 ### AnyKernel3 Ramdisk Mod Script
-## Adapted for POCO F4 (munch) HyperOS by PandeyJI-9
+## EXTREME++ HyperOS Kernel for POCO F4 (munch) by PandeyJI-9
 
 properties() { '
 kernel.string=EXTREME++GAMING_Hyperos | POCO F4 (munch)
@@ -378,23 +378,45 @@ device.name2=POCO F4
 supported.versions=13-17
 '; }
 
+# shell variables
+block=/dev/block/bootdevice/by-name/boot;
 BLOCK=boot;
+is_slot_device=1;
 IS_SLOT_DEVICE=auto;
+ramdisk_compression=auto;
 RAMDISK_COMPRESSION=auto;
+patch_vbmeta_flag=auto;
 PATCH_VBMETA_FLAG=auto;
+no_block_display=1;
 NO_BLOCK_DISPLAY=1;
 
 . tools/ak3-core.sh;
 
-ui_print "  -> Flashing EXTREME++ Kernel (split_boot method)...";
+ui_print " ";
+ui_print "  -> Flashing EXTREME++ Kernel (boot)...";
+dump_boot;
+write_boot;
 
-# boot install (leaves stock HyperOS ramdisk byte-for-byte untouched)
-split_boot;
+ui_print "  -> Flashing EXTREME++ Undervolted DTB (vendor_boot)...";
+block=/dev/block/bootdevice/by-name/vendor_boot;
+BLOCK=vendor_boot;
+is_slot_device=1;
+IS_SLOT_DEVICE=auto;
+ramdisk_compression=auto;
+RAMDISK_COMPRESSION=auto;
+patch_vbmeta_flag=auto;
+PATCH_VBMETA_FLAG=auto;
+no_block_display=1;
+NO_BLOCK_DISPLAY=1;
 
-flash_boot;
+reset_ak;
+dump_boot;
+write_boot;
+
+ui_print "  -> Flashing EXTREME++ DTBO Partition...";
 flash_generic dtbo;
 
-# Direct block flashing fallback for dtbo if flashed via FKM / automated app flashers
+# Direct block flashing fallback for dtbo and dtb (all slot nodes)
 if [ -f dtbo.img ]; then
     for dtbo_node in /dev/block/bootdevice/by-name/dtbo /dev/block/bootdevice/by-name/dtbo_a /dev/block/bootdevice/by-name/dtbo_b /dev/block/by-name/dtbo /dev/block/by-name/dtbo_a /dev/block/by-name/dtbo_b; do
         if [ -b "$dtbo_node" ]; then
@@ -402,7 +424,14 @@ if [ -f dtbo.img ]; then
         fi
     done
 fi
-## end boot install
+
+if [ -f dtb ]; then
+    for dtb_node in /dev/block/bootdevice/by-name/dtb /dev/block/bootdevice/by-name/dtb_a /dev/block/bootdevice/by-name/dtb_b /dev/block/by-name/dtb /dev/block/by-name/dtb_a /dev/block/by-name/dtb_b; do
+        if [ -b "$dtb_node" ]; then
+            dd if=dtb of="$dtb_node" bs=4096 2>/dev/null || true
+        fi
+    done
+fi
 
 # Install post-boot optimization script into /data/adb/service.d for KSU/ReSukiSU/Magisk
 if [ ! -d /data/adb/service.d ]; then
@@ -459,13 +488,19 @@ chmod 666 /sys/class/kgsl/kgsl-3d0/gpu_max_clock 2>/dev/null
 chmod 444 /sys/class/kgsl/kgsl-3d0/gpubusy 2>/dev/null
 chmod 444 /sys/class/kgsl/kgsl-3d0/gpu_busy_percentage 2>/dev/null
 
+# ── 4. Adreno Governor Verification ──
+if [ -f /sys/class/kgsl/kgsl-3d0/devfreq/governor ]; then
+    chmod 666 /sys/class/kgsl/kgsl-3d0/devfreq/governor 2>/dev/null
+    echo "msm-adreno-tz" > /sys/class/kgsl/kgsl-3d0/devfreq/governor 2>/dev/null || true
+fi
+
 echo "EXTREME++: Joyose optimized & thermal performance mode active!" > /dev/kmsg
 ) &
 EOF
 chmod 755 anykernel/00-extreme-performance.sh
 
 # ------------------------------------------
-# 11. Packaging: Concatenated Multi-DTB Table & DTBO
+# 11. Packaging: Multi-DTB Table & DTBO
 # ------------------------------------------
 echo "[*] Verifying compiled files..."
 
@@ -476,11 +511,14 @@ fi
 cp "${OUT_DIR}/arch/arm64/boot/Image" anykernel/
 echo "[+] Kernel Image copied."
 
-# CONCATENATED MULTI-DTB TABLE (AstideLabs & Qualcomm Kona standard):
-echo "[*] Packing concatenated multi-DTB table..."
+# MULTI-DTB TABLE (AstideLabs & Qualcomm Kona standard):
+echo "[*] Packing multi-DTB table..."
 if [ -f "${OUT_DIR}/arch/arm64/boot/dtb" ]; then
     cp "${OUT_DIR}/arch/arm64/boot/dtb" anykernel/dtb
     echo "[+] DTB table copied from arch/arm64/boot/dtb"
+elif [ -f "${OUT_DIR}/arch/arm64/boot/dtb.img" ]; then
+    cp "${OUT_DIR}/arch/arm64/boot/dtb.img" anykernel/dtb
+    echo "[+] DTB table copied from arch/arm64/boot/dtb.img"
 else
     cat ${OUT_DIR}/arch/arm64/boot/dts/vendor/qcom/*.dtb > anykernel/dtb
     echo "[+] Concatenated all compiled DTBs into anykernel/dtb"
