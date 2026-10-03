@@ -24,47 +24,128 @@ jobs:
       - name: 📝 Build Pro Developer Changelog
         id: build_log
         run: |
-          CHANGELOG_FILE="EXTREME_Changelog.txt"
-          TEMP_FILE="temp_log.txt"
-          CURRENT_DATE=$(date +"%d/%m/%Y")
-          
-          # 1. Pro Header Injection (Username updated)
-          echo "Kernel Specific Changes:" > $TEMP_FILE
-          echo "Build type: EXTREME++ Stable / Performance" >> $TEMP_FILE
-          echo "Device name: POCO F4" >> $TEMP_FILE
-          echo "Device codename: munch" >> $TEMP_FILE
-          echo "Kernel maintainer: @pandey_ji_8" >> $TEMP_FILE
-          echo "" >> $TEMP_FILE
-          
-          # 2. Date Divider
-          echo "==========${CURRENT_DATE}==========" >> $TEMP_FILE
-          
-          # 3. Smart Git Commits Scan (Kachra Filter)
-          # Ye line 30 commits uthayegi, usme se 'changelog.yml' aur 'Auto-updated' ko delete karegi, aur bache hue top 10 asli commits legi
-          COMMITS=$(git log -n 30 --no-merges --pretty=format:"* %s" | grep -v -i "changelog.yml" | grep -v "Auto-updated EXTREME" | head -n 10)
-          
-          # Agar koi asli commit nahi bacha, toh default message daal do
-          if [ -z "$COMMITS" ]; then
-            COMMITS="* Synced with latest kernel sources and improvements."
-          fi
-          
-          echo "$COMMITS" >> $TEMP_FILE
-          echo "" >> $TEMP_FILE
-          echo "" >> $TEMP_FILE
-          
-          # Telegram Env Variable
-          echo "TG_COMMITS<<EOF" >> $GITHUB_ENV
-          echo "$COMMITS" >> $GITHUB_ENV
-          echo "EOF" >> $GITHUB_ENV
-          
-          # 4. History Retention
-          if [ -f "$CHANGELOG_FILE" ]; then
-            tail -n +7 "$CHANGELOG_FILE" >> $TEMP_FILE
-          fi
-          
-          # 5. Final Output
-          mv $TEMP_FILE $CHANGELOG_FILE
-          echo "✅ EXTREME++ Changelog created successfully!"
+          python3 -c "
+          import os, re, json, datetime, urllib.request, ssl, subprocess
+
+          CHANGELOG_FILE = 'EXTREME_Changelog.txt'
+          REPO = os.environ.get('GITHUB_REPOSITORY', 'PandeyJI-9/Extreme-PLUS-kernel-munch')
+          TOKEN = os.environ.get('GITHUB_TOKEN', '')
+          ctx = ssl._create_unverified_context()
+
+          # 1. Fetch latest release info
+          latest_tag = ''
+          build_num = ''
+          try:
+              req = urllib.request.Request(f'https://api.github.com/repos/{REPO}/releases/latest', headers={
+                  'User-Agent': 'Changelog-Action',
+                  'Authorization': f'token {TOKEN}' if TOKEN else ''
+              })
+              with urllib.request.urlopen(req, context=ctx) as r:
+                  rel_data = json.loads(r.read().decode())
+                  latest_tag = rel_data.get('tag_name', '')
+                  # Extract build number from tag e.g. Stable-testing-v1.1.2.61 -> 61
+                  m = re.search(r'\.(\d+)$', latest_tag)
+                  if m:
+                      build_num = m.group(1)
+          except Exception as e:
+              print(f'Note on release fetch: {e}')
+
+          current_date = datetime.datetime.now().strftime('%d/%m/%Y')
+          date_header = f'=========={current_date}' + (f' (Build #{build_num})' if build_num else '') + '=========='
+
+          # 2. Read existing changelog if present
+          existing_content = ''
+          if os.path.exists(CHANGELOG_FILE):
+              with open(CHANGELOG_FILE, 'r', encoding='utf-8') as f:
+                  existing_content = f.read()
+
+          # 3. Check git commits (filter out noise, bots, and CI commits)
+          cmd = ['git', 'log', '-n', '30', '--no-merges', '--pretty=format:%s']
+          res = subprocess.run(cmd, capture_output=True, text=True)
+          all_commits = res.stdout.strip().splitlines()
+
+          filtered_commits = []
+          ignore_patterns = [
+              'changelog.yml', 'auto-updated', 'send_rksu', 'build.yml',
+              'update changelog', 'create changelog', 'create send_rksu'
+          ]
+
+          for c in all_commits:
+              c_clean = c.strip()
+              if not c_clean:
+                  continue
+              if any(p in c_clean.lower() for p in ignore_patterns):
+                  continue
+              if c_clean not in filtered_commits:
+                  filtered_commits.append(c_clean)
+
+          # Check if existing changelog already has this build tag or date
+          need_new_block = True
+          if build_num and f'Build #{build_num}' in existing_content:
+              need_new_block = False
+              print(f'Build #{build_num} already present in {CHANGELOG_FILE}')
+
+          if need_new_block and filtered_commits:
+              new_lines = [f'* {c}' for c in filtered_commits[:8]]
+              new_block = date_header + '\n' + '\n'.join(new_lines) + '\n\n'
+
+              header = (
+                  'Kernel Specific Changes:\n'
+                  'Build type: EXTREME++ Stable / Hardcore Gaming\n'
+                  'Device name: POCO F4\n'
+                  'Device codename: munch\n'
+                  'Target ROM: Xiaomi HyperOS\n'
+                  'Kernel maintainer: @pandey_ji_8\n\n'
+              )
+
+              # Strip old header from existing content
+              body = existing_content
+              match = re.search(r'==========\d{2}/\d{2}/\d{4}', body)
+              if match:
+                  body = body[match.start():]
+
+              final_changelog = header + new_block + body.strip() + '\n'
+              with open(CHANGELOG_FILE, 'w', encoding='utf-8') as f:
+                  f.write(final_changelog)
+              print('Added new changelog block!')
+          else:
+              print('Keeping existing changelog structure intact.')
+
+          # 4. Extract latest block for Telegram broadcast
+          with open(CHANGELOG_FILE, 'r', encoding='utf-8') as f:
+              active_content = f.read()
+
+          blocks = re.findall(r'(==========.*?==========\n(?:(?!\n==========)[\s\S])*)', active_content)
+          latest_block_text = ''
+          if blocks:
+              latest_block_text = blocks[0].strip()
+
+          # Extract items from latest block (skip the delimiter header line)
+          items = []
+          for line in latest_block_text.splitlines():
+              line_s = line.strip()
+              if line_s.startswith('=========='):
+                  continue
+              if line_s.startswith('*') or line_s.startswith('•') or line_s.startswith('-'):
+                  items.append(line_s.lstrip('*•- '))
+              elif line_s:
+                  items.append(line_s)
+
+          telegram_changes = '\n'.join([f'• {item}' for item in items[:10]])
+          if not telegram_changes:
+              telegram_changes = '• General kernel stability and performance optimizations.'
+
+          with open('tg_changes.txt', 'w', encoding='utf-8') as f:
+              f.write(telegram_changes)
+
+          with open('tg_tag.txt', 'w', encoding='utf-8') as f:
+              f.write(latest_tag if latest_tag else 'Latest')
+
+          with open('tg_build.txt', 'w', encoding='utf-8') as f:
+              f.write(f'Build #{build_num}' if build_num else '')
+          "
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 🚀 Push Changelog to Repository
         run: |
@@ -73,39 +154,77 @@ jobs:
           git add EXTREME_Changelog.txt
           
           git commit -m "📝 docs: Auto-updated EXTREME++ changelog" || echo "No changes to commit"
-          git push
+          git push || echo "Already up to date"
 
       - name: 📲 Send Changelog to Telegram
+        if: ${{ github.event.inputs.notify != 'false' }}
         run: |
-          REPO_URL="https://github.com/${{ github.repository }}"
-          RAW_LINK="https://raw.githubusercontent.com/${{ github.repository }}/main/EXTREME_Changelog.txt"
-          BLOB_LINK="${REPO_URL}/blob/main/EXTREME_Changelog.txt"
-          
+          python3 -c "
+          import os, html, urllib.request, json, ssl
+
+          ctx = ssl._create_unverified_context()
+          repo = os.environ.get('GITHUB_REPOSITORY', 'PandeyJI-9/Extreme-PLUS-kernel-munch')
+          bot_token = os.environ.get('TELEGRAM_TOKEN', '')
+          chat_id = os.environ.get('TELEGRAM_CHAT_ID', '')
+
+          raw_link = f'https://raw.githubusercontent.com/{repo}/main/EXTREME_Changelog.txt'
+          blob_link = f'https://github.com/{repo}/blob/main/EXTREME_Changelog.txt'
+          release_link = f'https://github.com/{repo}/releases/latest'
+
+          with open('tg_changes.txt', 'r', encoding='utf-8') as f:
+              raw_changes = f.read().strip()
+
+          with open('tg_tag.txt', 'r', encoding='utf-8') as f:
+              tag_name = f.read().strip()
+
+          with open('tg_build.txt', 'r', encoding='utf-8') as f:
+              build_str = f.read().strip()
+
           # HTML escape commits text so <, >, & do not break Telegram HTML parser
-          SAFE_COMMITS=$(echo "${{ env.TG_COMMITS }}" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g')
-          
-          CAPTION="🔥 <b>EXTREME++ Kernel Update Changelog</b>
-          
-          🗓 <b>Date:</b> $(date +"%d/%m/%Y")
-          👤 <b>Maintainer:</b> @pandey_ji_8
-          📱 <b>Device:</b> POCO F4 (munch)
-          
-          🛠 <b>Latest Changes:</b>
-          ${SAFE_COMMITS}
-          
-          ━━━━━━━━━━━━━━━━━━
-          🔗 <b>Changelog Links:</b>
-          • <a href=\"${BLOB_LINK}\">View on GitHub</a>
-          • <a href=\"${RAW_LINK}\">Direct Raw File</a>
-          
-          🌐 <b>Raw Link:</b>
-          ${RAW_LINK}"
-          
-          echo "[*] Sending Changelog to Telegram..."
-          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
-            -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
-            -d text="$CAPTION" \
-            -d parse_mode="HTML" \
-            -d disable_web_page_preview="true"
-            
-          echo "[+] Telegram broadcast successful!"
+          safe_changes = html.escape(raw_changes)
+          date_str = '$(date +\"%d/%m/%Y\")'
+          import datetime
+          current_date = datetime.datetime.now().strftime('%d/%m/%Y')
+
+          build_badge = f' ({build_str})' if build_str else ''
+
+          caption = f'''🔥 <b>EXTREME++ Kernel | Update Changelog</b>
+
+📱 <b>Device:</b> POCO F4 (<code>munch</code>)
+⚡ <b>Target ROM:</b> Xiaomi HyperOS
+👤 <b>Maintainer:</b> @pandey_ji_8
+🏷 <b>Version:</b> <code>{tag_name}</code>{build_badge}
+🗓 <b>Date:</b> {current_date}
+
+━━━━━━━━━━━━━━━━━━━━
+🛠 <b>Latest Changes:</b>
+{safe_changes}
+
+━━━━━━━━━━━━━━━━━━━━
+🌐 <b>Raw Changelog Link (Full):</b>
+<code>{raw_link}</code>
+
+🔗 <b>Quick Links:</b>
+• <a href=\"{raw_link}\">📄 Direct Raw File</a>
+• <a href=\"{blob_link}\">👁️ View on GitHub</a>
+• <a href=\"{release_link}\">📦 Download Latest Kernel</a>'''
+
+          payload = json.dumps({
+              'chat_id': chat_id,
+              'text': caption,
+              'parse_mode': 'HTML',
+              'disable_web_page_preview': True
+          }).encode('utf-8')
+
+          req = urllib.request.Request(f'https://api.telegram.org/bot{bot_token}/sendMessage', data=payload, headers={
+              'Content-Type': 'application/json'
+          })
+          try:
+              with urllib.request.urlopen(req, context=ctx) as resp:
+                  print('Telegram message sent successfully! Status:', resp.status)
+          except Exception as e:
+              print('Telegram broadcast failed:', e)
+          "
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}

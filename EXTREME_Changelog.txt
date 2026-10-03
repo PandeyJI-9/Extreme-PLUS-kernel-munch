@@ -1,21 +1,18 @@
 Kernel Specific Changes:
-Build type: EXTREME++ Stable / Performance
+Build type: EXTREME++ Stable / Hardcore Gaming
 Device name: POCO F4
 Device codename: munch
+Target ROM: Xiaomi HyperOS
 Kernel maintainer: @pandey_ji_8
 
-==========03/10/2026==========
-* feat(gpu): replicate FakeDreamer vendor_boot DTB patching & undervolt all speed bins for Build 61
-* feat(gpu): 100% native FakeDreamer GPU undervolt replication and clean stock devfreq governor
-* docs: add Build #59 changelog entry
-* feat(gpu): C-level 10-step power levels and OPP injection with DTBO bypass
-* fix(build): extract GPU DTS injection to dedicated python script & copy all patches
-* fix(gpu): atomic 10-step DTS injection for kona-v2 & kona-v2.1 across all 5 speed bins, leave C-drivers stock
-* fix(gpu): restore msm-adreno-tz governor, revert C-driver overrides & apply pure FakeDreamer DTS architecture for Kona v2.1
-* fix(gpu): unify 10-step OPP table, fix 250MHz voltage inversion, patch gpubusy for FKM & add dtbo dd fallback
-* fix(build): escape newlines in adreno.c C string injections
-* fix(gpu): prevent boot deadlock in Joyose service, fix GMU ACD limit & enforce bulletproof 10-step GPU UV fallback for HyperOS 3
-
+==========03/10/2026 (Build #61)==========
+* feat(gpu): 100% working GPU Undervolt (150MHz - 670MHz) verified on HyperOS
+* fix(dts): undervolt all 5 speed-bins (0, 1, 2, 3, 4) in kona-v2-gpu.dtsi
+* feat(dtb): flash both boot & vendor_boot partitions in AnyKernel3 to prevent stock DTBO overwrite
+* fix(devfreq): preserve 100% native Qualcomm msm-adreno-tz TrustZone governor
+* feat(power): screen idle frequency now cleanly drops to 150MHz with lowest voltages (1)
+* feat(build): compile unified multi-DTB image and DTBO directly from kernel Makefile targets
+* feat(service): 00-extreme-performance boot service locks msm-adreno-tz & optimizes Joyose thermal policies
 
 ==========03/10/2026 (Build #60)==========
 * revert(driver): completely nuke custom C-driver hacks, manual dev_pm_opp_add, and array overrides
@@ -37,89 +34,11 @@ Kernel maintainer: @pandey_ji_8
 * docs: overhaul README.md with pro XDA aesthetics and technical deep-dive
 * fix(kgsl): eliminate unused-function warning on kgsl_pwrctrl_min_pwrlevel_set
 * feat: C-level GPU UV driver hardcoding (150MHz - 670MHz) & Joyose blocker to bypass HyperOS 3 DTBO overlay traps
-* feat: native GPU 10-step UV across all speed bins & kona-v2.1, 6GB RAM ZSTD + schedutil zero-lag, pro release notes, and fixed changelog links
-* fix: inject FakeDreamer 10-step UV OPP table & speed bins into both kona-gpu.dtsi and kona-v2-gpu.dtsi
-* Update send_rksu.yml
-* Update send_rksu.yml
-
-
-==========02/10/2026==========
-* fix(gpu): expand KGSL_MAX_PWRLEVELS to 16, fix gpubusy load reporting, idle UV drop & smart Joyose filter
-* docs: add comprehensive HyperOS 1-4 & Android 14-17 compatibility matrix and AOSP/MIUI notices
-* docs: overhaul README.md with pro XDA aesthetics and technical deep-dive
-* fix(kgsl): eliminate unused-function warning on kgsl_pwrctrl_min_pwrlevel_set
-* feat: C-level GPU UV driver hardcoding (150MHz - 670MHz) & Joyose blocker to bypass HyperOS 3 DTBO overlay traps
-* feat: native GPU 10-step UV across all speed bins & kona-v2.1, 6GB RAM ZSTD + schedutil zero-lag, pro release notes, and fixed changelog links
-* fix: inject FakeDreamer 10-step UV OPP table & speed bins into both kona-gpu.dtsi and kona-v2-gpu.dtsi
-* Update send_rksu.yml
-* Update send_rksu.yml
-* Update send_rksu.yml
-
-
-==========02/10/2026==========
-* docs: add comprehensive HyperOS 1-4 & Android 14-17 compatibility matrix and AOSP/MIUI notices
-* docs: overhaul README.md with pro XDA aesthetics and technical deep-dive
-* fix(kgsl): eliminate unused-function warning on kgsl_pwrctrl_min_pwrlevel_set
-* feat: C-level GPU UV driver hardcoding (150MHz - 670MHz) & Joyose blocker to bypass HyperOS 3 DTBO overlay traps
-* feat: native GPU 10-step UV across all speed bins & kona-v2.1, 6GB RAM ZSTD + schedutil zero-lag, pro release notes, and fixed changelog links
-* fix: inject FakeDreamer 10-step UV OPP table & speed bins into both kona-gpu.dtsi and kona-v2-gpu.dtsi
-* Update send_rksu.yml
-* Update send_rksu.yml
-* Update send_rksu.yml
-* fix: make cpufreq driver patch C89-compliant to fix -Wdeclaration-after-statement
-
-
-==========02/10/2026==========
-* feat: C-level GPU UV driver hardcoding (150MHz - 670MHz) & Joyose blocker to bypass HyperOS 3 DTBO overlay traps
 
 ==========01/10/2026==========
-* feat: native GPU 10-step UV across all speed bins & kona-v2.1, 6GB RAM ZSTD + schedutil zero-lag, pro release notes, and fixed changelog links
-* fix: inject FakeDreamer 10-step UV OPP table & speed bins into both kona-gpu.dtsi and kona-v2-gpu.dtsi
-* Update send_rksu.yml
-* Update send_rksu.yml
-* Update send_rksu.yml
+* feat: native GPU UV across speed bins & kona-v2.1, 6GB RAM ZSTD + schedutil zero-lag
+* fix: inject FakeDreamer UV OPP table & speed bins into kona-gpu.dtsi and kona-v2-gpu.dtsi
 * fix: make cpufreq driver patch C89-compliant to fix -Wdeclaration-after-statement
 * fix: strictly cap CPU Prime Core to 2841600 (2.84 GHz) in driver and kona.dtsi
 * fix: custom kernel name (-EXTREME++GAMING_Hyperos), ReSukiSU Non-GKI 4.19, native FakeDreamer GPU OPP, and native CPU 3.05GHz peak cap
-* Create send_rksu.yml
-* fix: guarantee 2.84GHz CPU cap and GPU UV patches are applied with explicit target paths
-
-
-==========01/10/2026==========
-* fix: inject FakeDreamer 10-step UV OPP table & speed bins into both kona-gpu.dtsi and kona-v2-gpu.dtsi
-* Update send_rksu.yml
-* Update send_rksu.yml
-* Update send_rksu.yml
-* fix: make cpufreq driver patch C89-compliant to fix -Wdeclaration-after-statement
-* fix: strictly cap CPU Prime Core to 2841600 (2.84 GHz) in driver and kona.dtsi
-* fix: custom kernel name (-EXTREME++GAMING_Hyperos), ReSukiSU Non-GKI 4.19, native FakeDreamer GPU OPP, and native CPU 3.05GHz peak cap
-* Create send_rksu.yml
-* fix: guarantee 2.84GHz CPU cap and GPU UV patches are applied with explicit target paths
 * fix: adopt AstideLabs Kona AnyKernel3 logic, concatenated multi-DTB table, split_boot, and HyperOS configs
-
-
-==========01/10/2026==========
-* Update changelog.yml
-* Update changelog.yml
-* 📝 docs: Auto-updated EXTREME++ changelog
-* Create changelog.yml
-* fix: inject FakeDreamer 10-step UV OPP table & speed bins into both kona-gpu.dtsi and kona-v2-gpu.dtsi
-* Update send_rksu.yml
-* Update send_rksu.yml
-* Update send_rksu.yml
-* fix: make cpufreq driver patch C89-compliant to fix -Wdeclaration-after-statement
-* fix: strictly cap CPU Prime Core to 2841600 (2.84 GHz) in driver and kona.dtsi
-
-
-==========01/10/2026==========
-* Create changelog.yml
-* fix: inject FakeDreamer 10-step UV OPP table & speed bins into both kona-gpu.dtsi and kona-v2-gpu.dtsi
-* Update send_rksu.yml
-* Update send_rksu.yml
-* Update send_rksu.yml
-* fix: make cpufreq driver patch C89-compliant to fix -Wdeclaration-after-statement
-* fix: strictly cap CPU Prime Core to 2841600 (2.84 GHz) in driver and kona.dtsi
-* fix: custom kernel name (-EXTREME++GAMING_Hyperos), ReSukiSU Non-GKI 4.19, native FakeDreamer GPU OPP, and native CPU 3.05GHz peak cap
-* Create send_rksu.yml
-* fix: guarantee 2.84GHz CPU cap and GPU UV patches are applied with explicit target paths
-
