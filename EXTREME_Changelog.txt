@@ -4,6 +4,19 @@ Device name: POCO F4
 Device codename: munch
 Kernel maintainer: @pandey_ji_8
 
+==========03/10/2026==========
+* feat(gpu): replicate FakeDreamer vendor_boot DTB patching & undervolt all speed bins for Build 61
+* feat(gpu): 100% native FakeDreamer GPU undervolt replication and clean stock devfreq governor
+* docs: add Build #59 changelog entry
+* feat(gpu): C-level 10-step power levels and OPP injection with DTBO bypass
+* fix(build): extract GPU DTS injection to dedicated python script & copy all patches
+* fix(gpu): atomic 10-step DTS injection for kona-v2 & kona-v2.1 across all 5 speed bins, leave C-drivers stock
+* fix(gpu): restore msm-adreno-tz governor, revert C-driver overrides & apply pure FakeDreamer DTS architecture for Kona v2.1
+* fix(gpu): unify 10-step OPP table, fix 250MHz voltage inversion, patch gpubusy for FKM & add dtbo dd fallback
+* fix(build): escape newlines in adreno.c C string injections
+* fix(gpu): prevent boot deadlock in Joyose service, fix GMU ACD limit & enforce bulletproof 10-step GPU UV fallback for HyperOS 3
+
+
 ==========03/10/2026 (Build #60)==========
 * revert(driver): completely nuke custom C-driver hacks, manual dev_pm_opp_add, and array overrides
 * feat(gpu): 100% native FakeDreamer GPU undervolt replication (kona-v2-gpu.dtsi commit 41ac7f89)
