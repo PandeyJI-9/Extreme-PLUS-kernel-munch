@@ -4,6 +4,13 @@ Device name: POCO F4
 Device codename: munch
 Kernel maintainer: @pandey_ji_8
 
+==========03/10/2026 (Build #60)==========
+* revert(driver): completely nuke custom C-driver hacks, manual dev_pm_opp_add, and array overrides
+* feat(gpu): 100% native FakeDreamer GPU undervolt replication (kona-v2-gpu.dtsi commit 41ac7f89)
+* fix(devfreq): restore pure stock Qualcomm msm-adreno-tz TrustZone governor & scaling
+* fix(config): sync devfreq and kgsl Kconfig options directly with FakeDreamer munch_defconfig
+* feat(gpu): 150MHz idle floor, 670MHz peak, and full voltage undervolt (225/129/66/1)
+
 ==========02/10/2026 (Build #59)==========
 * feat(gpu): C-level 10-step power levels & OPP injection in adreno.c bypassing stock DTBO truncation
 * fix(gmu): restrict ACD levels strictly to top 6 steps (levels 0-5) to prevent GMU HFI buffer overflow
