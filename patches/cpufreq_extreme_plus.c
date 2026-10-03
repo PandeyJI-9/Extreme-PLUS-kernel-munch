@@ -359,7 +359,7 @@ schedtune_cpu_margin_with(unsigned long util, int cpu, struct task_struct *p);
  * based on the task model parameters and gives the minimal utilization
  * required to meet deadlines.
  */
-static unsigned long extreme_plus_cpu_util(int cpu, unsigned long util_cfs,
+static unsigned long __maybe_unused extreme_plus_cpu_util(int cpu, unsigned long util_cfs,
 				 unsigned long max, enum schedutil_type type,
 				 struct task_struct *p)
 {
