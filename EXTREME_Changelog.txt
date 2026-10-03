@@ -5,6 +5,17 @@ Device codename: munch
 Target ROM: Xiaomi HyperOS
 Kernel maintainer: @pandey_ji_8
 
+==========03/10/2026 (Build #62)==========
+* feat(gov): custom EXTREME+ governor (cpufreq_extreme_plus.c) registered as native CPU_FREQ_GOV_EXTREME_PLUS
+* feat(touch): zero-latency touch ramp-up (up_rate_limit_us = 0) with aggressive decay to idle (down_rate_limit_us = 20000)
+* feat(sched): anti-100% choke logic with dynamic Gold cluster spillover when Prime core (CPU 7) reaches 75% load
+* feat(eas): tuned WALT migration margins (sched_upmigrate 75 80, sched_downmigrate 60 70) for zero frame stutter
+* feat(cpu): safe hardware-level -30mV global CPU undervolt injected across EPSS LUT tables in qcom-cpufreq-hw
+* fix(cpu): Prime core hard-capped at 2.84 GHz (2841600) to permanently eliminate 3.2 GHz thermal throttling spikes
+* feat(lmk): smart Sniper Method LMK daemon protecting foreground games (BGMI), audio (Spotify), and messaging apps (WhatsApp)
+* feat(memory): memory pressure trigger (>90%) snipes strictly telemetry, analytics, and background ads without killing user apps
+* fix(gpu): preserve 100% verified 150MHz - 670MHz FakeDreamer GPU undervolt & msm-adreno-tz governor
+
 ==========03/10/2026 (Build #61)==========
 * feat(gpu): 100% working GPU Undervolt (150MHz - 670MHz) verified on HyperOS
 * fix(dts): undervolt all 5 speed-bins (0, 1, 2, 3, 4) in kona-v2-gpu.dtsi

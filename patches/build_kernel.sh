@@ -53,7 +53,7 @@ sed -i 's/^CONFIG_LOCALVERSION=.*/CONFIG_LOCALVERSION="-EXTREME++GAMING_Hyperos"
 grep -q "CONFIG_LOCALVERSION=" "arch/arm64/configs/${DEFCONFIG}" || echo 'CONFIG_LOCALVERSION="-EXTREME++GAMING_Hyperos"' >> "arch/arm64/configs/${DEFCONFIG}"
 sed -i 's/^EXTRAVERSION =.*/EXTRAVERSION =/' Makefile
 
-# ZRAM ZSTD & Schedutil defconfig tunables
+# ZRAM ZSTD, EXTREME+ Governor & GPU Devfreq defconfig tunables
 sed -i 's/CONFIG_ZRAM_DEF_COMP_LZ4=y/CONFIG_ZRAM_DEF_COMP_ZSTD=y/' "arch/arm64/configs/${DEFCONFIG}"
 grep -q "CONFIG_CRYPTO_ZSTD=y" "arch/arm64/configs/${DEFCONFIG}" || cat >> "arch/arm64/configs/${DEFCONFIG}" << 'EOF'
 CONFIG_CRYPTO_ZSTD=y
@@ -67,6 +67,8 @@ CONFIG_DEVFREQ_GOV_QCOM_ADRENO_TZ=y
 CONFIG_DEVFREQ_GOV_QCOM_GPUBW_MON=y
 CONFIG_QCOM_ADRENO_DEFAULT_GOVERNOR="msm-adreno-tz"
 CONFIG_QCOM_KGSL=y
+CONFIG_CPU_FREQ_GOV_EXTREME_PLUS=y
+CONFIG_CPU_FREQ_DEFAULT_GOV_EXTREME_PLUS=y
 EOF
 
 # ------------------------------------------
@@ -119,9 +121,58 @@ echo "[+] kona-v2.1-gpu.dtsi set to pure FakeDreamer chipid override"
 
 
 # ------------------------------------------
-# 5. Native CPU Peak Cap (2.84 GHz / Drop 3.2 GHz Peak Step)
+# 4b. Inject Custom EXTREME+ Governor (Zero-Latency & Anti-Choke)
 # ------------------------------------------
-echo "[*] Natively Applying CPU Peak Cap (2.84 GHz / Drop 3.2 GHz Peak Step)..."
+echo "[*] Injecting Custom EXTREME+ Governor into kernel/sched/..."
+if [ -f "cpufreq_extreme_plus.c" ]; then
+    cp -f cpufreq_extreme_plus.c kernel/sched/cpufreq_extreme_plus.c
+    echo "[+] Copied cpufreq_extreme_plus.c to kernel/sched/"
+fi
+
+if ! grep -q "cpufreq_extreme_plus.o" kernel/sched/Makefile; then
+    echo 'obj-$(CONFIG_CPU_FREQ_GOV_EXTREME_PLUS) += cpufreq_extreme_plus.o' >> kernel/sched/Makefile
+    echo "[+] Hooked cpufreq_extreme_plus.o into kernel/sched/Makefile"
+fi
+
+python3 -c '
+path_kconfig = "drivers/cpufreq/Kconfig"
+with open(path_kconfig, "r") as f:
+    text = f.read()
+
+gov_choice = """config CPU_FREQ_DEFAULT_GOV_EXTREME_PLUS
+\tbool "extreme_plus"
+\tdepends on SMP
+\tselect CPU_FREQ_GOV_EXTREME_PLUS
+\tselect CPU_FREQ_GOV_PERFORMANCE
+\thelp
+\t  Use the "extreme_plus" CPUFreq governor by default. Zero latency,
+\t  anti-100% prime choke, aggressive decay to idle for sustained hardcore gaming.
+"""
+
+gov_def = """config CPU_FREQ_GOV_EXTREME_PLUS
+\tbool "\x27extreme_plus\x27 cpufreq policy governor"
+\tdepends on CPU_FREQ && SMP
+\tselect CPU_FREQ_GOV_ATTR_SET
+\tselect IRQ_WORK
+\thelp
+\t  EXTREME+ governor based on scheduler utilization with zero latency
+\t  up-scaling and aggressive decay to idle for sustained hardcore gaming.
+"""
+
+if "CPU_FREQ_GOV_EXTREME_PLUS" not in text:
+    text = text.replace("config CPU_FREQ_DEFAULT_GOV_SCHEDUTIL", gov_choice + "\nconfig CPU_FREQ_DEFAULT_GOV_SCHEDUTIL")
+    text = text.replace("config CPU_FREQ_GOV_SCHEDUTIL", gov_def + "\nconfig CPU_FREQ_GOV_SCHEDUTIL")
+    with open(path_kconfig, "w") as f:
+        f.write(text)
+    print("✅ Injected EXTREME+ governor definitions into drivers/cpufreq/Kconfig")
+else:
+    print("ℹ️ EXTREME+ governor already in drivers/cpufreq/Kconfig")
+'
+
+# ------------------------------------------
+# 5. Native CPU Peak Cap (2.84 GHz) & Safe Undervolt (-30mV offset)
+# ------------------------------------------
+echo "[*] Natively Applying CPU Peak Cap (2.84 GHz) & Safe Undervolt (-30mV offset)..."
 python3 -c '
 import re
 
@@ -141,14 +192,14 @@ with open(path_dts, "w") as f:
     f.write(text_dts)
 print("✅ CPU Prime Core max-freq cap (<2841600>) set in kona.dtsi")
 
-# 2. Patch drivers/cpufreq/qcom-cpufreq-hw.c (C89 compliant)
+# 2. Patch drivers/cpufreq/qcom-cpufreq-hw.c (C89 compliant, UV + Max Cap)
 path_driver = "drivers/cpufreq/qcom-cpufreq-hw.c"
 with open(path_driver, "r") as f:
     text_driver = f.read()
 
 if "max_freq_cap" not in text_driver:
     target_decl = "\tu32 vc;\n\tunsigned long cpu;"
-    patch_decl = "\tu32 vc, max_freq_cap = 0;\n\tunsigned long cpu;"
+    patch_decl = "\tu32 vc, max_freq_cap = 0, raw_volt, new_raw_volt, new_reg;\n\tunsigned long cpu;"
     text_driver = text_driver.replace(target_decl, patch_decl, 1)
 
     target_read = "spin_lock_init(&c->skip_data.lock);"
@@ -157,6 +208,23 @@ if "max_freq_cap" not in text_driver:
 \tif (!max_freq_cap)
 \t\tmax_freq_cap = 2841600;"""
     text_driver = text_driver.replace(target_read, patch_read, 1)
+
+    target_volt = """\t\tdata = readl_relaxed(base_volt + i * lut_row_size);
+\t\tvolt = (data & GENMASK(11, 0)) * 1000;
+\t\tvc = data & GENMASK(21, 16);"""
+
+    patch_volt = """\t\tdata = readl_relaxed(base_volt + i * lut_row_size);
+\t\traw_volt = data & GENMASK(11, 0);
+\t\tif (raw_volt > 650) {
+\t\t\tnew_raw_volt = raw_volt - 30; /* EXTREME+: -30mV safe CPU undervolt */
+\t\t\tnew_reg = (data & ~GENMASK(11, 0)) | (new_raw_volt & GENMASK(11, 0));
+\t\t\twritel_relaxed(new_reg, base_volt + i * lut_row_size);
+\t\t\tvolt = new_raw_volt * 1000;
+\t\t} else {
+\t\t\tvolt = raw_volt * 1000;
+\t\t}
+\t\tvc = data & GENMASK(21, 16);"""
+    text_driver = text_driver.replace(target_volt, patch_volt, 1)
 
     target_break = "dev_dbg(dev, \"index=%d freq=%d, core_count %d\\n\","
     patch_break = """if (max_freq_cap && c->table[i].frequency > max_freq_cap) {
@@ -167,7 +235,7 @@ if "max_freq_cap" not in text_driver:
 
     with open(path_driver, "w") as f:
         f.write(text_driver)
-    print("✅ qcom-cpufreq-hw driver patched (C89 compliant) to honor freq-domain-max-freq (strictly 2841600)")
+    print("✅ qcom-cpufreq-hw driver patched (C89 compliant) with 2.84 GHz cap & -30mV CPU undervolt")
 else:
     print("ℹ️ qcom-cpufreq-hw driver already patched")
 '
@@ -247,6 +315,12 @@ scripts/config --file "${OUT_DIR}/.config" \
 scripts/config --file "${OUT_DIR}/.config" \
     -e CPU_FREQ_GOV_SCHEDUTIL \
     --set-val SCHEDUTIL_UP_RATE_LIMIT 0
+
+# 🚀 Custom EXTREME+ Governor (Zero Latency & Anti-Choke)
+scripts/config --file "${OUT_DIR}/.config" \
+    -e CPU_FREQ_GOV_EXTREME_PLUS \
+    -e CPU_FREQ_DEFAULT_GOV_EXTREME_PLUS \
+    --set-str CPU_FREQ_DEFAULT_GOV "extreme_plus"
 
 # Native source patches for VM & Schedutil tunables
 if [ -f "kernel/sched/cpufreq_schedutil.c" ]; then
@@ -331,7 +405,17 @@ scripts/config --file "${OUT_DIR}/.config" \
     -d ZRAM_DEF_COMP_LZ4 \
     --set-str ZRAM_DEF_COMP "zstd" \
     -e CPU_FREQ_GOV_SCHEDUTIL \
-    --set-val SCHEDUTIL_UP_RATE_LIMIT 0
+    --set-val SCHEDUTIL_UP_RATE_LIMIT 0 \
+    -e CPU_FREQ_GOV_EXTREME_PLUS \
+    -e CPU_FREQ_DEFAULT_GOV_EXTREME_PLUS \
+    --set-str CPU_FREQ_DEFAULT_GOV "extreme_plus"
+
+if ! grep -q "CONFIG_CPU_FREQ_GOV_EXTREME_PLUS=y" "${OUT_DIR}/.config"; then
+    echo "CONFIG_CPU_FREQ_GOV_EXTREME_PLUS=y" >> "${OUT_DIR}/.config"
+fi
+if ! grep -q "CONFIG_CPU_FREQ_DEFAULT_GOV_EXTREME_PLUS=y" "${OUT_DIR}/.config"; then
+    echo "CONFIG_CPU_FREQ_DEFAULT_GOV_EXTREME_PLUS=y" >> "${OUT_DIR}/.config"
+fi
 
 # 🔥 THE ULTIMATE KSU FIX: Ensuring CONFIG_KSU survives olddefconfig
 if [ "$ENABLE_KSU" -eq 1 ]; then
@@ -449,8 +533,8 @@ EOF
 cat > anykernel/00-extreme-performance.sh << 'EOF'
 #!/system/bin/sh
 # ═══════════════════════════════════════════════════════════════
-#  EXTREME++ GAMING — Joyose & Performance Boot Service
-#  POCO F4 (munch) | HyperOS / MIUI
+#  PROJECT EXTREME+ — Joyose, Governor & Sniper Boot Service
+#  POCO F4 (munch / SM8250-AC Kona) | HyperOS ONLY
 # ═══════════════════════════════════════════════════════════════
 
 (
@@ -461,7 +545,47 @@ done
 
 sleep 5
 
-# ── 1. Xiaomi Thermal Message / Performance Profile ──
+# ── 1. Custom EXTREME+ Governor Activation & Core Tuning ──
+# Set EXTREME+ governor across all CPU clusters (Silver, Gold, Prime)
+for pol in /sys/devices/system/cpu/cpufreq/policy*; do
+    if [ -d "$pol" ]; then
+        chmod 666 "$pol/scaling_governor" 2>/dev/null
+        echo "extreme_plus" > "$pol/scaling_governor" 2>/dev/null || echo "schedutil" > "$pol/scaling_governor" 2>/dev/null
+    fi
+done
+
+# Tune EXTREME+ tunables: Zero latency ramp-up, fast decay to idle
+for gov_path in /sys/devices/system/cpu/cpufreq/policy*/extreme_plus; do
+    if [ -d "$gov_path" ]; then
+        echo 0 > "$gov_path/up_rate_limit_us" 2>/dev/null
+        echo 20000 > "$gov_path/down_rate_limit_us" 2>/dev/null
+        echo 75 > "$gov_path/hispeed_load" 2>/dev/null
+    fi
+done
+
+# ── 2. EAS Anti-100% Choke & Spillover Margins (WALT Migration) ──
+# Thresholds: Spill from Prime (core 7) to Gold (cores 4-6) at 75-80% load
+echo 75 80 > /proc/sys/kernel/sched_upmigrate 2>/dev/null
+echo 60 70 > /proc/sys/kernel/sched_downmigrate 2>/dev/null
+echo 75 > /proc/sys/kernel/sched_group_upmigrate 2>/dev/null
+echo 60 > /proc/sys/kernel/sched_group_downmigrate 2>/dev/null
+
+# ── 3. Smart Multitasking & ZRAM ZSTD Tuning (No App Kills) ──
+echo 100 > /proc/sys/vm/swappiness 2>/dev/null
+echo 100 > /proc/sys/vm/vfs_cache_pressure 2>/dev/null
+echo 20 > /proc/sys/vm/dirty_ratio 2>/dev/null
+echo 10 > /proc/sys/vm/dirty_background_ratio 2>/dev/null
+echo 50 > /proc/sys/vm/watermark_scale_factor 2>/dev/null
+echo 0 > /proc/sys/vm/page-cluster 2>/dev/null
+echo 750 > /proc/sys/vm/extfrag_threshold 2>/dev/null
+
+# ── 4. Android LMKD Sniper Policy (Protect Foreground & Multitasking) ──
+setprop sys.lmk.kill_heaviest_task false 2>/dev/null
+setprop sys.lmk.kill_timeout_ms 100 2>/dev/null
+setprop sys.lmk.thrashing_limit 50 2>/dev/null
+setprop sys.lmk.minfree_levels "18432,23040,27648,32256,55296,80640" 2>/dev/null
+
+# ── 5. Xiaomi Thermal Message / Performance Profile ──
 # Lock sconfig to 10 (Game Turbo / Performance profile)
 # This prevents Joyose from downgrading the system to aggressive throttling
 # while preserving ALL hardware TSENS thermal zones and kernel overheat protections!
@@ -471,7 +595,7 @@ if [ -f /sys/class/thermal/thermal_message/sconfig ]; then
     chmod 444 /sys/class/thermal/thermal_message/sconfig
 fi
 
-# ── 2. Joyose Cloud Thermal Policy Optimization ──
+# ── 6. Joyose Cloud Thermal Policy Optimization ──
 # Clean Joyose cached cloud throttling rules without killing the package,
 # keeping Game Turbo overlay, touch sampling rate, and SMS services 100% functional.
 JOYOSE_DIR="/data/system/users/0/joyose"
@@ -479,7 +603,7 @@ if [ -d "$JOYOSE_DIR" ]; then
     rm -rf "$JOYOSE_DIR"/* 2>/dev/null
 fi
 
-# ── 3. Sysfs Permissive GPU Power Nodes ──
+# ── 7. Sysfs Permissive GPU Power Nodes & Adreno Governor Lock ──
 # Ensure root tools (FKM) have full read/write access to GPU control nodes
 chmod 666 /sys/class/kgsl/kgsl-3d0/min_pwrlevel 2>/dev/null
 chmod 666 /sys/class/kgsl/kgsl-3d0/max_pwrlevel 2>/dev/null
@@ -488,13 +612,66 @@ chmod 666 /sys/class/kgsl/kgsl-3d0/gpu_max_clock 2>/dev/null
 chmod 444 /sys/class/kgsl/kgsl-3d0/gpubusy 2>/dev/null
 chmod 444 /sys/class/kgsl/kgsl-3d0/gpu_busy_percentage 2>/dev/null
 
-# ── 4. Adreno Governor Verification ──
 if [ -f /sys/class/kgsl/kgsl-3d0/devfreq/governor ]; then
     chmod 666 /sys/class/kgsl/kgsl-3d0/devfreq/governor 2>/dev/null
     echo "msm-adreno-tz" > /sys/class/kgsl/kgsl-3d0/devfreq/governor 2>/dev/null || true
 fi
 
-echo "EXTREME++: Joyose optimized & thermal performance mode active!" > /dev/kmsg
+echo "PROJECT EXTREME+: Governor active, CPU UV (-30mV) & Joyose optimized!" > /dev/kmsg
+
+# ── 8. Smart LMK Sniper Daemon (Continuous Background Protection) ──
+(
+while true; do
+    sleep 45
+
+    # A. Whitelist: Protect critical apps (Games, Music, Messaging)
+    for pkg in \
+        com.pubg.imobile \
+        com.tencent.ig \
+        com.activision.callofduty.shooter \
+        com.miHoYo.GenshinImpact \
+        com.dts.freefireth \
+        com.spotify.music \
+        com.google.android.apps.youtube.music \
+        com.apple.android.music \
+        com.amazon.mp3 \
+        com.whatsapp \
+        org.telegram.messenger \
+        org.thunderdog.challegram \
+        com.discord; do
+        for pid in $(pidof "$pkg" 2>/dev/null); do
+            if [ -n "$pid" ] && [ -f "/proc/$pid/oom_score_adj" ]; then
+                echo -900 > "/proc/$pid/oom_score_adj" 2>/dev/null
+            fi
+        done
+    done
+
+    # B. Sniper Target Bloat when RAM pressure > 90%
+    MEM_TOTAL=$(grep MemTotal /proc/meminfo 2>/dev/null | awk '{print $2}')
+    MEM_AVAIL=$(grep MemAvailable /proc/meminfo 2>/dev/null | awk '{print $2}')
+    if [ -n "$MEM_TOTAL" ] && [ -n "$MEM_AVAIL" ] && [ "$MEM_TOTAL" -gt 0 ]; then
+        MEM_USED=$(( MEM_TOTAL - MEM_AVAIL ))
+        MEM_USED_PCT=$(( (MEM_USED * 100) / MEM_TOTAL ))
+        if [ "$MEM_USED_PCT" -ge 90 ]; then
+            # Snipe strictly background bloatware, analytics, telemetry & system ad trackers
+            for bloat in \
+                com.miui.analytics \
+                com.miui.msa.global \
+                com.miui.daemon \
+                com.google.android.gms.feedback \
+                com.google.android.feedback; do
+                pkill -f "$bloat" 2>/dev/null || true
+            done
+
+            # If pressure is critical (>93%), compact memory without killing user apps
+            if [ "$MEM_USED_PCT" -ge 93 ]; then
+                echo 1 > /proc/sys/vm/compact_memory 2>/dev/null
+            fi
+        fi
+    fi
+done
+) &
+
 ) &
 EOF
 chmod 755 anykernel/00-extreme-performance.sh

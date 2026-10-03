@@ -101,18 +101,22 @@ jobs:
 
             ---
 
-            ### ⚡ Performance & Thermal Optimizations
-            - 🏎 **CPU Frequency Cap:** Prime Core hard-capped at **2.84 GHz** (`2841600`) via `qcom-cpufreq-hw` driver & `kona.dtsi` to eliminate 3.2 GHz thermal throttle spikes.
-            - 🎮 **GPU Undervolt (UV) & OS-Independent Lock:** FakeDreamer **10-Step OPP Table (150 MHz – 670 MHz)** applied with RPMh safe voltage mapping:
-              - **C-Level Kernel Driver Enforcement:** `drivers/gpu/msm/adreno.c` hardcodes all 10 power levels natively to bypass HyperOS 3/4 DTBO overlays and vendor partitions.
-              - **Joyose & User-Space Blocker:** `/sys/class/kgsl/kgsl-3d0/max_pwrlevel`, `min_pwrlevel`, and Xiaomi `/sys/kernel/gpu/gpu_min_clock`/`max_clock` interceptors drop artificial user-space throttling.
-              - **Ultra-Low Idle States:** `250 MHz`, `200 MHz`, `150 MHz` for maximum battery efficiency.
-              - `KGSL_MAX_PWRLEVELS` expanded to 16 for full 10-step frequency scaling.
-            - 🚀 **Zero Heat Policy:** 100% untouched stock thermal-engine, trip points, and TSENS. Hardware-safe sustained gaming.
-            - 🧠 **Memory & Responsiveness:**
-              - ZRAM compressed with **ZSTD** algorithm (`CONFIG_ZRAM_DEF_COMP_ZSTD=y`).
-              - Instant touch response: Schedutil `up_rate_limit_us` tuned to 0 for instant ramp-up.
-              - Optimized `vm.swappiness = 100` & `vfs_cache_pressure = 100` for lag-free multitasking on 6GB/8GB RAM models.
+            ### ⚡ PROJECT EXTREME+ Optimizations
+            - ⚡ **Custom Governor (EXTREME+):** Native `cpufreq_extreme_plus.c` registered as `CPU_FREQ_GOV_EXTREME_PLUS`.
+              - Zero-latency touch response (`up_rate_limit_us = 0`).
+              - Anti-100% Prime Choke: Automatically spills threads from Prime (CPU 7) to Gold cluster (CPUs 4-6) at 75-80% load.
+              - Aggressive decay to idle (`down_rate_limit_us = 20000`) for zero battery drain.
+            - 🏎 **Safe CPU Undervolt & Peak Cap:**
+              - Global hardware-level **-30mV undervolt offset** injected into EPSS voltage LUTs via `qcom-cpufreq-hw`.
+              - Prime Core capped at **2.84 GHz** (`2841600`) to eliminate 3.2 GHz thermal throttling spikes.
+            - 🎮 **GPU Undervolt (UV) & Adreno Governor (Build #61 Verified):**
+              - FakeDreamer **10-Step OPP Table (150 MHz – 670 MHz)** applied across all speed bins in `kona-v2-gpu.dtsi`.
+              - 100% intact Qualcomm `msm-adreno-tz` TrustZone devfreq governor.
+              - Screen idle drops cleanly to 150MHz at lowest voltage level (1).
+            - 🎯 **Smart LMK "Sniper Method" & Multitasking:**
+              - ZRAM ZSTD with `vm.swappiness = 100`, `vfs_cache_pressure = 100`, `page-cluster = 0`.
+              - Whitelisted foreground games (BGMI, COD, PUBG), audio (Spotify, YT Music), and messaging (WhatsApp, Telegram) locked at `oom_score_adj = -900`.
+              - Memory pressure (>90%) strictly snipes background bloatware, analytics, telemetry, and system ads without killing user apps.
 
             ---
 
