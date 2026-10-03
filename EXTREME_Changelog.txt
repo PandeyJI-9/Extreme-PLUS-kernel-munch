@@ -5,7 +5,7 @@ Device codename: munch
 Target ROM: Xiaomi HyperOS
 Kernel maintainer: @pandey_ji_8
 
-==========03/10/2026 (Build #62)==========
+==========03/10/2026 (Build #64)==========
 * feat(gov): custom EXTREME+ governor (cpufreq_extreme_plus.c) registered as native CPU_FREQ_GOV_EXTREME_PLUS
 * feat(touch): zero-latency touch ramp-up (up_rate_limit_us = 0) with aggressive decay to idle (down_rate_limit_us = 20000)
 * feat(sched): anti-100% choke logic with dynamic Gold cluster spillover when Prime core (CPU 7) reaches 75% load
