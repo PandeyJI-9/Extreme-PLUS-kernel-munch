@@ -85,90 +85,30 @@ jobs:
           echo "✅ Built ZIP files:"
           ls -lh *munch*.zip
 
-      - name: "🚀 Create GitHub Release"
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            kernel/*munch*.zip
-          tag_name: "Stable-testing-v1.1.2.${{ github.run_number }}"
-          name: "EXTREME++ Build #${{ github.run_number }} (Dual Variant: 3.2GHz & 2.8GHz)"
-          body: |
-            ## 🚀 EXTREME++ GAMING HyperOS Kernel (Dual Variant)
-
-            ### 📱 Device & Build Information
-            - **Device:** POCO F4 (munch / munch-in)
-            - **SoC:** Qualcomm Snapdragon 870 5G (SM8250-AC / Kona v2.1)
-            - **Target OS:** HyperOS / MIUI Android 13–17
-            - **Build Number:** #${{ github.run_number }}
-            - **Toolchain:** ZyC-Clang 16.0.6 + LLD + ccache
-            - **Root & Hooks:** ReSukiSU Non-GKI 4.19 Legacy with SuSFS v1.5.5
-
-            ---
-
-            ### 🔥 Dual Variants Available in this Release
-            - 🚀 **`EXTREME++_HyperOS_munch_3.2GHz_*.zip`**: Stock uncapped 3.2 GHz Prime peak for maximum raw benchmark performance.
-            - ❄️ **`EXTREME++_HyperOS_munch_2.8GHz_*.zip`**: Prime core capped at 2.84 GHz via safe post-boot service (`policy7/scaling_max_freq = 2841600`) for zero thermal throttling and sustained cool gaming.
-
-            ---
-
-            ### ⚡ Real Kernel-Level Optimizations
-            - 🌐 **TCP BBR Congestion Control:** Native `CONFIG_TCP_CONG_BBR=y`, `CONFIG_DEFAULT_BBR=y`, and `CONFIG_NET_SCH_FQ=y` for ultra-low ping, zero bufferbloat, and instant bullet registration in BGMI/COD.
-            - ⚡ **Zero-Overhead Storage:** I/O stats accounting disabled on all block queues (`/sys/block/*/queue/iostats = 0`) to eliminate storage overhead and speed up game loading.
-            - 🛡️ **Debloated Kernel Logging:** Heavy debug options (`SCHEDSTATS`, `LOCKDEP`, `PROVE_LOCKING`, `DEBUG_KMEMLEAK`, `DEBUG_PREEMPT`) purged for lean, high-throughput context switching.
-            - ⚡ **Governor Boot Safety & EXTREME+:** Safe stock Qualcomm `schedutil` boot governor with `EXTREME+` custom governor compiled as native selectable module.
-            - 🎮 **GPU Undervolt (FakeDreamer 150MHz - 670MHz):** 100% verified working FakeDreamer table across all speed bins with native `msm-adreno-tz` TrustZone governor.
-            - 🎯 **Smart LMK "Sniper Method":** ZRAM ZSTD with whitelisted games/messaging/audio apps (`oom_score_adj = -900`) and surgical bloatware snipe on high memory pressure.
-
-            ---
-
-            ### 📦 Flashing Instructions
-            1. Boot into custom recovery (TWRP / OrangeFox).
-            2. Flash your chosen kernel ZIP variant (3.2GHz for max speed, 2.8GHz for cool gaming).
-            3. Reboot system and install **ReSukiSU / KernelSU Manager**.
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: "🧹 Clean Old GitHub Releases (Keep Latest Only)"
+      - name: "📢 Telegram: Official Release Broadcast"
         if: success()
         run: |
-          python3 -c "
-          import urllib.request, json, os, ssl
-          ctx = ssl._create_unverified_context()
-          token = os.environ.get('GITHUB_TOKEN')
-          repo = os.environ.get('GITHUB_REPOSITORY')
-          current_tag = 'Stable-testing-v1.1.2.${{ github.run_number }}'
+          MSG="🔥 <b>EXTREME++ Official Release #${{ github.run_number }}</b>%0A%0A"
+          MSG="${MSG}📱 <b>Device:</b> POCO F4 (munch)%0A"
+          MSG="${MSG}⚡ <b>Target ROM:</b> HyperOS / MIUI Android 13–17%0A"
+          MSG="${MSG}🛠️ <b>Toolchain:</b> ZyC-Clang 16.0.6 + LLD%0A"
+          MSG="${MSG}🛡️ <b>Root:</b> ReSukiSU Non-GKI 4.19 + SuSFS%0A%0A"
+          MSG="${MSG}✨ <b>Key Features:</b>%0A"
+          MSG="${MSG}• <b>Dual Variants:</b> 3.2GHz Benchmark & 2.8GHz Cool Gaming%0A"
+          MSG="${MSG}• <b>Network:</b> TCP BBR Congestion Control (Low Ping in BGMI/COD)%0A"
+          MSG="${MSG}• <b>GPU:</b> FakeDreamer 150MHz - 670MHz UV & msm-adreno-tz%0A"
+          MSG="${MSG}• <b>Storage:</b> Zero-Overhead Block I/O Stats Disabled%0A"
+          MSG="${MSG}• <b>Memory:</b> Smart LMK Sniper Method & App Protection%0A"
+          MSG="${MSG}• <b>Governor:</b> 100% Safe Schedutil Boot + EXTREME+ Module%0A%0A"
+          MSG="${MSG}📦 <i>Uploading flashable ZIP packages below...</i>"
 
-          req = urllib.request.Request(f'https://api.github.com/repos/{repo}/releases', headers={
-              'Authorization': f'token {token}',
-              'Accept': 'application/vnd.github.v3+json',
-              'User-Agent': 'Release-Cleaner'
-          })
-          try:
-              with urllib.request.urlopen(req, context=ctx) as resp:
-                  releases = json.loads(resp.read().decode())
-              for r in releases:
-                  if r.get('tag_name') != current_tag:
-                      print(f'Deleting old release {r.get(\"tag_name\")} (ID: {r.get(\"id\")})...')
-                      del_req = urllib.request.Request(f'https://api.github.com/repos/{repo}/releases/{r[\"id\"]}', headers={
-                          'Authorization': f'token {token}',
-                          'Accept': 'application/vnd.github.v3+json',
-                          'User-Agent': 'Release-Cleaner'
-                      }, method='DELETE')
-                      urllib.request.urlopen(del_req, context=ctx)
-                      print(f'Successfully deleted release {r.get(\"id\")}')
-          except Exception as e:
-              print(f'Note on release cleanup: {e}')
-          "
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: "📢 Telegram: Build Success"
-        if: success()
-        run: |
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
             -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
-            -d text="✅ <b>EXTREME++ Build #${{ github.run_number }} Completed!</b>%0A🔥 Dual Variants (3.2GHz & 2.8GHz) ready for testing." -d parse_mode="HTML" || true
+            -d text="$MSG" \
+            -d parse_mode="HTML" || true
+
           for z in $(find "$GITHUB_WORKSPACE/kernel" -maxdepth 1 -name "*munch*.zip"); do
+            echo "Uploading $z to Telegram..."
             curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendDocument" \
               -F chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
               -F document=@"$z" \
