@@ -4,7 +4,7 @@ PROJECT EXTREME+ V2: 67W Fast Charging & True Bypass Charging Patcher
 Applies proven SenseiiX (fusionX_sm8250) power subsystem patches for POCO F4 (munch):
 1. pd_policy_manager_munch.c & pd_policy_manager.c: Bypass DS28E16 authenticity check -> Full 67W Flash Charge
 2. qpnp-smb5.c: Expose 6.0A (6000000 uA) for fastcharge mode & rerun APSD on plug-in
-3. smb5-lib.c & smb5-lib.h: Implement true bypass charging (input_suspend=2) for NKM / Kernel Managers
+3. smb5-lib.c & smb5-lib.h: Implement true bypass charging strictly aligned with N0Kontzzz Kernel Manager (NKM) architecture
 """
 
 import os
@@ -92,15 +92,13 @@ def patch_smb5_lib():
             else:
                 c_content = "static int bypass_charging = 0;\n" + c_content
 
-        # Update smblib_get_prop_input_suspend
+        # Update smblib_get_prop_input_suspend (N0Kontzzz Kernel Manager expects 1 for Active, 0 for Inactive)
         old_get = r"int smblib_get_prop_input_suspend\(struct smb_charger \*chg,\s*union power_supply_propval \*val\)\s*\{.*?\n\}"
         new_get = """int smblib_get_prop_input_suspend(struct smb_charger *chg,
 \t\t\t\t  union power_supply_propval *val)
 {
-\tif ((get_client_vote(chg->chg_disable_votable, BYPASS_VOTER) == 1)) {
+\tif ((get_client_vote(chg->chg_disable_votable, BYPASS_VOTER) == 1) || bypass_charging) {
 \t\tval->intval = 1;
-\t} else if (bypass_charging) {
-\t\tval->intval = 2;
 \t} else {
 \t\tval->intval = 0;
 \t}
@@ -108,7 +106,7 @@ def patch_smb5_lib():
 }"""
         c_content = re.sub(old_get, new_get, c_content, flags=re.DOTALL)
 
-        # Update smblib_set_prop_input_suspend
+        # Update smblib_set_prop_input_suspend (Accepts 1 or 2 to engage Bypass mode, 0 to disable)
         old_set = r"int smblib_set_prop_input_suspend\(struct smb_charger \*chg,\s*const union power_supply_propval \*val\)\s*\{.*?\n\}"
         new_set = """int smblib_set_prop_input_suspend(struct smb_charger *chg,
 \t\t\t\t  const union power_supply_propval *val)
@@ -118,11 +116,8 @@ def patch_smb5_lib():
 \trc = vote(chg->usb_icl_votable, USER_VOTER, false, 0);
 \trc = vote(chg->dc_suspend_votable, USER_VOTER, false, 0);
 
-\tif (val->intval == 1) {
+\tif (val->intval == 1 || val->intval == 2) {
 \t\trc = vote(chg->chg_disable_votable, BYPASS_VOTER, 1, 0);
-\t\tbypass_charging = 0;
-\t} else if (val->intval == 2) {
-\t\trc = vote(chg->chg_disable_votable, BYPASS_VOTER, 0, 0);
 \t\tbypass_charging = 1;
 \t} else {
 \t\trc = vote(chg->chg_disable_votable, BYPASS_VOTER, 0, 0);
