@@ -145,23 +145,23 @@ with open(path_kconfig, "r") as f:
     text = f.read()
 
 gov_choice = """config CPU_FREQ_DEFAULT_GOV_EXTREME_PLUS
-\tbool "extreme_plus"
+\tbool "extreme+"
 \tdepends on SMP
 \tselect CPU_FREQ_GOV_EXTREME_PLUS
 \tselect CPU_FREQ_GOV_PERFORMANCE
 \thelp
-\t  Use the "extreme_plus" CPUFreq governor by default. Zero latency,
-\t  anti-100% prime choke, aggressive decay to idle for sustained hardcore gaming.
+\t  Use the "extreme+" CPUFreq governor by default. Zero latency,
+\t  anti-100% prime choke, active frame pacing floor for sustained hardcore gaming.
 """
 
 gov_def = """config CPU_FREQ_GOV_EXTREME_PLUS
-\tbool "\x27extreme_plus\x27 cpufreq policy governor"
+\tbool "\x27extreme+\x27 cpufreq policy governor"
 \tdepends on CPU_FREQ && SMP
 \tselect CPU_FREQ_GOV_ATTR_SET
 \tselect IRQ_WORK
 \thelp
-\t  EXTREME+ governor based on scheduler utilization with zero latency
-\t  up-scaling and aggressive decay to idle for sustained hardcore gaming.
+\t  EXTREME+ governor based on scheduler utilization with active task
+\t  frame pacing floor, zero latency up-scaling, and 60ms decay window.
 """
 
 if "CPU_FREQ_GOV_EXTREME_PLUS" not in text:
@@ -195,6 +195,14 @@ sed -i 's/120 90 60/120 90 60 50 30/g' ${DTS_SOURCE}/dsi-panel-g7a-36-02-0c-dsc-
 sed -i 's/120 90 60/120 90 60 50 30/g' ${DTS_SOURCE}/dsi-panel-g7a-37-02-0a-dsc-video.dtsi 2>/dev/null || true
 sed -i 's/120 90 60/120 90 60 50 30/g' ${DTS_SOURCE}/dsi-panel-g7a-37-02-0b-dsc-video.dtsi 2>/dev/null || true
 sed -i 's/144 120 90 60/144 120 90 60 50 48 30/g' ${DTS_SOURCE}/dsi-panel-j3s-37-02-0a-dsc-video.dtsi 2>/dev/null || true
+
+# ------------------------------------------
+# 6. 67W Fast Charging & True Bypass Charging (SenseiiX fusionX_sm8250 tested)
+# ------------------------------------------
+if [ -f "apply-fastcharge-bypass.py" ]; then
+    echo "[*] Applying 67W Fast Charge & True Bypass Charging patches..."
+    python3 apply-fastcharge-bypass.py
+fi
 
 # ------------------------------------------
 # 7. Compile Environment Setup
@@ -393,6 +401,13 @@ fi
 # ------------------------------------------
 # 9. Build Kernel Image & DTBs
 # ------------------------------------------
+if [ "$TARGET_VARIANT" == "2.8GHz" ] || [ "$TARGET_VARIANT" == "2.8ghz" ]; then
+    echo "[*] Applying Native C-Level 2.84 GHz Prime Core Hard Clamp..."
+    if [ -f "apply-cpu-cap.py" ]; then
+        python3 apply-cpu-cap.py
+    fi
+fi
+
 echo "[*] Compiling Kernel Image, DTBs, DTBO & Multi-DTB Image..."
 make -j"${TOTAL_CORES}" "${MAKE_OPTS[@]}" Image dtbs dtbo.img dtb
 
@@ -543,21 +558,9 @@ setprop sys.lmk.thrashing_limit 50 2>/dev/null
 setprop sys.lmk.minfree_levels "18432,23040,27648,32256,55296,80640" 2>/dev/null
 
 # ── 5. Xiaomi Thermal Message / Performance Profile ──
-# Lock sconfig to 10 (Game Turbo / Performance profile)
-# This prevents Joyose from downgrading the system to aggressive throttling
-# while preserving ALL hardware TSENS thermal zones and kernel overheat protections!
+# Set sconfig to 10 (Game Turbo / Performance profile) safely without locking permissions
 if [ -f /sys/class/thermal/thermal_message/sconfig ]; then
-    chmod 666 /sys/class/thermal/thermal_message/sconfig
-    echo 10 > /sys/class/thermal/thermal_message/sconfig
-    chmod 444 /sys/class/thermal/thermal_message/sconfig
-fi
-
-# ── 6. Joyose Cloud Thermal Policy Optimization ──
-# Clean Joyose cached cloud throttling rules without killing the package,
-# keeping Game Turbo overlay, touch sampling rate, and SMS services 100% functional.
-JOYOSE_DIR="/data/system/users/0/joyose"
-if [ -d "$JOYOSE_DIR" ]; then
-    rm -rf "$JOYOSE_DIR"/* 2>/dev/null
+    echo 10 > /sys/class/thermal/thermal_message/sconfig 2>/dev/null || true
 fi
 
 # ── 7. Sysfs Permissive GPU Power Nodes & Adreno Governor Lock ──
@@ -690,13 +693,9 @@ DATE_TAG="$(date +'%d%b%Y_%H%M')"
 
 TARGET_VARIANT="${3:-both}"
 
-# Save clean base 00-extreme-performance.sh (3.2GHz uncapped stock)
-cp -f 00-extreme-performance.sh 00-extreme-performance.sh.base
-
 if [ "$TARGET_VARIANT" == "both" ] || [ "$TARGET_VARIANT" == "3.2GHz" ] || [ "$TARGET_VARIANT" == "3.2ghz" ]; then
     ZIP_32="EXTREME++_HyperOS_munch_3.2GHz_${KSU_TAG}_${DATE_TAG}.zip"
-    cp -f 00-extreme-performance.sh.base 00-extreme-performance.sh
-    zip -r9 "../${ZIP_32}" ./* -x .gitignore out/ ./*.zip 00-extreme-performance.sh.base > /dev/null
+    zip -r9 "../${ZIP_32}" ./* -x .gitignore out/ ./*.zip > /dev/null
     echo "[+] =========================================="
     echo "[+] SUCCESS! 3.2GHz Stock Peak Variant ready: ${ZIP_32}"
     echo "[+] =========================================="
@@ -704,22 +703,20 @@ fi
 
 if [ "$TARGET_VARIANT" == "both" ] || [ "$TARGET_VARIANT" == "2.8GHz" ] || [ "$TARGET_VARIANT" == "2.8ghz" ]; then
     ZIP_28="EXTREME++_HyperOS_munch_2.8GHz_${KSU_TAG}_${DATE_TAG}.zip"
-    cp -f 00-extreme-performance.sh.base 00-extreme-performance.sh
-    # Inject safe post-boot Prime Core 2.84 GHz cap into 00-extreme-performance.sh
-    cat >> 00-extreme-performance.sh << 'EOF_CAP'
-
-# ── EXTREME+ 2.8GHz Cool Peak Cap (Sustained Gaming Profile) ──
-if [ -f /sys/devices/system/cpu/cpufreq/policy7/scaling_max_freq ]; then
-    chmod 666 /sys/devices/system/cpu/cpufreq/policy7/scaling_max_freq 2>/dev/null
-    echo 2841600 > /sys/devices/system/cpu/cpufreq/policy7/scaling_max_freq 2>/dev/null
-    chmod 444 /sys/devices/system/cpu/cpufreq/policy7/scaling_max_freq 2>/dev/null
-fi
-EOF_CAP
-    zip -r9 "../${ZIP_28}" ./* -x .gitignore out/ ./*.zip 00-extreme-performance.sh.base > /dev/null
+    if [ "$TARGET_VARIANT" == "both" ]; then
+        echo "[*] Compiling genuine C-level 2.84 GHz Prime Cap Kernel Image..."
+        cd ..
+        if [ -f "apply-cpu-cap.py" ]; then
+            python3 apply-cpu-cap.py
+        fi
+        make -j"${TOTAL_CORES}" "${MAKE_OPTS[@]}" Image
+        cp "${OUT_DIR}/arch/arm64/boot/Image" anykernel/
+        cd anykernel
+    fi
+    zip -r9 "../${ZIP_28}" ./* -x .gitignore out/ ./*.zip > /dev/null
     echo "[+] =========================================="
-    echo "[+] SUCCESS! 2.8GHz Cool Peak Variant ready: ${ZIP_28}"
+    echo "[+] SUCCESS! 2.8GHz Native C-Clamped Variant ready: ${ZIP_28}"
     echo "[+] =========================================="
 fi
 
-rm -f 00-extreme-performance.sh.base
 cd ..

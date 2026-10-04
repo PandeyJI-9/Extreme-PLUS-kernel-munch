@@ -314,6 +314,36 @@ static void extreme_plus_deferred_update(struct extreme_plus_policy *sg_policy, 
  * next_freq (as calculated above) is returned, subject to policy min/max and
  * cpufreq driver limitations.
  */
+#define EXTREME_LITTLE_ACTIVE_FLOOR  1056000
+#define EXTREME_GOLD_ACTIVE_FLOOR    1286400
+#define EXTREME_PRIME_ACTIVE_FLOOR   1516800
+
+static unsigned int extreme_plus_apply_active_floor(struct cpufreq_policy *policy, unsigned int freq)
+{
+	unsigned int cpu = policy->cpu;
+	struct rq *rq = cpu_rq(cpu);
+
+	/*
+	 * Active Task Floor: When non-idle runnable tasks are queued,
+	 * prevent the governor from collapsing to minimum frequencies between frames.
+	 * This eliminates display mode-switch flicker (YouTube 120->60Hz)
+	 * and 3D render loop stutter in BGMI lobbies without needing touchboost.
+	 */
+	if (rq && rq->nr_running > 0) {
+		if (cpu < 4) {
+			if (freq < EXTREME_LITTLE_ACTIVE_FLOOR)
+				freq = EXTREME_LITTLE_ACTIVE_FLOOR;
+		} else if (cpu < 7) {
+			if (freq < EXTREME_GOLD_ACTIVE_FLOOR)
+				freq = EXTREME_GOLD_ACTIVE_FLOOR;
+		} else {
+			if (freq < EXTREME_PRIME_ACTIVE_FLOOR)
+				freq = EXTREME_PRIME_ACTIVE_FLOOR;
+		}
+	}
+	return freq;
+}
+
 static unsigned int get_next_freq(struct extreme_plus_policy *sg_policy,
 				  unsigned long util, unsigned long max)
 {
@@ -322,6 +352,7 @@ static unsigned int get_next_freq(struct extreme_plus_policy *sg_policy,
 				policy->cpuinfo.max_freq : policy->cur;
 
 	freq = map_util_freq(util, freq, max);
+	freq = extreme_plus_apply_active_floor(policy, freq);
 	trace_sugov_next_freq(policy->cpu, util, max, freq);
 
 	if (freq == sg_policy->cached_raw_freq && !sg_policy->need_freq_update)
@@ -1280,7 +1311,7 @@ static int extreme_plus_init(struct cpufreq_policy *policy)
 	}
 
 	tunables->up_rate_limit_us = 0;
-	tunables->down_rate_limit_us = 20000;
+	tunables->down_rate_limit_us = 60000;
 	tunables->hispeed_load = DEFAULT_HISPEED_LOAD;
 	tunables->hispeed_freq = 0;
 
@@ -1456,7 +1487,7 @@ static void extreme_plus_limits(struct cpufreq_policy *policy)
 }
 
 static struct cpufreq_governor extreme_plus_gov = {
-	.name			= "extreme_plus",
+	.name			= "extreme+",
 	.owner			= THIS_MODULE,
 	.dynamic_switching	= true,
 	.init			= extreme_plus_init,
