@@ -69,6 +69,11 @@ CONFIG_QCOM_ADRENO_DEFAULT_GOVERNOR="msm-adreno-tz"
 CONFIG_QCOM_KGSL=y
 CONFIG_CPU_FREQ_GOV_EXTREME_PLUS=y
 CONFIG_CPU_FREQ_DEFAULT_GOV_SCHEDUTIL=y
+CONFIG_TCP_CONG_BBR=y
+CONFIG_DEFAULT_BBR=y
+CONFIG_DEFAULT_TCP_CONG="bbr"
+CONFIG_NET_SCH_FQ=y
+CONFIG_NET_SCH_FQ_CODEL=y
 EOF
 
 # ------------------------------------------
@@ -348,6 +353,29 @@ if ! grep -q "CONFIG_CPU_FREQ_DEFAULT_GOV_SCHEDUTIL=y" "${OUT_DIR}/.config"; the
 fi
 sed -i '/CONFIG_CPU_FREQ_DEFAULT_GOV_EXTREME_PLUS/d' "${OUT_DIR}/.config"
 
+# TCP BBR Congestion Control & Lightweight Gaming Tunables (Disable I/O Stats & Debugging)
+scripts/config --file "${OUT_DIR}/.config" \
+    -e TCP_CONG_BBR \
+    -e DEFAULT_BBR \
+    --set-str DEFAULT_TCP_CONG "bbr" \
+    -e NET_SCH_FQ \
+    -e NET_SCH_FQ_CODEL \
+    -d TASK_IO_ACCOUNTING \
+    -d BLK_DEV_IO_TRACE \
+    -d SCHEDSTATS \
+    -d PROVE_LOCKING \
+    -d LOCKDEP \
+    -d LOCK_STAT \
+    -d DEBUG_KMEMLEAK \
+    -d DEBUG_PREEMPT
+
+if ! grep -q "CONFIG_TCP_CONG_BBR=y" "${OUT_DIR}/.config"; then
+    echo "CONFIG_TCP_CONG_BBR=y" >> "${OUT_DIR}/.config"
+fi
+if ! grep -q "CONFIG_DEFAULT_BBR=y" "${OUT_DIR}/.config"; then
+    echo "CONFIG_DEFAULT_BBR=y" >> "${OUT_DIR}/.config"
+fi
+
 # 🔥 THE ULTIMATE KSU FIX: Ensuring CONFIG_KSU survives olddefconfig
 if [ "$ENABLE_KSU" -eq 1 ]; then
     if ! grep -q "CONFIG_KSU=y" "${OUT_DIR}/.config"; then
@@ -493,7 +521,22 @@ echo 50 > /proc/sys/vm/watermark_scale_factor 2>/dev/null
 echo 0 > /proc/sys/vm/page-cluster 2>/dev/null
 echo 750 > /proc/sys/vm/extfrag_threshold 2>/dev/null
 
-# ── 4. Android LMKD Sniper Policy (Protect Foreground & Multitasking) ──
+# ── 4. Network & TCP BBR Congestion Control (Low Ping & Fast Bullet Registration) ──
+echo bbr > /proc/sys/net/ipv4/tcp_congestion_control 2>/dev/null
+echo 1 > /proc/sys/net/ipv4/tcp_low_latency 2>/dev/null
+echo 1 > /proc/sys/net/ipv4/tcp_tw_reuse 2>/dev/null
+echo 0 > /proc/sys/net/ipv4/tcp_slow_start_after_idle 2>/dev/null
+echo 3 > /proc/sys/net/ipv4/tcp_fastopen 2>/dev/null
+
+# ── 5. Storage & Block I/O Optimization (Zero Overhead I/O Stats) ──
+for iostats_node in /sys/block/*/queue/iostats; do
+    echo 0 > "$iostats_node" 2>/dev/null
+done
+for add_random_node in /sys/block/*/queue/add_random; do
+    echo 0 > "$add_random_node" 2>/dev/null
+done
+
+# ── 6. Android LMKD Sniper Policy (Protect Foreground & Multitasking) ──
 setprop sys.lmk.kill_heaviest_task false 2>/dev/null
 setprop sys.lmk.kill_timeout_ms 100 2>/dev/null
 setprop sys.lmk.thrashing_limit 50 2>/dev/null
@@ -635,18 +678,48 @@ else
 fi
 
 # ------------------------------------------
-# 12. Final Zip Creation
+# 12. Final Zip Creation (Dual Variants: 3.2GHz Stock & 2.8GHz Cool Peak)
 # ------------------------------------------
-echo "[*] Zipping EXTREME++ Kernel..."
+echo "[*] Packaging EXTREME++ Dual Variants (3.2GHz & 2.8GHz)..."
 cd anykernel
+rm -rf .git
+
 KSU_TAG="NoRoot"
 [ "$ENABLE_KSU" -eq 1 ] && KSU_TAG="ReSukiSU"
-ZIP_NAME="EXTREME++GAMING_Hyperos_munch_${KSU_TAG}_$(date +'%d%b%Y_%H%M').zip"
+DATE_TAG="$(date +'%d%b%Y_%H%M')"
 
-rm -rf .git
-zip -r9 "../${ZIP_NAME}" ./* -x .gitignore out/ ./*.zip > /dev/null
+TARGET_VARIANT="${3:-both}"
+
+# Save clean base 00-extreme-performance.sh (3.2GHz uncapped stock)
+cp -f 00-extreme-performance.sh 00-extreme-performance.sh.base
+
+if [ "$TARGET_VARIANT" == "both" ] || [ "$TARGET_VARIANT" == "3.2GHz" ] || [ "$TARGET_VARIANT" == "3.2ghz" ]; then
+    ZIP_32="EXTREME++_HyperOS_munch_3.2GHz_${KSU_TAG}_${DATE_TAG}.zip"
+    cp -f 00-extreme-performance.sh.base 00-extreme-performance.sh
+    zip -r9 "../${ZIP_32}" ./* -x .gitignore out/ ./*.zip 00-extreme-performance.sh.base > /dev/null
+    echo "[+] =========================================="
+    echo "[+] SUCCESS! 3.2GHz Stock Peak Variant ready: ${ZIP_32}"
+    echo "[+] =========================================="
+fi
+
+if [ "$TARGET_VARIANT" == "both" ] || [ "$TARGET_VARIANT" == "2.8GHz" ] || [ "$TARGET_VARIANT" == "2.8ghz" ]; then
+    ZIP_28="EXTREME++_HyperOS_munch_2.8GHz_${KSU_TAG}_${DATE_TAG}.zip"
+    cp -f 00-extreme-performance.sh.base 00-extreme-performance.sh
+    # Inject safe post-boot Prime Core 2.84 GHz cap into 00-extreme-performance.sh
+    cat >> 00-extreme-performance.sh << 'EOF_CAP'
+
+# ── EXTREME+ 2.8GHz Cool Peak Cap (Sustained Gaming Profile) ──
+if [ -f /sys/devices/system/cpu/cpufreq/policy7/scaling_max_freq ]; then
+    chmod 666 /sys/devices/system/cpu/cpufreq/policy7/scaling_max_freq 2>/dev/null
+    echo 2841600 > /sys/devices/system/cpu/cpufreq/policy7/scaling_max_freq 2>/dev/null
+    chmod 444 /sys/devices/system/cpu/cpufreq/policy7/scaling_max_freq 2>/dev/null
+fi
+EOF_CAP
+    zip -r9 "../${ZIP_28}" ./* -x .gitignore out/ ./*.zip 00-extreme-performance.sh.base > /dev/null
+    echo "[+] =========================================="
+    echo "[+] SUCCESS! 2.8GHz Cool Peak Variant ready: ${ZIP_28}"
+    echo "[+] =========================================="
+fi
+
+rm -f 00-extreme-performance.sh.base
 cd ..
-
-echo "[+] =========================================="
-echo "[+] SUCCESS! File ready: ${ZIP_NAME}"
-echo "[+] =========================================="

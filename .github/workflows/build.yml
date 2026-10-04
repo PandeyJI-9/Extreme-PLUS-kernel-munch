@@ -1,4 +1,4 @@
-name: 🔥 EXTREME++ Build & Release
+name: "🚀 Build EXTREME++ Kernel (Dual Variant: 3.2GHz & 2.8GHz)"
 
 on:
   workflow_dispatch:
@@ -8,6 +8,15 @@ on:
         required: true
         type: boolean
         default: true
+      variant:
+        description: 'Target Prime Frequency Variant'
+        required: true
+        type: choice
+        options:
+          - both
+          - 3.2GHz
+          - 2.8GHz
+        default: both
 
 jobs:
   build:
@@ -15,7 +24,6 @@ jobs:
     runs-on: ubuntu-22.04
     permissions:
       contents: write
-    # 🔥 FIX 1: Increased timeout so GitHub doesn't silently cancel the workflow
     timeout-minutes: 180 
 
     steps:
@@ -24,7 +32,7 @@ jobs:
         run: |
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
             -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
-            -d text="🚀 <b>EXTREME++ Build Started!</b>%0A📱 Device: POCO F4 (munch)%0A⚙️ Root (RKSU): ${{ inputs.build_ksu }}" -d parse_mode="HTML" || true
+            -d text="🚀 <b>EXTREME++ Build Started!</b>%0A📱 Device: POCO F4 (munch)%0A⚙️ Root (RKSU): ${{ inputs.build_ksu }}%0A⚡ Variant: ${{ inputs.variant }}" -d parse_mode="HTML" || true
 
       - name: "📦 Checkout config repo"
         uses: actions/checkout@v4
@@ -66,30 +74,26 @@ jobs:
       - name: "🔨 Compile EXTREME++ Kernel"
         run: |
           cd kernel
-          if [ "${{ inputs.build_ksu }}" == "true" ]; then
-            ./build_kernel.sh munch ksu
+          TARGET_VAR="${{ inputs.variant }}"
+          [ -z "$TARGET_VAR" ] && TARGET_VAR="both"
+          if [ "${{ inputs.build_ksu }}" == "false" ]; then
+            ./build_kernel.sh munch noroot "$TARGET_VAR"
           else
-            ./build_kernel.sh munch
+            ./build_kernel.sh munch ksu "$TARGET_VAR"
           fi
           
-          # Fix path export for release
-          ZIP_FILE=$(find "$GITHUB_WORKSPACE" -maxdepth 3 -name "*munch_*.zip" | head -n 1)
-          if [ -n "$ZIP_FILE" ] && [ -f "$ZIP_FILE" ]; then
-            echo "ZIP_PATH=${ZIP_FILE}" >> $GITHUB_ENV
-            echo "✅ ZIP located: $ZIP_FILE"
-          else
-            echo "❌ ZIP NOT FOUND!"
-            exit 1
-          fi
+          echo "✅ Built ZIP files:"
+          ls -lh *munch*.zip
 
       - name: "🚀 Create GitHub Release"
         uses: softprops/action-gh-release@v2
         with:
-          files: ${{ env.ZIP_PATH }}
+          files: |
+            kernel/*munch*.zip
           tag_name: "Stable-testing-v1.1.2.${{ github.run_number }}"
-          name: "EXTREME++ Build #${{ github.run_number }}"
+          name: "EXTREME++ Build #${{ github.run_number }} (Dual Variant: 3.2GHz & 2.8GHz)"
           body: |
-            ## 🚀 EXTREME++ GAMING HyperOS Kernel
+            ## 🚀 EXTREME++ GAMING HyperOS Kernel (Dual Variant)
 
             ### 📱 Device & Build Information
             - **Device:** POCO F4 (munch / munch-in)
@@ -101,27 +105,25 @@ jobs:
 
             ---
 
-            - ⚡ **Governor Boot Safety & EXTREME+:**
-              - Bootloader & system boots safely on stock Qualcomm `schedutil` governor (`CONFIG_CPU_FREQ_DEFAULT_GOV_SCHEDUTIL=y`).
-              - `EXTREME+` custom governor compiled as native module (`CONFIG_CPU_FREQ_GOV_EXTREME_PLUS=y`) ready for activation via FKM / Kernel Managers.
-              - Zero-latency touch response (`up_rate_limit_us = 0`), anti-100% Prime choke spillover, and fast decay to idle.
-            - 🛡️ **CPU Voltage & Frequency Stability (PMIC Crash Fix):**
-              - 100% Stock Qualcomm CPU voltages and OPP tables preserved (reverted all -30mV offset and C-level caps).
-              - Eliminates early-boot PMIC panic and ensures 100% boot success.
-            - 🎮 **GPU Undervolt (UV) & Adreno Governor (Build #61 Verified):**
-              - FakeDreamer **10-Step OPP Table (150 MHz – 670 MHz)** applied across all speed bins in `kona-v2-gpu.dtsi`.
-              - 100% intact Qualcomm `msm-adreno-tz` TrustZone devfreq governor.
-              - Screen idle drops cleanly to 150MHz at lowest voltage level (1).
-            - 🎯 **Smart LMK "Sniper Method" & Multitasking:**
-              - ZRAM ZSTD with `vm.swappiness = 100`, `vfs_cache_pressure = 100`, `page-cluster = 0`.
-              - Whitelisted foreground games (BGMI, COD, PUBG), audio (Spotify, YT Music), and messaging (WhatsApp, Telegram) locked at `oom_score_adj = -900`.
-              - Memory pressure (>90%) strictly snipes background bloatware, analytics, telemetry, and system ads without killing user apps.
+            ### 🔥 Dual Variants Available in this Release
+            - 🚀 **`EXTREME++_HyperOS_munch_3.2GHz_*.zip`**: Stock uncapped 3.2 GHz Prime peak for maximum raw benchmark performance.
+            - ❄️ **`EXTREME++_HyperOS_munch_2.8GHz_*.zip`**: Prime core capped at 2.84 GHz via safe post-boot service (`policy7/scaling_max_freq = 2841600`) for zero thermal throttling and sustained cool gaming.
+
+            ---
+
+            ### ⚡ Real Kernel-Level Optimizations
+            - 🌐 **TCP BBR Congestion Control:** Native `CONFIG_TCP_CONG_BBR=y`, `CONFIG_DEFAULT_BBR=y`, and `CONFIG_NET_SCH_FQ=y` for ultra-low ping, zero bufferbloat, and instant bullet registration in BGMI/COD.
+            - ⚡ **Zero-Overhead Storage:** I/O stats accounting disabled on all block queues (`/sys/block/*/queue/iostats = 0`) to eliminate storage overhead and speed up game loading.
+            - 🛡️ **Debloated Kernel Logging:** Heavy debug options (`SCHEDSTATS`, `LOCKDEP`, `PROVE_LOCKING`, `DEBUG_KMEMLEAK`, `DEBUG_PREEMPT`) purged for lean, high-throughput context switching.
+            - ⚡ **Governor Boot Safety & EXTREME+:** Safe stock Qualcomm `schedutil` boot governor with `EXTREME+` custom governor compiled as native selectable module.
+            - 🎮 **GPU Undervolt (FakeDreamer 150MHz - 670MHz):** 100% verified working FakeDreamer table across all speed bins with native `msm-adreno-tz` TrustZone governor.
+            - 🎯 **Smart LMK "Sniper Method":** ZRAM ZSTD with whitelisted games/messaging/audio apps (`oom_score_adj = -900`) and surgical bloatware snipe on high memory pressure.
 
             ---
 
             ### 📦 Flashing Instructions
             1. Boot into custom recovery (TWRP / OrangeFox).
-            2. Flash the kernel ZIP (`split_boot` method preserves stock HyperOS ramdisk).
+            2. Flash your chosen kernel ZIP variant (3.2GHz for max speed, 2.8GHz for cool gaming).
             3. Reboot system and install **ReSukiSU / KernelSU Manager**.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -165,10 +167,10 @@ jobs:
         run: |
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
             -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
-            -d text="✅ <b>EXTREME++ Build #${{ github.run_number }} Completed!</b>%0A📥 Kernel is ready for testing." -d parse_mode="HTML" || true
-          if [ -n "${{ env.ZIP_PATH }}" ] && [ -f "${{ env.ZIP_PATH }}" ]; then
+            -d text="✅ <b>EXTREME++ Build #${{ github.run_number }} Completed!</b>%0A🔥 Dual Variants (3.2GHz & 2.8GHz) ready for testing." -d parse_mode="HTML" || true
+          for z in $(find "$GITHUB_WORKSPACE/kernel" -maxdepth 1 -name "*munch*.zip"); do
             curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendDocument" \
               -F chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
-              -F document=@"${{ env.ZIP_PATH }}" \
-              -F caption="📦 EXTREME++ Build #${{ github.run_number }} Flashable ZIP" || true
-          fi
+              -F document=@"$z" \
+              -F caption="📦 $(basename "$z")" || true
+          done

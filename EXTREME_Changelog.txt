@@ -5,6 +5,15 @@ Device codename: munch
 Target ROM: Xiaomi HyperOS
 Kernel maintainer: @pandey_ji_8
 
+==========04/10/2026 (Build #67)==========
+* feat(workflow): dual-variant packaging in single build run (3.2GHz Stock Peak & 2.8GHz Cool Gaming Peak)
+* feat(cpu): safe post-boot Prime core 2.84 GHz cap in 00-extreme-performance.sh for 2.8GHz variant (zero PMIC risk)
+* feat(net): native TCP BBR congestion control (CONFIG_TCP_CONG_BBR=y, CONFIG_DEFAULT_BBR=y, FQ packet pacing) for ultra-low gaming ping
+* feat(storage): disabled I/O stats & random entropy accounting across all block queues (/sys/block/*/queue/iostats = 0)
+* feat(sched): disabled SCHEDSTATS, TASK_IO_ACCOUNTING, and heavy debug checks for lean high-throughput gaming
+* fix(gov): 100% safe boot on stock schedutil with EXTREME+ governor selectable post-boot
+* fix(gpu): preserve 100% verified FakeDreamer 150MHz - 670MHz GPU undervolt & Qualcomm msm-adreno-tz governor
+
 ==========03/10/2026 (Build #66)==========
 * revert(cpu): 100% completely reverted C-level CPU undervolt (-30mV) in qcom-cpufreq-hw.c & EPSS LUTs (fixed PMIC early boot crash)
 * revert(cpu): removed 2.84 GHz C-code/DTS limit to preserve 100% stock Qualcomm CPU OPP table & voltage stability
