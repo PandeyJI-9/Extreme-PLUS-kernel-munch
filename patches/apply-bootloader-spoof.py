@@ -1,26 +1,27 @@
 import sys
 import os
-import re
 
-# Kernel Source Path
 kernel_src = sys.argv[1] if len(sys.argv) > 1 else "."
-
-# Target Files for Spoofing
 cmdline_file = os.path.join(kernel_src, "fs/proc/cmdline.c")
 
 print(f"🔍 Looking for cmdline.c at: {cmdline_file}")
 
-# ---------------------------------------------------------
-# 1. Patching /proc/cmdline (The String Spoof)
-# ---------------------------------------------------------
 if os.path.exists(cmdline_file):
     with open(cmdline_file, "r") as f:
         content = f.read()
 
-    if "#include <linux/slab.h>" not in content:
-        content = "#include <linux/slab.h>\n#include <linux/string.h>\n" + content
+    # Required headers for our hook
+    if "#include <linux/sched.h>" not in content:
+        content = "#include <linux/sched.h>\n#include <linux/slab.h>\n#include <linux/string.h>\n" + content
 
     spoof_block = """\t{
+\t\t/* 🚨 CRITICAL SAFETY GUARD: Do not spoof PID 1 (init/AVB) */
+\t\tif (current->pid == 1 || strcmp(current->comm, "init") == 0 || strcmp(current->comm, "ueventd") == 0) {
+\t\t\tseq_puts(m, saved_command_line);
+\t\t\tseq_putc(m, '\\n');
+\t\t\treturn 0;
+\t\t}
+
 \t\tchar *spoofed = kstrdup(saved_command_line, GFP_KERNEL);
 \t\tif (spoofed) {
 \t\t\tchar *p;
@@ -45,9 +46,8 @@ if os.path.exists(cmdline_file):
         patched_content = content.replace(target_needle, spoof_block, 1)
         with open(cmdline_file, "w") as f:
             f.write(patched_content)
-        print("✅ SUCCESS: cmdline.c successfully patched!")
+        print("✅ SUCCESS: cmdline.c successfully patched with PID-1 AVB Guard!")
     else:
         print("⚠️ WARNING: Target needle not found in cmdline.c.")
 else:
     print("❌ ERROR: fs/proc/cmdline.c not found!")
-
