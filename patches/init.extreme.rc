@@ -1,0 +1,72 @@
+# ═══════════════════════════════════════════════════════════════
+#  EXTREME++ PROJECT — Native Init & Schedtune Hardware Rules
+#  POCO F4 (munch / SM8250-AC Kona) | HyperOS & Android 13-17
+#  Zero Magisk Dependency | Native Ramdisk Injection
+# ═══════════════════════════════════════════════════════════════
+
+on early-init
+    # Disable I/O accounting stats overhead early in boot
+    write /sys/block/mmcblk0/queue/iostats 0
+    write /sys/block/sda/queue/iostats 0
+    write /sys/block/sdb/queue/iostats 0
+    write /sys/block/sdc/queue/iostats 0
+
+on init
+    # ── 1. Dynamic Task Weighting (Schedtune Baseline) ──
+    # Increase perceived load for top-app (games/active app) without locking frequencies
+    # Perceived load margin gives instant boost on render spike and instant decay on idle
+    write /dev/stune/top-app/schedtune.boost 18
+    write /dev/stune/top-app/schedtune.prefer_idle 1
+    write /dev/stune/foreground/schedtune.boost 5
+    write /dev/stune/foreground/schedtune.prefer_idle 0
+    write /dev/stune/background/schedtune.boost 0
+    write /dev/stune/background/schedtune.prefer_idle 0
+
+    # Uclamp support if ROM/upstream kernel utilizes cpuctl uclamp
+    write /dev/cpuctl/top-app/cpu.uclamp.min 15
+    write /dev/cpuctl/top-app/cpu.uclamp.latency_sensitive 1
+    write /dev/cpuctl/foreground/cpu.uclamp.min 0
+
+on boot
+    # ── 2. Aggressive WALT Migration (Zero Silver Choke) ──
+    # Silver -> Gold: Spill at 65% (prevents Little core saturation)
+    # Gold -> Prime: Spill at 85% (reserves Prime for heavy burst, keeps it cool)
+    # 15% hysteresis gap prevents migration ping-pong / jitter
+    write /proc/sys/kernel/sched_upmigrate "65 85"
+    write /proc/sys/kernel/sched_downmigrate "50 70"
+    write /proc/sys/kernel/sched_group_upmigrate 70
+    write /proc/sys/kernel/sched_group_downmigrate 55
+
+    # Zero latency ramp-up and 60ms decay window for schedutil
+    write /sys/devices/system/cpu/cpufreq/policy0/schedutil/up_rate_limit_us 0
+    write /sys/devices/system/cpu/cpufreq/policy0/schedutil/down_rate_limit_us 60000
+    write /sys/devices/system/cpu/cpufreq/policy4/schedutil/up_rate_limit_us 0
+    write /sys/devices/system/cpu/cpufreq/policy4/schedutil/down_rate_limit_us 60000
+    write /sys/devices/system/cpu/cpufreq/policy7/schedutil/up_rate_limit_us 0
+    write /sys/devices/system/cpu/cpufreq/policy7/schedutil/down_rate_limit_us 60000
+
+on property:sys.boot_completed=1
+    # ── 3. Post-Boot Final Enforcement (Survives ROM Resets) ──
+    write /proc/sys/kernel/sched_upmigrate "65 85"
+    write /proc/sys/kernel/sched_downmigrate "50 70"
+    write /proc/sys/kernel/sched_group_upmigrate 70
+    write /proc/sys/kernel/sched_group_downmigrate 55
+
+    write /dev/stune/top-app/schedtune.boost 18
+    write /dev/stune/top-app/schedtune.prefer_idle 1
+
+    # Network: TCP BBR Congestion Control & Low Latency
+    write /proc/sys/net/ipv4/tcp_congestion_control bbr
+    write /proc/sys/net/ipv4/tcp_low_latency 1
+    write /proc/sys/net/ipv4/tcp_tw_reuse 1
+    write /proc/sys/net/ipv4/tcp_fastopen 3
+
+    # VM & ZRAM optimization (ZSTD zero-stutter)
+    write /proc/sys/vm/swappiness 100
+    write /proc/sys/vm/vfs_cache_pressure 100
+    write /proc/sys/vm/dirty_ratio 20
+    write /proc/sys/vm/dirty_background_ratio 10
+    write /proc/sys/vm/page-cluster 0
+
+    # Ensure sconfig is set to 10 safely
+    write /sys/class/thermal/thermal_message/sconfig 10

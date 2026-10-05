@@ -453,6 +453,17 @@ NO_BLOCK_DISPLAY=1;
 ui_print " ";
 ui_print "  -> Flashing EXTREME++ Kernel (boot)...";
 dump_boot;
+
+# Inject native init.extreme.rc into boot ramdisk (Zero-Root Dependency)
+if [ -d "$ramdisk" ]; then
+    cp -f "$home/init.extreme.rc" "$ramdisk/init.extreme.rc" 2>/dev/null || true
+    for rc in "$ramdisk/init.target.rc" "$ramdisk/init.qcom.rc"; do
+        if [ -f "$rc" ] && ! grep -q "init.extreme.rc" "$rc"; then
+            echo "import /init.extreme.rc" >> "$rc"
+        fi
+    done
+fi
+
 write_boot;
 
 ui_print "  -> Flashing EXTREME++ Undervolted DTB (vendor_boot)...";
@@ -469,6 +480,20 @@ NO_BLOCK_DISPLAY=1;
 
 reset_ak;
 dump_boot;
+
+# Inject native init.extreme.rc into vendor_boot ramdisk (Native Android Init)
+if [ -d "$ramdisk" ]; then
+    cp -f "$home/init.extreme.rc" "$ramdisk/init.extreme.rc" 2>/dev/null || true
+    mkdir -p "$ramdisk/etc/init/hw" 2>/dev/null || true
+    cp -f "$home/init.extreme.rc" "$ramdisk/etc/init/hw/init.extreme.rc" 2>/dev/null || true
+    for rc in "$ramdisk/init.target.rc" "$ramdisk/init.qcom.rc" "$ramdisk/etc/init/hw/init.target.rc" "$ramdisk/etc/init/hw/init.qcom.rc"; do
+        if [ -f "$rc" ] && ! grep -q "init.extreme.rc" "$rc"; then
+            echo "import /init.extreme.rc" >> "$rc"
+            echo "import /etc/init/hw/init.extreme.rc" >> "$rc"
+        fi
+    done
+fi
+
 write_boot;
 
 ui_print "  -> Flashing EXTREME++ DTBO Partition...";
@@ -504,6 +529,12 @@ if [ -d /data/adb ]; then
 fi
 EOF
 
+# Copy native init.extreme.rc into anykernel for packaging
+if [ -f "init.extreme.rc" ]; then
+    cp -f init.extreme.rc anykernel/init.extreme.rc
+    echo "[+] Copied init.extreme.rc to anykernel/"
+fi
+
 cat > anykernel/00-extreme-performance.sh << 'EOF'
 #!/system/bin/sh
 # ═══════════════════════════════════════════════════════════════
@@ -520,12 +551,19 @@ done
 # Extra settling delay to ensure all critical system daemons have initialized
 sleep 15
 
-# ── 1. EAS Anti-100% Choke & Spillover Margins (WALT Migration) ──
-# Thresholds: Spill from Prime (core 7) to Gold (cores 4-6) at 75-80% load
-echo 75 80 > /proc/sys/kernel/sched_upmigrate 2>/dev/null
-echo 60 70 > /proc/sys/kernel/sched_downmigrate 2>/dev/null
-echo 75 > /proc/sys/kernel/sched_group_upmigrate 2>/dev/null
-echo 60 > /proc/sys/kernel/sched_group_downmigrate 2>/dev/null
+# ── 1. Dynamic Task Weighting (Schedtune Boost) & WALT Core Spillover ──
+# Dynamic Task Weighting: Boost perceived load for top-app on render burst, zero locking
+echo 18 > /dev/stune/top-app/schedtune.boost 2>/dev/null
+echo 1 > /dev/stune/top-app/schedtune.prefer_idle 2>/dev/null
+echo 15 > /dev/cpuctl/top-app/cpu.uclamp.min 2>/dev/null
+echo 1 > /dev/cpuctl/top-app/cpu.uclamp.latency_sensitive 2>/dev/null
+
+# Aggressive Core Spillover (Silver -> Gold at 65%, Gold -> Prime at 85%)
+# 15% hysteresis gap prevents migration ping-pong / jitter
+echo "65 85" > /proc/sys/kernel/sched_upmigrate 2>/dev/null
+echo "50 70" > /proc/sys/kernel/sched_downmigrate 2>/dev/null
+echo 70 > /proc/sys/kernel/sched_group_upmigrate 2>/dev/null
+echo 55 > /proc/sys/kernel/sched_group_downmigrate 2>/dev/null
 
 # ── 3. Smart Multitasking & ZRAM ZSTD Tuning (No App Kills) ──
 echo 100 > /proc/sys/vm/swappiness 2>/dev/null
