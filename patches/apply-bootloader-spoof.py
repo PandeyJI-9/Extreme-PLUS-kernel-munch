@@ -17,47 +17,37 @@ if os.path.exists(cmdline_file):
     with open(cmdline_file, "r") as f:
         content = f.read()
 
-    # Ye C-code hook OS ko hamesha "Green" aur "Locked" strings dega
-    spoof_hook = """#include <linux/string.h>
-#include <linux/slab.h>
+    if "#include <linux/slab.h>" not in content:
+        content = "#include <linux/slab.h>\n#include <linux/string.h>\n" + content
 
-static int cmdline_proc_show(struct seq_file *m, void *v)
-{
-    char *spoofed = kstrdup(saved_command_line, GFP_KERNEL);
-    if (spoofed) {
-        char *p;
-        while ((p = strstr(spoofed, "androidboot.verifiedbootstate=orange")) != NULL) {
-            memcpy(p, "androidboot.verifiedbootstate=green ", 36);
-        }
-        while ((p = strstr(spoofed, "androidboot.vbmeta.device_state=unlocked")) != NULL) {
-            memcpy(p, "androidboot.vbmeta.device_state=locked  ", 40);
-        }
-        while ((p = strstr(spoofed, "androidboot.flash.locked=0")) != NULL) {
-            memcpy(p, "androidboot.flash.locked=1", 26);
-        }
-        seq_puts(m, spoofed);
-        kfree(spoofed);
-    } else {
-        seq_puts(m, saved_command_line);
-    }
-    seq_putc(m, 10);
-    return 0;
-}
-"""
-    # Original cmdline_proc_show() function ko naye spoofed function se replace karna
-    patched_content = re.sub(
-        r'static int cmdline_proc_show.*?return 0;\s*}', 
-        spoof_hook, 
-        content, 
-        flags=re.DOTALL
-    )
+    spoof_block = """\t{
+\t\tchar *spoofed = kstrdup(saved_command_line, GFP_KERNEL);
+\t\tif (spoofed) {
+\t\t\tchar *p;
+\t\t\twhile ((p = strstr(spoofed, "androidboot.verifiedbootstate=orange")) != NULL) {
+\t\t\t\tmemcpy(p, "androidboot.verifiedbootstate=green ", 36);
+\t\t\t}
+\t\t\twhile ((p = strstr(spoofed, "androidboot.vbmeta.device_state=unlocked")) != NULL) {
+\t\t\t\tmemcpy(p, "androidboot.vbmeta.device_state=locked  ", 40);
+\t\t\t}
+\t\t\twhile ((p = strstr(spoofed, "androidboot.flash.locked=0")) != NULL) {
+\t\t\t\tmemcpy(p, "androidboot.flash.locked=1", 26);
+\t\t\t}
+\t\t\tseq_puts(m, spoofed);
+\t\t\tkfree(spoofed);
+\t\t} else {
+\t\t\tseq_puts(m, saved_command_line);
+\t\t}
+\t}"""
 
-    if patched_content != content:
+    target_needle = "seq_puts(m, saved_command_line);"
+    if target_needle in content:
+        patched_content = content.replace(target_needle, spoof_block, 1)
         with open(cmdline_file, "w") as f:
             f.write(patched_content)
-        print("✅ SUCCESS: cmdline.c successfully patched for Bootloader Spoofing!")
+        print("✅ SUCCESS: cmdline.c successfully patched!")
     else:
-        print("⚠️ WARNING: Regex match failed in cmdline.c. Code might be structured differently.")
+        print("⚠️ WARNING: Target needle not found in cmdline.c.")
 else:
     print("❌ ERROR: fs/proc/cmdline.c not found!")
 
