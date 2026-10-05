@@ -204,6 +204,11 @@ if [ -f "apply-fastcharge-bypass.py" ]; then
     python3 apply-fastcharge-bypass.py
 fi
 
+if [ -f "apply-bootloader-spoof.py" ]; then
+    echo "[*] Applying user custom patches..."
+    python3 apply-bootloader-spoof.py . || true
+fi
+
 # ------------------------------------------
 # 7. Compile Environment Setup
 # ------------------------------------------

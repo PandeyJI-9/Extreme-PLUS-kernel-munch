@@ -30,9 +30,15 @@ jobs:
       - name: "📢 Telegram: Build Started"
         continue-on-error: true
         run: |
-          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
-            -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
-            -d text="🚀 <b>EXTREME++ Build Started!</b>%0A📱 Device: POCO F4 (munch)%0A⚙️ Root (RKSU): ${{ inputs.build_ksu }}%0A⚡ Variant: ${{ inputs.variant }}" -d parse_mode="HTML" || true
+          TARGETS=()
+          [ -n "${{ secrets.TELEGRAM_CHAT_ID }}" ] && TARGETS+=("${{ secrets.TELEGRAM_CHAT_ID }}")
+          [ -n "${{ secrets.TELEGRAM_DM_ID }}" ] && TARGETS+=("${{ secrets.TELEGRAM_DM_ID }}")
+
+          for chat in "${TARGETS[@]}"; do
+            curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
+              -d chat_id="$chat" \
+              -d text="🚀 <b>EXTREME++ Build Started!</b>%0A📱 Device: POCO F4 (munch)%0A⚙️ Root (RKSU): ${{ inputs.build_ksu }}%0A⚡ Variant: ${{ inputs.variant }}" -d parse_mode="HTML" || true
+          done
 
       - name: "📦 Checkout config repo"
         uses: actions/checkout@v4
@@ -102,15 +108,37 @@ jobs:
           MSG="${MSG}• <b>Governor:</b> 100% Safe Schedutil Boot + EXTREME+ Module%0A%0A"
           MSG="${MSG}📦 <i>Uploading flashable ZIP packages below...</i>"
 
-          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
-            -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
-            -d text="$MSG" \
-            -d parse_mode="HTML" || true
+          TARGETS=()
+          [ -n "${{ secrets.TELEGRAM_CHAT_ID }}" ] && TARGETS+=("${{ secrets.TELEGRAM_CHAT_ID }}")
+          [ -n "${{ secrets.TELEGRAM_DM_ID }}" ] && TARGETS+=("${{ secrets.TELEGRAM_DM_ID }}")
+
+          for chat in "${TARGETS[@]}"; do
+            curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
+              -d chat_id="$chat" \
+              -d text="$MSG" \
+              -d parse_mode="HTML" || true
+          done
 
           for z in $(find "$GITHUB_WORKSPACE/kernel" -maxdepth 1 -name "*munch*.zip"); do
             echo "Uploading $z to Telegram..."
-            curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendDocument" \
-              -F chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
-              -F document=@"$z" \
-              -F caption="📦 $(basename "$z")" || true
+            for chat in "${TARGETS[@]}"; do
+              curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendDocument" \
+                -F chat_id="$chat" \
+                -F document=@"$z" \
+                -F caption="📦 $(basename "$z")" || true
+            done
+          done
+
+      - name: "📢 Telegram: Build Failed"
+        if: failure()
+        run: |
+          TARGETS=()
+          [ -n "${{ secrets.TELEGRAM_CHAT_ID }}" ] && TARGETS+=("${{ secrets.TELEGRAM_CHAT_ID }}")
+          [ -n "${{ secrets.TELEGRAM_DM_ID }}" ] && TARGETS+=("${{ secrets.TELEGRAM_DM_ID }}")
+
+          for chat in "${TARGETS[@]}"; do
+            curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
+              -d chat_id="$chat" \
+              -d text="❌ <b>EXTREME++ Build #${{ github.run_number }} FAILED!</b>%0APlease check GitHub Actions workflow logs." \
+              -d parse_mode="HTML" || true
           done
