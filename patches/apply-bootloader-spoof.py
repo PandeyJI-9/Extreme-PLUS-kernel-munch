@@ -18,8 +18,7 @@ if os.path.exists(cmdline_file):
         content = f.read()
 
     # Ye C-code hook OS ko hamesha "Green" aur "Locked" strings dega
-    spoof_hook = """
-#include <linux/string.h>
+    spoof_hook = """#include <linux/string.h>
 #include <linux/slab.h>
 
 static int cmdline_proc_show(struct seq_file *m, void *v)
@@ -27,30 +26,27 @@ static int cmdline_proc_show(struct seq_file *m, void *v)
     char *spoofed = kstrdup(saved_command_line, GFP_KERNEL);
     if (spoofed) {
         char *p;
-        /* Spoof Bootloader State to Green (Locked) */
         while ((p = strstr(spoofed, "androidboot.verifiedbootstate=orange")) != NULL) {
-            strncpy(p, "androidboot.verifiedbootstate=green ", 38);
+            memcpy(p, "androidboot.verifiedbootstate=green ", 36);
         }
-        /* Spoof Device State to Locked */
         while ((p = strstr(spoofed, "androidboot.vbmeta.device_state=unlocked")) != NULL) {
-            strncpy(p, "androidboot.vbmeta.device_state=locked  ", 42);
+            memcpy(p, "androidboot.vbmeta.device_state=locked  ", 40);
         }
-        /* Spoof Flash State to Locked */
         while ((p = strstr(spoofed, "androidboot.flash.locked=0")) != NULL) {
-            strncpy(p, "androidboot.flash.locked=1", 26);
+            memcpy(p, "androidboot.flash.locked=1", 26);
         }
         seq_puts(m, spoofed);
         kfree(spoofed);
     } else {
         seq_puts(m, saved_command_line);
     }
-    seq_putc(m, '\\n');
+    seq_putc(m, 10);
     return 0;
 }
 """
     # Original cmdline_proc_show() function ko naye spoofed function se replace karna
     patched_content = re.sub(
-        r'static int cmdline_proc_show.*?return 0;\n}', 
+        r'static int cmdline_proc_show.*?return 0;\s*}', 
         spoof_hook, 
         content, 
         flags=re.DOTALL
