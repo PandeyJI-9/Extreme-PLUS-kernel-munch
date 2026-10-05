@@ -97,6 +97,12 @@ if [ "$ENABLE_KSU" -eq 1 ]; then
     # Pin to tested stable release tag v4.2.0-rc3 to avoid moving upstream breaking renames & IOCTL mismatches
     curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash -s -- v4.2.0-rc3
 
+    # Force KSU_SUSFS as default choice in drivers/kernelsu/Kconfig (Prevents Non-GKI TP hook fallback)
+    if [ -f "drivers/kernelsu/Kconfig" ]; then
+        sed -i 's/default KSU_TRACEPOINT_HOOK/default KSU_SUSFS/' drivers/kernelsu/Kconfig
+        echo "[+] Default hook set to KSU_SUSFS in drivers/kernelsu/Kconfig"
+    fi
+
     # Multi-Manager Support & Universal Fallback Key Injection
     # Guarantees that ReSukiSU, Official KernelSU, SukiSU-Ultra, and BakaSU Manager apps
     # are 100% recognized as manager without "Failed to update App Profile" permission errors.
@@ -257,6 +263,7 @@ make -j"${TOTAL_CORES}" "${MAKE_OPTS[@]}" "${DEFCONFIG}"
 # 8. Full HyperOS / MIUI Config Injection (AstideLabs standard) & Performance Tunables
 # ------------------------------------------
 echo "[*] Injecting Full HyperOS / MIUI Subsystem Configs..."
+
 # 🚀 Restore Adreno TrustZone GPU Devfreq Governor & Bus Monitor
 scripts/config --file "${OUT_DIR}/.config" \
     -e PM_DEVFREQ \
@@ -292,8 +299,9 @@ scripts/config --file "${OUT_DIR}/.config" \
 # 🚀 Custom EXTREME+ Governor (Zero Latency & Anti-Choke)
 scripts/config --file "${OUT_DIR}/.config" \
     -e CPU_FREQ_GOV_EXTREME_PLUS \
-    -e CPU_FREQ_DEFAULT_GOV_EXTREME_PLUS \
-    --set-str CPU_FREQ_DEFAULT_GOV "extreme_plus"
+    -d CPU_FREQ_DEFAULT_GOV_EXTREME_PLUS \
+    -e CPU_FREQ_DEFAULT_GOV_SCHEDUTIL \
+    --set-str CPU_FREQ_DEFAULT_GOV "schedutil"
 
 # Native source patches for VM & Schedutil tunables
 if [ -f "kernel/sched/cpufreq_schedutil.c" ]; then
@@ -313,32 +321,7 @@ if [ -f "fs/dcache.c" ]; then
     echo "[+] Optimized sysctl_vfs_cache_pressure to 100 in fs/dcache.c"
 fi
 
-if [ "$ENABLE_KSU" -eq 1 ]; then
-    echo "[*] Injecting Full ReSukiSU + SuSFS v2.3.0 Configuration into .config..."
-    scripts/config --file "${OUT_DIR}/.config" \
-        -e KSU \
-        -e KSU_SUSFS \
-        -d KSU_TRACEPOINT_HOOK \
-        -d KSU_MANUAL_HOOK \
-        -e KSU_MULTI_MANAGER_SUPPORT \
-        -e THREAD_INFO_IN_TASK \
-        -e KSU_SUSFS_SUS_PATH \
-        -e KSU_SUSFS_SUS_MOUNT \
-        -e KSU_SUSFS_SUS_KSTAT \
-        -e KSU_SUSFS_SPOOF_UNAME \
-        -e KSU_SUSFS_ENABLE_LOG \
-        -e KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS \
-        -e KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG \
-        -e KSU_SUSFS_OPEN_REDIRECT \
-        -e KSU_SUSFS_SUS_MAP \
-        -d KSU_DISABLE_MANAGER \
-        -d KSU_DISABLE_POLICY
-else
-    scripts/config --file "${OUT_DIR}/.config" \
-        -d KSU \
-        -d KSU_SUSFS
-fi
-
+# 🚀 Full Xiaomi HyperOS / MIUI Kernel Subsystems
 scripts/config --file "${OUT_DIR}/.config" \
     --set-str STATIC_USERMODEHELPER_PATH /system/bin/micd \
     -e PERF_CRITICAL_RT_TASK \
@@ -374,55 +357,7 @@ scripts/config --file "${OUT_DIR}/.config" \
     -d REKERNEL_NETWORK \
     -d LTO_CLANG_THIN -d CFI_CLANG
 
-make -j"${TOTAL_CORES}" "${MAKE_OPTS[@]}" olddefconfig
-
-# Ensure GPU Devfreq Governor, ZRAM ZSTD, Schedutil, and KSU survive olddefconfig
-scripts/config --file "${OUT_DIR}/.config" \
-    -e PM_DEVFREQ \
-    -e DEVFREQ_GOV_QCOM_ADRENO_TZ \
-    -e DEVFREQ_GOV_QCOM_GPUBW_MON \
-    -e QCOM_KGSL \
-    --set-str QCOM_ADRENO_DEFAULT_GOVERNOR "msm-adreno-tz"
-
-if ! grep -q "CONFIG_DEVFREQ_GOV_QCOM_ADRENO_TZ=y" "${OUT_DIR}/.config"; then
-    echo "CONFIG_DEVFREQ_GOV_QCOM_ADRENO_TZ=y" >> "${OUT_DIR}/.config"
-fi
-if ! grep -q "CONFIG_DEVFREQ_GOV_QCOM_GPUBW_MON=y" "${OUT_DIR}/.config"; then
-    echo "CONFIG_DEVFREQ_GOV_QCOM_GPUBW_MON=y" >> "${OUT_DIR}/.config"
-fi
-scripts/config --file "${OUT_DIR}/.config" \
-    -e ZRAM \
-    -e CRYPTO_ZSTD \
-    -e ZSTD_COMPRESS \
-    -e ZSTD_DECOMPRESS \
-    -e ZRAM_DEF_COMP_ZSTD \
-    -d ZRAM_DEF_COMP_LZ4 \
-    --set-str ZRAM_DEF_COMP "zstd" \
-    -e CPU_FREQ_GOV_SCHEDUTIL \
-    --set-val SCHEDUTIL_UP_RATE_LIMIT 0 \
-    -e CPU_FREQ_GOV_EXTREME_PLUS \
-    -d CPU_FREQ_DEFAULT_GOV_EXTREME_PLUS \
-    -e CPU_FREQ_DEFAULT_GOV_SCHEDUTIL \
-    --set-str CPU_FREQ_DEFAULT_GOV "schedutil"
-
-if ! grep -q "CONFIG_CPU_FREQ_GOV_EXTREME_PLUS=y" "${OUT_DIR}/.config"; then
-    echo "CONFIG_CPU_FREQ_GOV_EXTREME_PLUS=y" >> "${OUT_DIR}/.config"
-fi
-if ! grep -q "CONFIG_CPU_FREQ_DEFAULT_GOV_SCHEDUTIL=y" "${OUT_DIR}/.config"; then
-    echo "CONFIG_CPU_FREQ_DEFAULT_GOV_SCHEDUTIL=y" >> "${OUT_DIR}/.config"
-fi
-sed -i '/CONFIG_CPU_FREQ_DEFAULT_GOV_EXTREME_PLUS/d' "${OUT_DIR}/.config"
-
-if [ "$ENABLE_KSU" -eq 1 ]; then
-    scripts/config --file "${OUT_DIR}/.config" \
-        -e KSU \
-        -e KSU_SUSFS \
-        -d KSU_TRACEPOINT_HOOK \
-        -e KSU_MULTI_MANAGER_SUPPORT \
-        -e THREAD_INFO_IN_TASK
-fi
-
-# TCP BBR Congestion Control & Lightweight Gaming Tunables (Disable I/O Stats & Debugging)
+# 🚀 TCP BBR Congestion Control & Lightweight Gaming Tunables (Disable I/O Stats & Debugging)
 scripts/config --file "${OUT_DIR}/.config" \
     -e TCP_CONG_BBR \
     -e DEFAULT_BBR \
@@ -438,15 +373,39 @@ scripts/config --file "${OUT_DIR}/.config" \
     -d DEBUG_KMEMLEAK \
     -d DEBUG_PREEMPT
 
-if ! grep -q "CONFIG_TCP_CONG_BBR=y" "${OUT_DIR}/.config"; then
-    echo "CONFIG_TCP_CONG_BBR=y" >> "${OUT_DIR}/.config"
-fi
-if ! grep -q "CONFIG_DEFAULT_BBR=y" "${OUT_DIR}/.config"; then
-    echo "CONFIG_DEFAULT_BBR=y" >> "${OUT_DIR}/.config"
+# 🚀 Root Configuration: ReSukiSU + SuSFS v2.3.0 vs Pure Clean Base
+if [ "$ENABLE_KSU" -eq 1 ]; then
+    echo "[*] Injecting Full ReSukiSU + SuSFS v2.3.0 Configuration into .config..."
+    scripts/config --file "${OUT_DIR}/.config" \
+        -e KSU \
+        -e KSU_SUSFS \
+        -d KSU_TRACEPOINT_HOOK \
+        -d KSU_MANUAL_HOOK \
+        -e KSU_MULTI_MANAGER_SUPPORT \
+        -e THREAD_INFO_IN_TASK \
+        -e KSU_SUSFS_SUS_PATH \
+        -e KSU_SUSFS_SUS_MOUNT \
+        -e KSU_SUSFS_SUS_KSTAT \
+        -e KSU_SUSFS_SPOOF_UNAME \
+        -e KSU_SUSFS_ENABLE_LOG \
+        -e KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS \
+        -e KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG \
+        -e KSU_SUSFS_OPEN_REDIRECT \
+        -e KSU_SUSFS_SUS_MAP \
+        -d KSU_DISABLE_MANAGER \
+        -d KSU_DISABLE_POLICY
+else
+    echo "[*] Disabling embedded KSU for Pure Clean Kernel..."
+    scripts/config --file "${OUT_DIR}/.config" \
+        -d KSU \
+        -d KSU_SUSFS \
+        -d KSU_TRACEPOINT_HOOK \
+        -d KSU_MANUAL_HOOK
+    sed -i '/CONFIG_KSU/d' "${OUT_DIR}/.config" 2>/dev/null || true
 fi
 
-# Clean base: Ensure CONFIG_KSU is cleanly absent
-sed -i '/CONFIG_KSU/d' "${OUT_DIR}/.config" 2>/dev/null || true
+echo "[*] Synchronizing final kernel config with olddefconfig..."
+make -j"${TOTAL_CORES}" "${MAKE_OPTS[@]}" olddefconfig
 
 # ------------------------------------------
 # 9. Build Kernel Image & DTBs
