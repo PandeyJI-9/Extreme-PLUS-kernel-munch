@@ -16,10 +16,7 @@ fi
 DEVICE_NAME="$1"
 DEFCONFIG="${DEVICE_NAME}_defconfig"
 ENABLE_KSU=0
-
-if [ "$2" == "ksu" ]; then
-    ENABLE_KSU=1
-fi
+# Clean Kernel Standard (Option 1): Zero forced root injection
 
 KERNEL_DIR="$(pwd)"
 OUT_DIR="${KERNEL_DIR}/out"
@@ -90,18 +87,11 @@ if ! grep -q "selinux,baseband_guard" security/Kconfig; then
 fi
 
 # ------------------------------------------
-# 3. KernelSU (ReSukiSU Non-GKI 4.19 with SuSFS) Setup
+# 3. Clean Kernel Architecture (Zero Embedded Root / 100% Pure VFS)
 # ------------------------------------------
-if [ "$ENABLE_KSU" -eq 1 ]; then
-    echo "[*] Injecting ReSukiSU (Non-GKI 4.19 Legacy with SuSFS) Source..."
-    curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash
-    
-    # Ensure defconfig has KSU, SuSFS, and THREAD_INFO_IN_TASK
-    echo "CONFIG_KSU=y" >> "arch/arm64/configs/${DEFCONFIG}"
-    echo "CONFIG_KSU_SUSFS=y" >> "arch/arm64/configs/${DEFCONFIG}"
-    echo "CONFIG_THREAD_INFO_IN_TASK=y" >> "arch/arm64/configs/${DEFCONFIG}"
-    echo "[+] ReSukiSU Non-GKI setup finished."
-fi
+echo "[*] Ensuring Pure Clean Kernel Base (Zero embedded root hooks)..."
+sed -i '/CONFIG_KSU/d' "arch/arm64/configs/${DEFCONFIG}" 2>/dev/null || true
+
 
 # ------------------------------------------
 # 4. 100% Pure FakeDreamer Adreno 650 Undervolt & Frequency Table
@@ -270,10 +260,8 @@ if [ -f "fs/dcache.c" ]; then
     echo "[+] Optimized sysctl_vfs_cache_pressure to 100 in fs/dcache.c"
 fi
 
-if [ "$ENABLE_KSU" -eq 1 ]; then
-    scripts/config --file "${OUT_DIR}/.config" -e KPROBES -e HAVE_KPROBES -e KPROBE_EVENTS
-    scripts/config --file "${OUT_DIR}/.config" -e KSU -e THREAD_INFO_IN_TASK -e KSU_SUSFS
-fi
+# Ensure clean configuration without embedded KSU
+scripts/config --file "${OUT_DIR}/.config" -d KSU -d KSU_SUSFS
 
 scripts/config --file "${OUT_DIR}/.config" \
     --set-str STATIC_USERMODEHELPER_PATH /system/bin/micd \
@@ -372,19 +360,8 @@ if ! grep -q "CONFIG_DEFAULT_BBR=y" "${OUT_DIR}/.config"; then
     echo "CONFIG_DEFAULT_BBR=y" >> "${OUT_DIR}/.config"
 fi
 
-# 🔥 THE ULTIMATE KSU FIX: Ensuring CONFIG_KSU survives olddefconfig
-if [ "$ENABLE_KSU" -eq 1 ]; then
-    if ! grep -q "CONFIG_KSU=y" "${OUT_DIR}/.config"; then
-        echo "[!] CONFIG_KSU was dropped by olddefconfig! Forcing it back into .config..."
-        echo "CONFIG_KSU=y" >> "${OUT_DIR}/.config"
-    fi
-    if ! grep -q "CONFIG_KSU_SUSFS=y" "${OUT_DIR}/.config"; then
-        echo "CONFIG_KSU_SUSFS=y" >> "${OUT_DIR}/.config"
-    fi
-    if ! grep -q "CONFIG_THREAD_INFO_IN_TASK=y" "${OUT_DIR}/.config"; then
-        echo "CONFIG_THREAD_INFO_IN_TASK=y" >> "${OUT_DIR}/.config"
-    fi
-fi
+# Clean base: Ensure CONFIG_KSU is cleanly absent
+sed -i '/CONFIG_KSU/d' "${OUT_DIR}/.config" 2>/dev/null || true
 
 # ------------------------------------------
 # 9. Build Kernel Image & DTBs
@@ -679,14 +656,13 @@ echo "[*] Packaging EXTREME++ Dual Variants (3.2GHz & 2.8GHz)..."
 cd anykernel
 rm -rf .git
 
-KSU_TAG="NoRoot"
-[ "$ENABLE_KSU" -eq 1 ] && KSU_TAG="ReSukiSU"
+BUILD_TAG="Clean"
 DATE_TAG="$(date +'%d%b%Y_%H%M')"
 
 TARGET_VARIANT="${3:-both}"
 
 if [ "$TARGET_VARIANT" == "both" ] || [ "$TARGET_VARIANT" == "3.2GHz" ] || [ "$TARGET_VARIANT" == "3.2ghz" ]; then
-    ZIP_32="EXTREME++_HyperOS_munch_3.2GHz_${KSU_TAG}_${DATE_TAG}.zip"
+    ZIP_32="EXTREME++_HyperOS_munch_3.2GHz_${BUILD_TAG}_${DATE_TAG}.zip"
     zip -r9 "../${ZIP_32}" ./* -x .gitignore out/ ./*.zip > /dev/null
     echo "[+] =========================================="
     echo "[+] SUCCESS! 3.2GHz Stock Peak Variant ready: ${ZIP_32}"
@@ -694,7 +670,7 @@ if [ "$TARGET_VARIANT" == "both" ] || [ "$TARGET_VARIANT" == "3.2GHz" ] || [ "$T
 fi
 
 if [ "$TARGET_VARIANT" == "both" ] || [ "$TARGET_VARIANT" == "2.8GHz" ] || [ "$TARGET_VARIANT" == "2.8ghz" ]; then
-    ZIP_28="EXTREME++_HyperOS_munch_2.8GHz_${KSU_TAG}_${DATE_TAG}.zip"
+    ZIP_28="EXTREME++_HyperOS_munch_2.8GHz_${BUILD_TAG}_${DATE_TAG}.zip"
     if [ "$TARGET_VARIANT" == "both" ]; then
         echo "[*] Compiling genuine C-level 2.84 GHz Prime Cap Kernel Image..."
         cd ..

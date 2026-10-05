@@ -3,11 +3,6 @@ name: "🚀 Build EXTREME++ Kernel (Dual Variant: 3.2GHz & 2.8GHz)"
 on:
   workflow_dispatch:
     inputs:
-      build_ksu:
-        description: 'Build with Root (RKSU)?'
-        required: true
-        type: boolean
-        default: true
       variant:
         description: 'Target Prime Frequency Variant'
         required: true
@@ -37,7 +32,7 @@ jobs:
           for chat in "${TARGETS[@]}"; do
             curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
               -d chat_id="$chat" \
-              -d text="🚀 <b>EXTREME++ Build Started!</b>%0A📱 Device: POCO F4 (munch)%0A⚙️ Root (RKSU): ${{ inputs.build_ksu }}%0A⚡ Variant: ${{ inputs.variant }}" -d parse_mode="HTML" || true
+              -d text="🚀 <b>EXTREME++ Build Started!</b>%0A📱 Device: POCO F4 (munch)%0A🛡️ Architecture: 100% Pure Clean Base%0A⚡ Variant: ${{ inputs.variant }}" -d parse_mode="HTML" || true
           done
 
       - name: "📦 Checkout config repo"
@@ -82,11 +77,7 @@ jobs:
           cd kernel
           TARGET_VAR="${{ inputs.variant }}"
           [ -z "$TARGET_VAR" ] && TARGET_VAR="both"
-          if [ "${{ inputs.build_ksu }}" == "false" ]; then
-            ./build_kernel.sh munch noroot "$TARGET_VAR"
-          else
-            ./build_kernel.sh munch ksu "$TARGET_VAR"
-          fi
+          ./build_kernel.sh munch clean "$TARGET_VAR"
           
           echo "✅ Built ZIP files:"
           ls -lh *munch*.zip
@@ -98,7 +89,7 @@ jobs:
           MSG="${MSG}📱 <b>Device:</b> POCO F4 (munch)%0A"
           MSG="${MSG}⚡ <b>Target ROM:</b> HyperOS / MIUI Android 13–17%0A"
           MSG="${MSG}🛠️ <b>Toolchain:</b> ZyC-Clang 16.0.6 + LLD%0A"
-          MSG="${MSG}🛡️ <b>Root:</b> ReSukiSU Non-GKI 4.19 + SuSFS%0A%0A"
+          MSG="${MSG}🛡️ <b>Root:</b> 100% Pure Clean Base (APatch, Magisk & KSU Ready)%0A%0A"
           MSG="${MSG}✨ <b>Key Features:</b>%0A"
           MSG="${MSG}• <b>Dual Variants:</b> 3.2GHz Benchmark & 2.8GHz Cool Gaming%0A"
           MSG="${MSG}• <b>Network:</b> TCP BBR Congestion Control (Low Ping in BGMI/COD)%0A"

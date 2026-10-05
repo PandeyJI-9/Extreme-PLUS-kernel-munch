@@ -15,10 +15,9 @@ echo "━━━ [3/5] Patching EAS Energy Model ━━━"
 python3 "${SCRIPT_DIR}/apply-eas-tuning.py" "${KERNEL_SRC}/arch/arm64/boot/dts/vendor/qcom/kona.dtsi" || echo "⚠️ EAS Script issue, continuing build..."
 echo ""
 
-echo "━━━ [4/5] Forcing EXTREME++ Name & ROOT (SukiSU) in ALL munch configs ━━━"
-# Dev script jo bhi config use kare, hum sabme Root ghusa denge!
+echo "━━━ [4/5] Setting EXTREME++ Kernel Name & Pure Clean Base in ALL munch configs ━━━"
 find "${KERNEL_SRC}/arch/arm64/configs" "${KERNEL_SRC}/arch/arm64/configs/vendor" -type f -name "*munch*" 2>/dev/null | while read -r DEFCONFIG; do
-  echo "💉 Injecting into: $DEFCONFIG"
+  echo "💉 Setting name in: $DEFCONFIG"
 
   # Set Kernel Name
   if grep -q "CONFIG_LOCALVERSION=" "$DEFCONFIG"; then
@@ -27,12 +26,10 @@ find "${KERNEL_SRC}/arch/arm64/configs" "${KERNEL_SRC}/arch/arm64/configs/vendor
     echo 'CONFIG_LOCALVERSION="-EXTREME++HyperOS"' >> "$DEFCONFIG"
   fi
 
-  # Force SukiSU Root
-  sed -i '/CONFIG_KSU/d' "$DEFCONFIG" || true
-  echo "CONFIG_KSU=y" >> "$DEFCONFIG"
-  echo "CONFIG_KSU_SUSFS=y" >> "$DEFCONFIG"
+  # Ensure clean kernel base (No broken embedded KSU drivers)
+  sed -i '/CONFIG_KSU/d' "$DEFCONFIG" 2>/dev/null || true
 done
-echo "✅ Kernel name & Root forced successfully!"
+echo "✅ Kernel name set & pure clean base configured!"
 echo ""
 
 echo "━━━ [5/5] Patching Kernel for Bootloader Spoofing (Play Integrity) ━━━"
