@@ -25,11 +25,8 @@ find "${KERNEL_SRC}/arch/arm64/configs" "${KERNEL_SRC}/arch/arm64/configs/vendor
   else
     echo 'CONFIG_LOCALVERSION="-EXTREME++HyperOS"' >> "$DEFCONFIG"
   fi
-
-  # Ensure clean kernel base (No broken embedded KSU drivers)
-  sed -i '/CONFIG_KSU/d' "$DEFCONFIG" 2>/dev/null || true
 done
-echo "✅ Kernel name set & pure clean base configured!"
+echo "✅ Kernel name set in all munch defconfigs!"
 echo ""
 
 echo "━━━ [5/5] Patching Kernel for Bootloader Spoofing (Play Integrity) ━━━"
