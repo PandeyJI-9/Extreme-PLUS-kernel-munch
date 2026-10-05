@@ -175,26 +175,9 @@ else:
 '
 
 ## ------------------------------------------
-# 5. HyperOS Display DTS Patches
+# 5. Display Panel DTS Configuration (100% Stock AstideLabs Preserved)
 # ------------------------------------------
-DTS_SOURCE="arch/arm64/boot/dts/vendor/qcom"
-echo "[*] Applying HyperOS / MIUI Display & Panel DTS patches..."
-sed -i 's/<154>/<1537>/g' ${DTS_SOURCE}/dsi-panel-j1s* 2>/dev/null || true
-sed -i 's/<154>/<1537>/g' ${DTS_SOURCE}/dsi-panel-j2* 2>/dev/null || true
-sed -i 's/<155>/<1544>/g' ${DTS_SOURCE}/dsi-panel-j3s-37-02-0a-dsc-video.dtsi 2>/dev/null || true
-sed -i 's/<155>/<1545>/g' ${DTS_SOURCE}/dsi-panel-j11-38-08-0a-fhd-cmd.dtsi 2>/dev/null || true
-sed -i 's/<155>/<1546>/g' ${DTS_SOURCE}/dsi-panel-k11a-38-08-0a-dsc-cmd.dtsi 2>/dev/null || true
-sed -i 's/<155>/<1546>/g' ${DTS_SOURCE}/dsi-panel-l11r-38-08-0a-dsc-cmd.dtsi 2>/dev/null || true
-sed -i 's/<70>/<695>/g' ${DTS_SOURCE}/dsi-panel-j11-38-08-0a-fhd-cmd.dtsi 2>/dev/null || true
-sed -i 's/<70>/<695>/g' ${DTS_SOURCE}/dsi-panel-j3s-37-02-0a-dsc-video.dtsi 2>/dev/null || true
-sed -i 's/<70>/<695>/g' ${DTS_SOURCE}/dsi-panel-k11a-38-08-0a-dsc-cmd.dtsi 2>/dev/null || true
-sed -i 's/<70>/<695>/g' ${DTS_SOURCE}/dsi-panel-l11r-38-08-0a-dsc-cmd.dtsi 2>/dev/null || true
-sed -i 's/<71>/<710>/g' ${DTS_SOURCE}/dsi-panel-j1s* 2>/dev/null || true
-sed -i 's/<71>/<710>/g' ${DTS_SOURCE}/dsi-panel-j2* 2>/dev/null || true
-sed -i 's/120 90 60/120 90 60 50 30/g' ${DTS_SOURCE}/dsi-panel-g7a-36-02-0c-dsc-video.dtsi 2>/dev/null || true
-sed -i 's/120 90 60/120 90 60 50 30/g' ${DTS_SOURCE}/dsi-panel-g7a-37-02-0a-dsc-video.dtsi 2>/dev/null || true
-sed -i 's/120 90 60/120 90 60 50 30/g' ${DTS_SOURCE}/dsi-panel-g7a-37-02-0b-dsc-video.dtsi 2>/dev/null || true
-sed -i 's/144 120 90 60/144 120 90 60 50 48 30/g' ${DTS_SOURCE}/dsi-panel-j3s-37-02-0a-dsc-video.dtsi 2>/dev/null || true
+echo "[*] Preserving 100% Native AstideLabs Display & Panel DTS (prevents black screen)..."
 
 # ------------------------------------------
 # 6. 67W Fast Charging & True Bypass Charging (SenseiiX fusionX_sm8250 tested)
@@ -500,26 +483,7 @@ if [ -d "$ramdisk" ]; then
 fi
 
 write_boot;
-
-ui_print "  -> Flashing EXTREME++ DTBO Partition...";
-flash_generic dtbo;
-
-# Direct block flashing fallback for dtbo and dtb (all slot nodes)
-if [ -f dtbo.img ]; then
-    for dtbo_node in /dev/block/bootdevice/by-name/dtbo /dev/block/bootdevice/by-name/dtbo_a /dev/block/bootdevice/by-name/dtbo_b /dev/block/by-name/dtbo /dev/block/by-name/dtbo_a /dev/block/by-name/dtbo_b; do
-        if [ -b "$dtbo_node" ]; then
-            dd if=dtbo.img of="$dtbo_node" bs=4096 2>/dev/null || true
-        fi
-    done
-fi
-
-if [ -f dtb ]; then
-    for dtb_node in /dev/block/bootdevice/by-name/dtb /dev/block/bootdevice/by-name/dtb_a /dev/block/bootdevice/by-name/dtb_b /dev/block/by-name/dtb /dev/block/by-name/dtb_a /dev/block/by-name/dtb_b; do
-        if [ -b "$dtb_node" ]; then
-            dd if=dtb of="$dtb_node" bs=4096 2>/dev/null || true
-        fi
-    done
-fi
+# NOTE: Stock DTBO partition is preserved 100% untouched to ensure OEM display panel calibrations & recovery work flawlessly!
 
 # Install post-boot optimization script into /data/adb/service.d for KSU/ReSukiSU/Magisk
 if [ ! -d /data/adb/service.d ]; then
@@ -704,24 +668,9 @@ else
     echo "[+] Concatenated all compiled DTBs into anykernel/dtb"
 fi
 
-# DTBO packaging
-if [ -f "${OUT_DIR}/arch/arm64/boot/dtbo.img" ]; then
-    cp "${OUT_DIR}/arch/arm64/boot/dtbo.img" anykernel/
-    echo "[+] DTBO Image copied directly."
-else
-    if [ ! -f "scripts/dtc/libfdt/mkdtboimg.py" ]; then
-        mkdir -p scripts/dtc/libfdt/
-        curl -sL -o scripts/dtc/libfdt/mkdtboimg.py https://raw.githubusercontent.com/LineageOS/android_system_libufdt/lineage-19.1/utils/src/mkdtboimg.py
-    fi
-    count=$(ls -1 ${OUT_DIR}/arch/arm64/boot/dts/vendor/qcom/*.dtbo 2>/dev/null | wc -l || echo "0")
-    if [ "$count" != "0" ]; then
-        python3 scripts/dtc/libfdt/mkdtboimg.py create anykernel/dtbo.img --page_size=4096 ${OUT_DIR}/arch/arm64/boot/dts/vendor/qcom/*.dtbo
-        echo "[+] DTBO packed successfully from DTBO fragments."
-    else
-        echo "❌ [ERROR] No .dtbo fragments found!"
-        exit 1
-    fi
-fi
+# DTBO is intentionally omitted from anykernel packaging:
+# POCO F4 (munch) requires stock OEM DTBO partition for hardware panel calibration & recovery display.
+echo "[*] Skipping DTBO packaging (Stock DTBO on device will be preserved)..."
 
 # ------------------------------------------
 # 12. Final Zip Creation (Dual Variants: 3.2GHz Stock & 2.8GHz Cool Peak)

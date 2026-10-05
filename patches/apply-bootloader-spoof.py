@@ -10,11 +10,16 @@ if os.path.exists(cmdline_file):
     with open(cmdline_file, "r") as f:
         content = f.read()
 
+    if "/* 🚨 CRITICAL SAFETY GUARD: Do not spoof PID 1" in content:
+        print("ℹ️ cmdline.c already patched with PID-1 AVB Guard.")
+        sys.exit(0)
+
     # Required headers for our hook
     if "#include <linux/sched.h>" not in content:
         content = "#include <linux/sched.h>\n#include <linux/slab.h>\n#include <linux/string.h>\n" + content
 
     spoof_block = """\t{
+\t\tchar *spoofed;
 \t\t/* 🚨 CRITICAL SAFETY GUARD: Do not spoof PID 1 (init/AVB) */
 \t\tif (current->pid == 1 || strcmp(current->comm, "init") == 0 || strcmp(current->comm, "ueventd") == 0) {
 \t\t\tseq_puts(m, saved_command_line);
@@ -22,10 +27,13 @@ if os.path.exists(cmdline_file):
 \t\t\treturn 0;
 \t\t}
 
-\t\tchar *spoofed = kstrdup(saved_command_line, GFP_KERNEL);
+\t\tspoofed = kstrdup(saved_command_line, GFP_KERNEL);
 \t\tif (spoofed) {
 \t\t\tchar *p;
 \t\t\twhile ((p = strstr(spoofed, "androidboot.verifiedbootstate=orange")) != NULL) {
+\t\t\t\tmemcpy(p, "androidboot.verifiedbootstate=green ", 36);
+\t\t\t}
+\t\t\twhile ((p = strstr(spoofed, "androidboot.verifiedbootstate=yellow")) != NULL) {
 \t\t\t\tmemcpy(p, "androidboot.verifiedbootstate=green ", 36);
 \t\t\t}
 \t\t\twhile ((p = strstr(spoofed, "androidboot.vbmeta.device_state=unlocked")) != NULL) {
@@ -33,6 +41,9 @@ if os.path.exists(cmdline_file):
 \t\t\t}
 \t\t\twhile ((p = strstr(spoofed, "androidboot.flash.locked=0")) != NULL) {
 \t\t\t\tmemcpy(p, "androidboot.flash.locked=1", 26);
+\t\t\t}
+\t\t\twhile ((p = strstr(spoofed, "androidboot.bootloader.locked=0")) != NULL) {
+\t\t\t\tmemcpy(p, "androidboot.bootloader.locked=1", 31);
 \t\t\t}
 \t\t\tseq_puts(m, spoofed);
 \t\t\tkfree(spoofed);
