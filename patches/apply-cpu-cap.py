@@ -95,6 +95,7 @@ def patch_dts(path="arch/arm64/boot/dts/vendor/qcom/kona.dtsi"):
     return True
 
 if __name__ == '__main__':
-    patch_dts()
+    dts_target = sys.argv[1] if len(sys.argv) > 1 and sys.argv[1].endswith('.dtsi') else "arch/arm64/boot/dts/vendor/qcom/kona.dtsi"
+    patch_dts(dts_target)
     patch_driver()
     sys.exit(0)

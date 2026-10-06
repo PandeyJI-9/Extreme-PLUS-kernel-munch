@@ -138,6 +138,60 @@ if apk_sign_path:
         print("ℹ️ " + apk_sign_path + " already patched or target signature pattern handled")
 ' 2>/dev/null || true
 
+    # =========================================================================
+    # AstideLabs SuSFS v2.3.0 ↔ RKSU Compatibility Fix
+    # Fixes:
+    # 1. susfs_set_i_state_on_external_dir (deprecated in AstideLabs SuSFS v2.3.0)
+    # 2. CMD_SUSFS_HIDE_SUS_MNTS_FOR_ALL_PROCS -> CMD_SUSFS_HIDE_SUS_MNTS_FOR_NON_SU_PROCS
+    # 3. susfs_set_hide_sus_mnts_for_all_procs -> susfs_set_hide_sus_mnts_for_non_su_procs
+    # =========================================================================
+    echo "[*] Applying AstideLabs SuSFS v2.3.0 compatibility patches to RKSU..."
+    python3 -c '
+import os
+
+# 1. Compatibility shims in include/linux/susfs_def.h & include/linux/susfs.h
+def_path = "include/linux/susfs_def.h"
+if os.path.exists(def_path):
+    with open(def_path, "r") as f:
+        d = f.read()
+    if "CMD_SUSFS_HIDE_SUS_MNTS_FOR_ALL_PROCS" not in d:
+        d += "\n#ifndef CMD_SUSFS_HIDE_SUS_MNTS_FOR_ALL_PROCS\n#define CMD_SUSFS_HIDE_SUS_MNTS_FOR_ALL_PROCS CMD_SUSFS_HIDE_SUS_MNTS_FOR_NON_SU_PROCS\n#endif\n"
+        with open(def_path, "w") as f:
+            f.write(d)
+        print("✅ Added CMD_SUSFS_HIDE_SUS_MNTS_FOR_ALL_PROCS shim to " + def_path)
+
+h_path = "include/linux/susfs.h"
+if os.path.exists(h_path):
+    with open(h_path, "r") as f:
+        h = f.read()
+    shims = ""
+    if "susfs_set_hide_sus_mnts_for_all_procs" not in h:
+        shims += "#ifndef susfs_set_hide_sus_mnts_for_all_procs\n#define susfs_set_hide_sus_mnts_for_all_procs susfs_set_hide_sus_mnts_for_non_su_procs\n#endif\n"
+    if "susfs_set_i_state_on_external_dir" not in h:
+        shims += "static inline void susfs_set_i_state_on_external_dir(void __user *arg) { (void)arg; }\n"
+    if shims:
+        h = h + "\n/* EXTREME+: RKSU SuSFS Compatibility Shims */\n" + shims
+        with open(h_path, "w") as f:
+            f.write(h)
+        print("✅ Added SuSFS compatibility shims to " + h_path)
+
+# 2. Direct patching in drivers/kernelsu/supercalls.c
+sc_targets = [
+    "drivers/kernelsu/supercalls.c",
+    "KernelSU/kernel/supercalls.c",
+]
+for sc_path in sc_targets:
+    if os.path.exists(sc_path):
+        with open(sc_path, "r") as f:
+            sc = f.read()
+        sc = sc.replace("susfs_set_i_state_on_external_dir(arg);", "/* deprecated in SuSFS v2.3.0 */")
+        sc = sc.replace("CMD_SUSFS_HIDE_SUS_MNTS_FOR_ALL_PROCS", "CMD_SUSFS_HIDE_SUS_MNTS_FOR_NON_SU_PROCS")
+        sc = sc.replace("susfs_set_hide_sus_mnts_for_all_procs(arg);", "susfs_set_hide_sus_mnts_for_non_su_procs(arg);")
+        with open(sc_path, "w") as f:
+            f.write(sc)
+        print("✅ Patched " + sc_path + " for AstideLabs SuSFS v2.3.0 compatibility")
+'
+
     # Inject defconfig base symbols
     echo "CONFIG_KSU=y" >> "arch/arm64/configs/${DEFCONFIG}"
     echo "CONFIG_KSU_SUSFS=y" >> "arch/arm64/configs/${DEFCONFIG}"
@@ -528,8 +582,8 @@ EOF
 # Bundle prebuilt ksud binary for AnyKernel3 instant bootstrap
 if [ "$ENABLE_KSU" -eq 1 ]; then
     echo "[*] Bundling prebuilt ksud binary for instant root bootstrap..."
-    curl -LSs -o anykernel/ksud "https://github.com/rsuntk/KernelSU/releases/download/v3.0.0-30-legacy/ksud-aarch64-linux-android" || \
-    curl -LSs -o anykernel/ksud "https://github.com/tiann/KernelSU/releases/download/v0.9.5/ksud-aarch64-linux-android" || true
+    curl -fLSs -o anykernel/ksud "https://github.com/rsuntk/KernelSU/releases/download/v3.0.0-30-legacy/ksud-aarch64-linux-android" || \
+    curl -fLSs -o anykernel/ksud "https://github.com/tiann/KernelSU/releases/download/v0.9.5/ksud-aarch64-linux-android" || true
     chmod +x anykernel/ksud 2>/dev/null || true
 fi
 

@@ -13,18 +13,36 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "[*] Contacting GitHub API for APK..."
-          # Fetching from rsuntk for RKSU
-          API_URL="https://api.github.com/repos/rsuntk/KernelSU/releases"
-          
-          # Bulletproof extraction using grep
-          APK_URL=$(curl -sL -H "Authorization: Bearer $GH_TOKEN" $API_URL | grep "browser_download_url" | grep -i "\.apk" | cut -d '"' -f 4 | head -n 1)
-          VERSION_TAG=$(curl -sL -H "Authorization: Bearer $GH_TOKEN" $API_URL | grep '"tag_name":' | cut -d '"' -f 4 | head -n 1)
-          
+          echo "[*] Contacting GitHub API for Manager APK..."
+          REPOS=(
+            "rsuntk/KernelSU"
+            "tiann/KernelSU"
+            "ReSukiSU/ReSukiSU"
+          )
+          APK_URL=""
+          VERSION_TAG=""
+          for repo in "${REPOS[@]}"; do
+            echo "[*] Checking release source: $repo"
+            API_URL="https://api.github.com/repos/${repo}/releases"
+            DATA=$(curl -sL -H "Authorization: Bearer $GH_TOKEN" "$API_URL")
+            FOUND_URL=$(echo "$DATA" | grep "browser_download_url" | grep -i "\.apk" | cut -d '"' -f 4 | head -n 1)
+            if [ -n "$FOUND_URL" ]; then
+              APK_URL="$FOUND_URL"
+              VERSION_TAG=$(echo "$DATA" | grep '"tag_name":' | cut -d '"' -f 4 | head -n 1)
+              echo "✅ Located APK in $repo: tag $VERSION_TAG -> $APK_URL"
+              break
+            fi
+          done
+
+          if [ -z "$APK_URL" ]; then
+            echo "❌ Failed to locate APK in any release repository!"
+            exit 1
+          fi
+
           echo "Downloading version: $VERSION_TAG"
           FILE_NAME="RKSU_Manager_${VERSION_TAG}.apk"
           
-          wget -q -O "$FILE_NAME" "$APK_URL"
+          curl -fLSs -o "$FILE_NAME" "$APK_URL" || wget -q -O "$FILE_NAME" "$APK_URL"
           
           # Check if file exists and is not empty
           if [ -s "$FILE_NAME" ]; then
