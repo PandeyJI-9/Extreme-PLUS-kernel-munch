@@ -451,63 +451,27 @@ supported.versions=13-17
 '; }
 
 # shell variables
-block=/dev/block/bootdevice/by-name/boot;
-BLOCK=boot;
+block=boot;
 is_slot_device=1;
-IS_SLOT_DEVICE=auto;
 ramdisk_compression=auto;
-RAMDISK_COMPRESSION=auto;
-patch_vbmeta_flag=auto;
-PATCH_VBMETA_FLAG=auto;
-no_block_display=1;
-NO_BLOCK_DISPLAY=1;
+patch_vbmeta_flag=0;
 
 . tools/ak3-core.sh;
 
 ui_print " ";
 ui_print "  -> Flashing EXTREME++ Kernel (boot)...";
 dump_boot;
-
-# Inject native init.extreme.rc into boot ramdisk (Zero-Root Dependency)
-if [ -d "$ramdisk" ]; then
-    cp -f "$home/init.extreme.rc" "$ramdisk/init.extreme.rc" 2>/dev/null || true
-    for rc in "$ramdisk/init.target.rc" "$ramdisk/init.qcom.rc"; do
-        if [ -f "$rc" ] && ! grep -q "init.extreme.rc" "$rc"; then
-            echo "import /init.extreme.rc" >> "$rc"
-        fi
-    done
-fi
-
 write_boot;
 
+## vendor_boot DTB install (Leaves vendor ramdisk 100% untouched for flawless recovery)
 ui_print "  -> Flashing EXTREME++ Undervolted DTB (vendor_boot)...";
-block=/dev/block/bootdevice/by-name/vendor_boot;
-BLOCK=vendor_boot;
+block=vendor_boot;
 is_slot_device=1;
-IS_SLOT_DEVICE=auto;
 ramdisk_compression=auto;
-RAMDISK_COMPRESSION=auto;
-patch_vbmeta_flag=auto;
-PATCH_VBMETA_FLAG=auto;
-no_block_display=1;
-NO_BLOCK_DISPLAY=1;
+patch_vbmeta_flag=0;
 
 reset_ak;
 dump_boot;
-
-# Inject native init.extreme.rc into vendor_boot ramdisk (Native Android Init)
-if [ -d "$ramdisk" ]; then
-    cp -f "$home/init.extreme.rc" "$ramdisk/init.extreme.rc" 2>/dev/null || true
-    mkdir -p "$ramdisk/etc/init/hw" 2>/dev/null || true
-    cp -f "$home/init.extreme.rc" "$ramdisk/etc/init/hw/init.extreme.rc" 2>/dev/null || true
-    for rc in "$ramdisk/init.target.rc" "$ramdisk/init.qcom.rc" "$ramdisk/etc/init/hw/init.target.rc" "$ramdisk/etc/init/hw/init.qcom.rc"; do
-        if [ -f "$rc" ] && ! grep -q "init.extreme.rc" "$rc"; then
-            echo "import /init.extreme.rc" >> "$rc"
-            echo "import /etc/init/hw/init.extreme.rc" >> "$rc"
-        fi
-    done
-fi
-
 write_boot;
 # NOTE: Stock DTBO partition is preserved 100% untouched to ensure OEM display panel calibrations & recovery work flawlessly!
 
@@ -523,12 +487,6 @@ if [ -d /data/adb ]; then
     chown root:root /data/adb/service.d/00-extreme-performance.sh 2>/dev/null
 fi
 EOF
-
-# Copy native init.extreme.rc into anykernel for packaging
-if [ -f "init.extreme.rc" ]; then
-    cp -f init.extreme.rc anykernel/init.extreme.rc
-    echo "[+] Copied init.extreme.rc to anykernel/"
-fi
 
 cat > anykernel/00-extreme-performance.sh << 'EOF'
 #!/system/bin/sh
@@ -548,7 +506,7 @@ sleep 15
 
 # ── 0. Post-Boot Bootloader Lock Property Spoofing (Zero Bootloop, 100% Locked) ──
 # Android has fully booted! AVB verification and partition mounting are 100% complete.
-# Now spoof system properties to locked/green so Play Integrity, banking apps & settings report locked!
+# Now spoof system properties to locked/green so Play Integrity, Key Attestation & banking apps report locked!
 for rp in resetprop /data/adb/ksu/bin/ksud /data/adb/ksud; do
     if command -v resetprop >/dev/null 2>&1; then
         resetprop -n ro.boot.verifiedbootstate green 2>/dev/null || true
@@ -556,6 +514,9 @@ for rp in resetprop /data/adb/ksu/bin/ksud /data/adb/ksud; do
         resetprop -n ro.boot.flash.locked 1 2>/dev/null || true
         resetprop -n ro.boot.bootloader.locked 1 2>/dev/null || true
         resetprop -n sys.oem_unlock_allowed 0 2>/dev/null || true
+        resetprop -n ro.secureboot.lockstate locked 2>/dev/null || true
+        resetprop -n ro.boot.warranty_bit 0 2>/dev/null || true
+        resetprop -n ro.warranty_bit 0 2>/dev/null || true
         echo "PROJECT EXTREME+: Bootloader properties successfully spoofed to locked/green post-boot via resetprop!" > /dev/kmsg 2>/dev/null || true
         break
     elif [ -x /data/adb/ksu/bin/ksud ]; then
@@ -564,6 +525,9 @@ for rp in resetprop /data/adb/ksu/bin/ksud /data/adb/ksud; do
         /data/adb/ksu/bin/ksud resetprop -n ro.boot.flash.locked 1 2>/dev/null || true
         /data/adb/ksu/bin/ksud resetprop -n ro.boot.bootloader.locked 1 2>/dev/null || true
         /data/adb/ksu/bin/ksud resetprop -n sys.oem_unlock_allowed 0 2>/dev/null || true
+        /data/adb/ksu/bin/ksud resetprop -n ro.secureboot.lockstate locked 2>/dev/null || true
+        /data/adb/ksu/bin/ksud resetprop -n ro.boot.warranty_bit 0 2>/dev/null || true
+        /data/adb/ksu/bin/ksud resetprop -n ro.warranty_bit 0 2>/dev/null || true
         echo "PROJECT EXTREME+: Bootloader properties successfully spoofed to locked/green post-boot via ksud resetprop!" > /dev/kmsg 2>/dev/null || true
         break
     elif [ -x /data/adb/ksud ]; then
@@ -572,6 +536,9 @@ for rp in resetprop /data/adb/ksu/bin/ksud /data/adb/ksud; do
         /data/adb/ksud resetprop -n ro.boot.flash.locked 1 2>/dev/null || true
         /data/adb/ksud resetprop -n ro.boot.bootloader.locked 1 2>/dev/null || true
         /data/adb/ksud resetprop -n sys.oem_unlock_allowed 0 2>/dev/null || true
+        /data/adb/ksud resetprop -n ro.secureboot.lockstate locked 2>/dev/null || true
+        /data/adb/ksud resetprop -n ro.boot.warranty_bit 0 2>/dev/null || true
+        /data/adb/ksud resetprop -n ro.warranty_bit 0 2>/dev/null || true
         echo "PROJECT EXTREME+: Bootloader properties successfully spoofed to locked/green post-boot via legacy ksud resetprop!" > /dev/kmsg 2>/dev/null || true
         break
     fi

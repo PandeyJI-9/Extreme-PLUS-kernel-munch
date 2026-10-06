@@ -54,19 +54,19 @@ if os.path.exists(cmdline_file):
 \t\tif (spoofed) {
 \t\t\tchar *p;
 \t\t\twhile ((p = strstr(spoofed, "androidboot.verifiedbootstate=orange")) != NULL) {
-\t\t\t\tmemcpy(p, "androidboot.verifiedbootstate=green ", 36);
+\t\t\t\tmemcpy(p + 30, "green ", 6);
 \t\t\t}
 \t\t\twhile ((p = strstr(spoofed, "androidboot.verifiedbootstate=yellow")) != NULL) {
-\t\t\t\tmemcpy(p, "androidboot.verifiedbootstate=green ", 36);
+\t\t\t\tmemcpy(p + 30, "green ", 6);
 \t\t\t}
 \t\t\twhile ((p = strstr(spoofed, "androidboot.vbmeta.device_state=unlocked")) != NULL) {
-\t\t\t\tmemcpy(p, "androidboot.vbmeta.device_state=locked  ", 40);
+\t\t\t\tmemcpy(p + 31, "locked  ", 8);
 \t\t\t}
 \t\t\twhile ((p = strstr(spoofed, "androidboot.flash.locked=0")) != NULL) {
-\t\t\t\tmemcpy(p, "androidboot.flash.locked=1", 26);
+\t\t\t\tp[25] = '1';
 \t\t\t}
 \t\t\twhile ((p = strstr(spoofed, "androidboot.bootloader.locked=0")) != NULL) {
-\t\t\t\tmemcpy(p, "androidboot.bootloader.locked=1", 31);
+\t\t\t\tp[30] = '1';
 \t\t\t}
 \t\t\tseq_puts(m, spoofed);
 \t\t\tkfree(spoofed);
