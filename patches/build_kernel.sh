@@ -90,11 +90,18 @@ if ! grep -q "selinux,baseband_guard" security/Kconfig; then
 fi
 
 # ------------------------------------------
-# 3. KernelSU (RKSU - Rissu's KernelSU 4.19 Non-GKI with SuSFS v2.3.0) Setup
+# 3. KernelSU (RKSU / ReSukiSU Multi-Manager Non-GKI 4.19 with SuSFS v2.3.0) Setup
 # ------------------------------------------
 if [ "$ENABLE_KSU" -eq 1 ]; then
-    echo "[*] Injecting RKSU (Rissu KernelSU 4.19 Non-GKI with SuSFS v2.3.0) Source..."
-    curl -LSs "https://raw.githubusercontent.com/rsuntk/KernelSU/main/kernel/setup.sh" | bash -s susfs-rksu-master
+    echo "[*] Injecting ReSukiSU / RKSU Multi-Manager (Non-GKI 4.19 with SuSFS v2.3.0) Source..."
+    # Pin to tested stable release tag v4.2.0-rc3 to avoid moving upstream breaking renames & IOCTL mismatches
+    curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash -s -- v4.2.0-rc3
+
+    # Force KSU_SUSFS as default choice in drivers/kernelsu/Kconfig (Prevents Non-GKI TP hook fallback)
+    if [ -f "drivers/kernelsu/Kconfig" ]; then
+        sed -i 's/default KSU_TRACEPOINT_HOOK/default KSU_SUSFS/' drivers/kernelsu/Kconfig
+        echo "[+] Default hook set to KSU_SUSFS in drivers/kernelsu/Kconfig"
+    fi
 
     # Multi-Manager Support & Universal Fallback Key Injection
     # Guarantees that RKSU, Official KernelSU, ReSukiSU, SukiSU-Ultra, and BakaSU Manager apps
@@ -103,9 +110,9 @@ if [ "$ENABLE_KSU" -eq 1 ]; then
 import os
 
 candidates = [
-    "drivers/kernelsu/apk_sign.c",
-    "drivers/kernelsu/kernel/apk_sign.c",
+    "drivers/kernelsu/kernel/manager/apk_sign.c",
     "drivers/kernelsu/manager/apk_sign.c",
+    "drivers/kernelsu/apk_sign.c",
 ]
 apk_sign_path = next((p for p in candidates if os.path.exists(p)), None)
 if apk_sign_path:
@@ -138,65 +145,12 @@ if apk_sign_path:
         print("ℹ️ " + apk_sign_path + " already patched or target signature pattern handled")
 ' 2>/dev/null || true
 
-    # =========================================================================
-    # AstideLabs SuSFS v2.3.0 ↔ RKSU Compatibility Fix
-    # Fixes:
-    # 1. susfs_set_i_state_on_external_dir (deprecated in AstideLabs SuSFS v2.3.0)
-    # 2. CMD_SUSFS_HIDE_SUS_MNTS_FOR_ALL_PROCS -> CMD_SUSFS_HIDE_SUS_MNTS_FOR_NON_SU_PROCS
-    # 3. susfs_set_hide_sus_mnts_for_all_procs -> susfs_set_hide_sus_mnts_for_non_su_procs
-    # =========================================================================
-    echo "[*] Applying AstideLabs SuSFS v2.3.0 compatibility patches to RKSU..."
-    python3 -c '
-import os
-
-# 1. Compatibility shims in include/linux/susfs_def.h & include/linux/susfs.h
-def_path = "include/linux/susfs_def.h"
-if os.path.exists(def_path):
-    with open(def_path, "r") as f:
-        d = f.read()
-    if "CMD_SUSFS_HIDE_SUS_MNTS_FOR_ALL_PROCS" not in d:
-        d += "\n#ifndef CMD_SUSFS_HIDE_SUS_MNTS_FOR_ALL_PROCS\n#define CMD_SUSFS_HIDE_SUS_MNTS_FOR_ALL_PROCS CMD_SUSFS_HIDE_SUS_MNTS_FOR_NON_SU_PROCS\n#endif\n"
-        with open(def_path, "w") as f:
-            f.write(d)
-        print("✅ Added CMD_SUSFS_HIDE_SUS_MNTS_FOR_ALL_PROCS shim to " + def_path)
-
-h_path = "include/linux/susfs.h"
-if os.path.exists(h_path):
-    with open(h_path, "r") as f:
-        h = f.read()
-    shims = ""
-    if "susfs_set_hide_sus_mnts_for_all_procs" not in h:
-        shims += "#ifndef susfs_set_hide_sus_mnts_for_all_procs\n#define susfs_set_hide_sus_mnts_for_all_procs susfs_set_hide_sus_mnts_for_non_su_procs\n#endif\n"
-    if "susfs_set_i_state_on_external_dir" not in h:
-        shims += "static inline void susfs_set_i_state_on_external_dir(void __user *arg) { (void)arg; }\n"
-    if shims:
-        h = h + "\n/* EXTREME+: RKSU SuSFS Compatibility Shims */\n" + shims
-        with open(h_path, "w") as f:
-            f.write(h)
-        print("✅ Added SuSFS compatibility shims to " + h_path)
-
-# 2. Direct patching in drivers/kernelsu/supercalls.c
-sc_targets = [
-    "drivers/kernelsu/supercalls.c",
-    "KernelSU/kernel/supercalls.c",
-]
-for sc_path in sc_targets:
-    if os.path.exists(sc_path):
-        with open(sc_path, "r") as f:
-            sc = f.read()
-        sc = sc.replace("susfs_set_i_state_on_external_dir(arg);", "/* deprecated in SuSFS v2.3.0 */")
-        sc = sc.replace("CMD_SUSFS_HIDE_SUS_MNTS_FOR_ALL_PROCS", "CMD_SUSFS_HIDE_SUS_MNTS_FOR_NON_SU_PROCS")
-        sc = sc.replace("susfs_set_hide_sus_mnts_for_all_procs(arg);", "susfs_set_hide_sus_mnts_for_non_su_procs(arg);")
-        with open(sc_path, "w") as f:
-            f.write(sc)
-        print("✅ Patched " + sc_path + " for AstideLabs SuSFS v2.3.0 compatibility")
-'
-
     # Inject defconfig base symbols
     echo "CONFIG_KSU=y" >> "arch/arm64/configs/${DEFCONFIG}"
     echo "CONFIG_KSU_SUSFS=y" >> "arch/arm64/configs/${DEFCONFIG}"
+    echo "CONFIG_KSU_MULTI_MANAGER_SUPPORT=y" >> "arch/arm64/configs/${DEFCONFIG}"
     echo "CONFIG_THREAD_INFO_IN_TASK=y" >> "arch/arm64/configs/${DEFCONFIG}"
-    echo "[+] RKSU Non-GKI setup finished."
+    echo "[+] RKSU / ReSukiSU Multi-Manager Non-GKI setup finished."
 else
     echo "[*] Ensuring Pure Clean Kernel Base (Zero embedded root hooks)..."
     sed -i '/CONFIG_KSU/d' "arch/arm64/configs/${DEFCONFIG}" 2>/dev/null || true
@@ -424,12 +378,15 @@ scripts/config --file "${OUT_DIR}/.config" \
     -d DEBUG_KMEMLEAK \
     -d DEBUG_PREEMPT
 
-# 🚀 Root Configuration: RKSU + SuSFS v2.3.0 vs Pure Clean Base
+# 🚀 Root Configuration: RKSU / ReSukiSU + SuSFS v2.3.0 vs Pure Clean Base
 if [ "$ENABLE_KSU" -eq 1 ]; then
-    echo "[*] Injecting Full RKSU + SuSFS v2.3.0 Configuration into .config..."
+    echo "[*] Injecting Full RKSU / ReSukiSU + SuSFS v2.3.0 Configuration into .config..."
     scripts/config --file "${OUT_DIR}/.config" \
         -e KSU \
         -e KSU_SUSFS \
+        -d KSU_TRACEPOINT_HOOK \
+        -d KSU_MANUAL_HOOK \
+        -e KSU_MULTI_MANAGER_SUPPORT \
         -e THREAD_INFO_IN_TASK \
         -e KSU_SUSFS_SUS_PATH \
         -e KSU_SUSFS_SUS_MOUNT \
@@ -440,12 +397,15 @@ if [ "$ENABLE_KSU" -eq 1 ]; then
         -e KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG \
         -e KSU_SUSFS_OPEN_REDIRECT \
         -e KSU_SUSFS_SUS_MAP \
-        -d KSU_DEBUG
+        -d KSU_DISABLE_MANAGER \
+        -d KSU_DISABLE_POLICY
 else
     echo "[*] Disabling embedded KSU for Pure Clean Kernel..."
     scripts/config --file "${OUT_DIR}/.config" \
         -d KSU \
-        -d KSU_SUSFS
+        -d KSU_SUSFS \
+        -d KSU_TRACEPOINT_HOOK \
+        -d KSU_MANUAL_HOOK
     sed -i '/CONFIG_KSU/d' "${OUT_DIR}/.config" 2>/dev/null || true
 fi
 
