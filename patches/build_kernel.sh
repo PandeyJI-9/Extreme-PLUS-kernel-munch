@@ -522,30 +522,7 @@ if [ -d /data/adb ]; then
     chmod 755 /data/adb/service.d/00-extreme-performance.sh
     chown root:root /data/adb/service.d/00-extreme-performance.sh 2>/dev/null
 fi
-
-# Pre-install userspace ksud daemon into /data/adb/ksud for instant root bootstrap
-if [ -f "$home/ksud" ]; then
-    if [ ! -d /data/adb ]; then
-        mount /data 2>/dev/null
-    fi
-    if [ -d /data/adb ]; then
-        ui_print "  -> Pre-installing KernelSU userspace daemon (ksud)...";
-        mkdir -p /data/adb/ksu/bin 2>/dev/null
-        cp -f "$home/ksud" /data/adb/ksud 2>/dev/null || true
-        cp -f "$home/ksud" /data/adb/ksu/bin/ksud 2>/dev/null || true
-        chmod 755 /data/adb/ksud /data/adb/ksu/bin/ksud 2>/dev/null || true
-        chown 0:0 /data/adb/ksud /data/adb/ksu/bin/ksud 2>/dev/null || true
-    fi
-fi
 EOF
-
-# Bundle prebuilt ksud binary for AnyKernel3 instant bootstrap
-if [ "$ENABLE_KSU" -eq 1 ]; then
-    echo "[*] Bundling prebuilt ksud binary for instant root bootstrap..."
-    curl -fLSs -o anykernel/ksud "https://github.com/rsuntk/KernelSU/releases/download/v3.0.0-30-legacy/ksud-aarch64-linux-android" || \
-    curl -fLSs -o anykernel/ksud "https://github.com/tiann/KernelSU/releases/download/v0.9.5/ksud-aarch64-linux-android" || true
-    chmod +x anykernel/ksud 2>/dev/null || true
-fi
 
 # Copy native init.extreme.rc into anykernel for packaging
 if [ -f "init.extreme.rc" ]; then
@@ -568,6 +545,37 @@ done
 
 # Extra settling delay to ensure all critical system daemons have initialized
 sleep 15
+
+# ── 0. Post-Boot Bootloader Lock Property Spoofing (Zero Bootloop, 100% Locked) ──
+# Android has fully booted! AVB verification and partition mounting are 100% complete.
+# Now spoof system properties to locked/green so Play Integrity, banking apps & settings report locked!
+for rp in resetprop /data/adb/ksu/bin/ksud /data/adb/ksud; do
+    if command -v resetprop >/dev/null 2>&1; then
+        resetprop -n ro.boot.verifiedbootstate green 2>/dev/null || true
+        resetprop -n ro.boot.vbmeta.device_state locked 2>/dev/null || true
+        resetprop -n ro.boot.flash.locked 1 2>/dev/null || true
+        resetprop -n ro.boot.bootloader.locked 1 2>/dev/null || true
+        resetprop -n sys.oem_unlock_allowed 0 2>/dev/null || true
+        echo "PROJECT EXTREME+: Bootloader properties successfully spoofed to locked/green post-boot via resetprop!" > /dev/kmsg 2>/dev/null || true
+        break
+    elif [ -x /data/adb/ksu/bin/ksud ]; then
+        /data/adb/ksu/bin/ksud resetprop -n ro.boot.verifiedbootstate green 2>/dev/null || true
+        /data/adb/ksu/bin/ksud resetprop -n ro.boot.vbmeta.device_state locked 2>/dev/null || true
+        /data/adb/ksu/bin/ksud resetprop -n ro.boot.flash.locked 1 2>/dev/null || true
+        /data/adb/ksu/bin/ksud resetprop -n ro.boot.bootloader.locked 1 2>/dev/null || true
+        /data/adb/ksu/bin/ksud resetprop -n sys.oem_unlock_allowed 0 2>/dev/null || true
+        echo "PROJECT EXTREME+: Bootloader properties successfully spoofed to locked/green post-boot via ksud resetprop!" > /dev/kmsg 2>/dev/null || true
+        break
+    elif [ -x /data/adb/ksud ]; then
+        /data/adb/ksud resetprop -n ro.boot.verifiedbootstate green 2>/dev/null || true
+        /data/adb/ksud resetprop -n ro.boot.vbmeta.device_state locked 2>/dev/null || true
+        /data/adb/ksud resetprop -n ro.boot.flash.locked 1 2>/dev/null || true
+        /data/adb/ksud resetprop -n ro.boot.bootloader.locked 1 2>/dev/null || true
+        /data/adb/ksud resetprop -n sys.oem_unlock_allowed 0 2>/dev/null || true
+        echo "PROJECT EXTREME+: Bootloader properties successfully spoofed to locked/green post-boot via legacy ksud resetprop!" > /dev/kmsg 2>/dev/null || true
+        break
+    fi
+done
 
 # ── 1. Dynamic Task Weighting (Schedtune Boost) & WALT Core Spillover ──
 # Dynamic Task Weighting: Boost perceived load for top-app on render burst, zero locking

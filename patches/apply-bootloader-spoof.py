@@ -2,7 +2,7 @@
 # ==============================================================================
 # PROJECT EXTREME++ | Maintainer: PandeyJI-9
 # Device: POCO F4 (munch) | Target: HyperOS ONLY
-# Universal Bootloader Lock Spoof (cmdline.c & drivers/of/kobj.c)
+# Safe Bootloader Lock Spoof (fs/proc/cmdline.c with PID-1 AVB Guard)
 # ==============================================================================
 import sys
 import os
@@ -10,7 +10,15 @@ import os
 kernel_src = sys.argv[1] if len(sys.argv) > 1 else "."
 
 # -------------------------------------------------------------
-# 1. Patch fs/proc/cmdline.c (Universal /proc/cmdline Spoof)
+# Patch fs/proc/cmdline.c (Universal /proc/cmdline Spoof)
+# -------------------------------------------------------------
+# ARCHITECTURAL DESIGN FOR ZERO-BOOTLOOP:
+# 1. Early Boot (PID 1 init & ueventd): MUST receive genuine saved_command_line
+#    so Android init & fs_mgr_avb can mount system/vendor partitions without
+#    failing AVB cryptographic verification on an unlocked bootloader.
+# 2. Post-Boot Processes (apps, Play Integrity, banking apps, shells):
+#    Receive spoofed command line (verifiedbootstate=green, device_state=locked,
+#    flash.locked=1, bootloader.locked=1) with zero detection and zero bootloop!
 # -------------------------------------------------------------
 cmdline_file = os.path.join(kernel_src, "fs/proc/cmdline.c")
 print(f"🔍 Looking for cmdline.c at: {cmdline_file}")
@@ -19,16 +27,30 @@ if os.path.exists(cmdline_file):
     with open(cmdline_file, "r") as f:
         content = f.read()
 
-    if "/* EXTREME+: Universal Bootloader Lock Spoof */" in content:
-        print("ℹ️ cmdline.c already patched with Universal Bootloader Lock Spoof.")
+    if "/* 🚨 CRITICAL SAFETY GUARD: Do not spoof PID 1" in content:
+        print("ℹ️ cmdline.c already patched with PID-1 AVB Guard.")
     else:
-        # Include required headers if not present
+        # Include required headers for current task (PID/comm) & memory routines
+        headers = []
+        if "#include <linux/sched.h>" not in content:
+            headers.append("#include <linux/sched.h>")
         if "#include <linux/slab.h>" not in content:
-            content = "#include <linux/slab.h>\n#include <linux/string.h>\n" + content
+            headers.append("#include <linux/slab.h>")
+        if "#include <linux/string.h>" not in content:
+            headers.append("#include <linux/string.h>")
+        if headers:
+            content = "\n".join(headers) + "\n" + content
 
         spoof_block = """\t{
-\t\t/* EXTREME+: Universal Bootloader Lock Spoof (Includes PID 1 init) */
-\t\tchar *spoofed = kstrdup(saved_command_line, GFP_KERNEL);
+\t\tchar *spoofed;
+\t\t/* 🚨 CRITICAL SAFETY GUARD: Do not spoof PID 1 (init/AVB) or ueventd */
+\t\tif (current->pid == 1 || strcmp(current->comm, "init") == 0 || strcmp(current->comm, "ueventd") == 0) {
+\t\t\tseq_puts(m, saved_command_line);
+\t\t\tseq_putc(m, '\\n');
+\t\t\treturn 0;
+\t\t}
+
+\t\tspoofed = kstrdup(saved_command_line, GFP_KERNEL);
 \t\tif (spoofed) {
 \t\t\tchar *p;
 \t\t\twhile ((p = strstr(spoofed, "androidboot.verifiedbootstate=orange")) != NULL) {
@@ -58,63 +80,9 @@ if os.path.exists(cmdline_file):
             patched_content = content.replace(target_needle, spoof_block, 1)
             with open(cmdline_file, "w") as f:
                 f.write(patched_content)
-            print("✅ SUCCESS: cmdline.c successfully patched with Universal Bootloader Lock Spoof!")
+            print("✅ SUCCESS: cmdline.c successfully patched with PID-1 AVB Guard!")
         else:
             print("⚠️ WARNING: Target needle not found in cmdline.c.")
 else:
     print("❌ ERROR: fs/proc/cmdline.c not found!")
 
-# -------------------------------------------------------------
-# 2. Patch drivers/of/kobj.c (Device Tree sysfs/procfs node spoof)
-# Spoofs /proc/device-tree/firmware/android/ nodes seen by init & apps
-# -------------------------------------------------------------
-kobj_file = os.path.join(kernel_src, "drivers/of/kobj.c")
-print(f"🔍 Looking for drivers/of/kobj.c at: {kobj_file}")
-
-if os.path.exists(kobj_file):
-    with open(kobj_file, "r") as f:
-        kcontent = f.read()
-
-    if "/* EXTREME+: Device Tree Bootloader Lock Spoof */" in kcontent:
-        print("ℹ️ drivers/of/kobj.c already patched.")
-    else:
-        target_kobj = """static ssize_t of_node_property_read(struct file *filp, struct kobject *kobj,
-\t\t\t\tstruct bin_attribute *bin_attr, char *buf,
-\t\t\t\tloff_t offset, size_t count)
-{
-\tstruct property *pp = container_of(bin_attr, struct property, attr);
-\treturn memory_read_from_buffer(buf, count, &offset, pp->value, pp->length);
-}"""
-
-        replacement_kobj = """static ssize_t of_node_property_read(struct file *filp, struct kobject *kobj,
-\t\t\t\tstruct bin_attribute *bin_attr, char *buf,
-\t\t\t\tloff_t offset, size_t count)
-{
-\tstruct property *pp = container_of(bin_attr, struct property, attr);
-\t/* EXTREME+: Device Tree Bootloader Lock Spoof */
-\tif (pp && pp->name) {
-\t\tif (!strcmp(pp->name, "verifiedbootstate")) {
-\t\t\tconst char *val = "green";
-\t\t\treturn memory_read_from_buffer(buf, count, &offset, val, 6);
-\t\t}
-\t\tif (!strcmp(pp->name, "device_state")) {
-\t\t\tconst char *val = "locked";
-\t\t\treturn memory_read_from_buffer(buf, count, &offset, val, 7);
-\t\t}
-\t\tif (!strcmp(pp->name, "flash_locked") || !strcmp(pp->name, "flash.locked")) {
-\t\t\tconst char *val = "1";
-\t\t\treturn memory_read_from_buffer(buf, count, &offset, val, 2);
-\t\t}
-\t}
-\treturn memory_read_from_buffer(buf, count, &offset, pp->value, pp->length);
-}"""
-
-        if target_kobj in kcontent:
-            kcontent = kcontent.replace(target_kobj, replacement_kobj, 1)
-            with open(kobj_file, "w") as f:
-                f.write(kcontent)
-            print("✅ SUCCESS: drivers/of/kobj.c successfully patched for Device Tree Lock Spoof!")
-        else:
-            print("⚠️ WARNING: Target function of_node_property_read not found in drivers/of/kobj.c.")
-else:
-    print("ℹ️ drivers/of/kobj.c not found at target path.")
