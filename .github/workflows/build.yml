@@ -1,4 +1,4 @@
-name: "🚀 Build EXTREME++ Kernel (Dual Variant: 3.2GHz & 2.8GHz)"
+name: "🚀 Build EXTREME++ Kernel (Dual Variant: 3.2GHz & 2.7GHz)"
 
 on:
   workflow_dispatch:
@@ -10,10 +10,10 @@ on:
         options:
           - both
           - 3.2GHz
-          - 2.8GHz
+          - 2.7GHz
         default: both
       build_ksu:
-        description: 'Integrate ReSukiSU + SuSFS (v2.3.0)'
+        description: 'Integrate RKSU + SuSFS (v2.3.0)'
         required: true
         type: boolean
         default: true
@@ -36,7 +36,7 @@ jobs:
 
           ROOT_LABEL="🛡️ Architecture: Pure Clean Base (No Root)"
           if [ "${{ inputs.build_ksu }}" = "true" ]; then
-            ROOT_LABEL="⚡ Root: ReSukiSU + SuSFS (v2.3.0 Native VFS)"
+            ROOT_LABEL="⚡ Root: RKSU + SuSFS (v2.3.0 Native VFS)"
           fi
 
           for chat in "${TARGETS[@]}"; do
@@ -101,7 +101,7 @@ jobs:
         run: |
           ROOT_DESC="🛡️ <b>Root:</b> Pure Clean Base (No Root)"
           if [ "${{ inputs.build_ksu }}" = "true" ]; then
-            ROOT_DESC="⚡ <b>Root:</b> Inbuilt ReSukiSU + SuSFS (v2.3.0 Native VFS)"
+            ROOT_DESC="⚡ <b>Root:</b> Inbuilt RKSU + SuSFS (v2.3.0 Native VFS)"
           fi
 
           MSG="🔥 <b>EXTREME++ Official Release #${{ github.run_number }}</b>%0A%0A"
@@ -110,7 +110,7 @@ jobs:
           MSG="${MSG}🛠️ <b>Toolchain:</b> ZyC-Clang 16.0.6 + LLD%0A"
           MSG="${MSG}${ROOT_DESC}%0A%0A"
           MSG="${MSG}✨ <b>Key Features:</b>%0A"
-          MSG="${MSG}• <b>Dual Variants:</b> 3.2GHz Benchmark & 2.8GHz Cool Gaming%0A"
+          MSG="${MSG}• <b>Dual Variants:</b> 3.2GHz Benchmark & 2.7GHz Cool Gaming%0A"
           MSG="${MSG}• <b>Network:</b> TCP BBR Congestion Control (Low Ping in BGMI/COD)%0A"
           MSG="${MSG}• <b>GPU:</b> FakeDreamer 150MHz - 670MHz UV & msm-adreno-tz%0A"
           MSG="${MSG}• <b>Storage:</b> Zero-Overhead Block I/O Stats Disabled%0A"

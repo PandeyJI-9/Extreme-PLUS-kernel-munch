@@ -90,27 +90,25 @@ if ! grep -q "selinux,baseband_guard" security/Kconfig; then
 fi
 
 # ------------------------------------------
-# 3. KernelSU (ReSukiSU Non-GKI 4.19 with SuSFS v2.3.0) Setup
+# 3. KernelSU (RKSU - Rissu's KernelSU 4.19 Non-GKI with SuSFS v2.3.0) Setup
 # ------------------------------------------
 if [ "$ENABLE_KSU" -eq 1 ]; then
-    echo "[*] Injecting ReSukiSU (Non-GKI 4.19 Legacy with SuSFS v2.3.0) Source..."
-    # Pin to tested stable release tag v4.2.0-rc3 to avoid moving upstream breaking renames & IOCTL mismatches
-    curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash -s -- v4.2.0-rc3
-
-    # Force KSU_SUSFS as default choice in drivers/kernelsu/Kconfig (Prevents Non-GKI TP hook fallback)
-    if [ -f "drivers/kernelsu/Kconfig" ]; then
-        sed -i 's/default KSU_TRACEPOINT_HOOK/default KSU_SUSFS/' drivers/kernelsu/Kconfig
-        echo "[+] Default hook set to KSU_SUSFS in drivers/kernelsu/Kconfig"
-    fi
+    echo "[*] Injecting RKSU (Rissu KernelSU 4.19 Non-GKI with SuSFS v2.3.0) Source..."
+    curl -LSs "https://raw.githubusercontent.com/rsuntk/KernelSU/main/kernel/setup.sh" | bash -s susfs-rksu-master
 
     # Multi-Manager Support & Universal Fallback Key Injection
-    # Guarantees that ReSukiSU, Official KernelSU, SukiSU-Ultra, and BakaSU Manager apps
+    # Guarantees that RKSU, Official KernelSU, ReSukiSU, SukiSU-Ultra, and BakaSU Manager apps
     # are 100% recognized as manager without "Failed to update App Profile" permission errors.
     python3 -c '
 import os
 
-apk_sign_path = "drivers/kernelsu/kernel/manager/apk_sign.c"
-if os.path.exists(apk_sign_path):
+candidates = [
+    "drivers/kernelsu/apk_sign.c",
+    "drivers/kernelsu/kernel/apk_sign.c",
+    "drivers/kernelsu/manager/apk_sign.c",
+]
+apk_sign_path = next((p for p in candidates if os.path.exists(p)), None)
+if apk_sign_path:
     with open(apk_sign_path, "r") as f:
         content = f.read()
 
@@ -135,17 +133,16 @@ if os.path.exists(apk_sign_path):
         content = content.replace(hook_target, hook_replacement)
         with open(apk_sign_path, "w") as f:
             f.write(content)
-        print("✅ Patched apk_sign.c with universal manager package verification")
+        print("✅ Patched " + apk_sign_path + " with universal manager package verification")
     else:
-        print("ℹ️ apk_sign.c already patched or target signature not found")
+        print("ℹ️ " + apk_sign_path + " already patched or target signature pattern handled")
 ' 2>/dev/null || true
 
     # Inject defconfig base symbols
     echo "CONFIG_KSU=y" >> "arch/arm64/configs/${DEFCONFIG}"
     echo "CONFIG_KSU_SUSFS=y" >> "arch/arm64/configs/${DEFCONFIG}"
-    echo "CONFIG_KSU_MULTI_MANAGER_SUPPORT=y" >> "arch/arm64/configs/${DEFCONFIG}"
     echo "CONFIG_THREAD_INFO_IN_TASK=y" >> "arch/arm64/configs/${DEFCONFIG}"
-    echo "[+] ReSukiSU Non-GKI setup finished."
+    echo "[+] RKSU Non-GKI setup finished."
 else
     echo "[*] Ensuring Pure Clean Kernel Base (Zero embedded root hooks)..."
     sed -i '/CONFIG_KSU/d' "arch/arm64/configs/${DEFCONFIG}" 2>/dev/null || true
@@ -373,15 +370,12 @@ scripts/config --file "${OUT_DIR}/.config" \
     -d DEBUG_KMEMLEAK \
     -d DEBUG_PREEMPT
 
-# 🚀 Root Configuration: ReSukiSU + SuSFS v2.3.0 vs Pure Clean Base
+# 🚀 Root Configuration: RKSU + SuSFS v2.3.0 vs Pure Clean Base
 if [ "$ENABLE_KSU" -eq 1 ]; then
-    echo "[*] Injecting Full ReSukiSU + SuSFS v2.3.0 Configuration into .config..."
+    echo "[*] Injecting Full RKSU + SuSFS v2.3.0 Configuration into .config..."
     scripts/config --file "${OUT_DIR}/.config" \
         -e KSU \
         -e KSU_SUSFS \
-        -d KSU_TRACEPOINT_HOOK \
-        -d KSU_MANUAL_HOOK \
-        -e KSU_MULTI_MANAGER_SUPPORT \
         -e THREAD_INFO_IN_TASK \
         -e KSU_SUSFS_SUS_PATH \
         -e KSU_SUSFS_SUS_MOUNT \
@@ -392,15 +386,12 @@ if [ "$ENABLE_KSU" -eq 1 ]; then
         -e KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG \
         -e KSU_SUSFS_OPEN_REDIRECT \
         -e KSU_SUSFS_SUS_MAP \
-        -d KSU_DISABLE_MANAGER \
-        -d KSU_DISABLE_POLICY
+        -d KSU_DEBUG
 else
     echo "[*] Disabling embedded KSU for Pure Clean Kernel..."
     scripts/config --file "${OUT_DIR}/.config" \
         -d KSU \
-        -d KSU_SUSFS \
-        -d KSU_TRACEPOINT_HOOK \
-        -d KSU_MANUAL_HOOK
+        -d KSU_SUSFS
     sed -i '/CONFIG_KSU/d' "${OUT_DIR}/.config" 2>/dev/null || true
 fi
 
@@ -410,8 +401,8 @@ make -j"${TOTAL_CORES}" "${MAKE_OPTS[@]}" olddefconfig
 # ------------------------------------------
 # 9. Build Kernel Image & DTBs
 # ------------------------------------------
-if [ "$TARGET_VARIANT" == "2.8GHz" ] || [ "$TARGET_VARIANT" == "2.8ghz" ]; then
-    echo "[*] Applying Native C-Level 2.84 GHz Prime Core Hard Clamp..."
+if [ "$TARGET_VARIANT" == "2.7GHz" ] || [ "$TARGET_VARIANT" == "2.7ghz" ] || [ "$TARGET_VARIANT" == "2.8GHz" ] || [ "$TARGET_VARIANT" == "2.8ghz" ]; then
+    echo "[*] Applying Native C-Level 2.7 GHz (2745600 kHz) Prime Core Hard Clamp..."
     if [ -f "apply-cpu-cap.py" ]; then
         python3 apply-cpu-cap.py
     fi
@@ -506,7 +497,7 @@ fi
 write_boot;
 # NOTE: Stock DTBO partition is preserved 100% untouched to ensure OEM display panel calibrations & recovery work flawlessly!
 
-# Install post-boot optimization script into /data/adb/service.d for KSU/ReSukiSU/Magisk
+# Install post-boot optimization script into /data/adb/service.d for KSU/RKSU/Magisk
 if [ ! -d /data/adb/service.d ]; then
     mount /data 2>/dev/null
 fi
@@ -517,7 +508,30 @@ if [ -d /data/adb ]; then
     chmod 755 /data/adb/service.d/00-extreme-performance.sh
     chown root:root /data/adb/service.d/00-extreme-performance.sh 2>/dev/null
 fi
+
+# Pre-install userspace ksud daemon into /data/adb/ksud for instant root bootstrap
+if [ -f "$home/ksud" ]; then
+    if [ ! -d /data/adb ]; then
+        mount /data 2>/dev/null
+    fi
+    if [ -d /data/adb ]; then
+        ui_print "  -> Pre-installing KernelSU userspace daemon (ksud)...";
+        mkdir -p /data/adb/ksu/bin 2>/dev/null
+        cp -f "$home/ksud" /data/adb/ksud 2>/dev/null || true
+        cp -f "$home/ksud" /data/adb/ksu/bin/ksud 2>/dev/null || true
+        chmod 755 /data/adb/ksud /data/adb/ksu/bin/ksud 2>/dev/null || true
+        chown 0:0 /data/adb/ksud /data/adb/ksu/bin/ksud 2>/dev/null || true
+    fi
+fi
 EOF
+
+# Bundle prebuilt ksud binary for AnyKernel3 instant bootstrap
+if [ "$ENABLE_KSU" -eq 1 ]; then
+    echo "[*] Bundling prebuilt ksud binary for instant root bootstrap..."
+    curl -LSs -o anykernel/ksud "https://github.com/rsuntk/KernelSU/releases/download/v3.0.0-30-legacy/ksud-aarch64-linux-android" || \
+    curl -LSs -o anykernel/ksud "https://github.com/tiann/KernelSU/releases/download/v0.9.5/ksud-aarch64-linux-android" || true
+    chmod +x anykernel/ksud 2>/dev/null || true
+fi
 
 # Copy native init.extreme.rc into anykernel for packaging
 if [ -f "init.extreme.rc" ]; then
@@ -701,7 +715,7 @@ cd anykernel
 rm -rf .git
 
 BUILD_TAG="NoRoot"
-[ "$ENABLE_KSU" -eq 1 ] && BUILD_TAG="ReSukiSU"
+[ "$ENABLE_KSU" -eq 1 ] && BUILD_TAG="RKSU"
 DATE_TAG="$(date +'%d%b%Y_%H%M')"
 
 TARGET_VARIANT="${3:-both}"
@@ -714,10 +728,10 @@ if [ "$TARGET_VARIANT" == "both" ] || [ "$TARGET_VARIANT" == "3.2GHz" ] || [ "$T
     echo "[+] =========================================="
 fi
 
-if [ "$TARGET_VARIANT" == "both" ] || [ "$TARGET_VARIANT" == "2.8GHz" ] || [ "$TARGET_VARIANT" == "2.8ghz" ]; then
-    ZIP_28="EXTREME++_HyperOS_munch_2.8GHz_${BUILD_TAG}_${DATE_TAG}.zip"
+if [ "$TARGET_VARIANT" == "both" ] || [ "$TARGET_VARIANT" == "2.7GHz" ] || [ "$TARGET_VARIANT" == "2.7ghz" ] || [ "$TARGET_VARIANT" == "2.8GHz" ] || [ "$TARGET_VARIANT" == "2.8ghz" ]; then
+    ZIP_27="EXTREME++_HyperOS_munch_2.7GHz_${BUILD_TAG}_${DATE_TAG}.zip"
     if [ "$TARGET_VARIANT" == "both" ]; then
-        echo "[*] Compiling genuine C-level 2.84 GHz Prime Cap Kernel Image..."
+        echo "[*] Compiling genuine C-level 2.7 GHz (2745600 kHz) Prime Cap Kernel Image..."
         cd ..
         if [ -f "apply-cpu-cap.py" ]; then
             python3 apply-cpu-cap.py
@@ -726,9 +740,9 @@ if [ "$TARGET_VARIANT" == "both" ] || [ "$TARGET_VARIANT" == "2.8GHz" ] || [ "$T
         cp "${OUT_DIR}/arch/arm64/boot/Image" anykernel/
         cd anykernel
     fi
-    zip -r9 "../${ZIP_28}" ./* -x .gitignore out/ ./*.zip > /dev/null
+    zip -r9 "../${ZIP_27}" ./* -x .gitignore out/ ./*.zip > /dev/null
     echo "[+] =========================================="
-    echo "[+] SUCCESS! 2.8GHz Native C-Clamped Variant ready: ${ZIP_28}"
+    echo "[+] SUCCESS! 2.7GHz Native C-Clamped Variant ready: ${ZIP_27}"
     echo "[+] =========================================="
 fi
 

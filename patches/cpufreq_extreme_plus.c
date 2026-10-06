@@ -1,7 +1,7 @@
 /*
- * EXTREME+ CPUFreq Governor - High Performance Schedutil Evolution
+ * PROJECT EXTREME++ CPUFreq Governor - High Performance Schedutil Evolution
  * Maintainer: PandeyJI-9
- * Optimized for POCO F4 (munch / SM8250-AC Kona)
+ * Optimized for POCO F4 (munch / SM8250-AC Kona) | HyperOS ONLY
  * 
  * Features:
  * - Zero-latency ramp-up (up_rate_limit_us = 0)

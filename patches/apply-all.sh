@@ -1,5 +1,9 @@
 #!/bin/bash
-# 'set -euo pipefail' HATA DIYA HAI taaki silent crash hoke build stock na ban jaye!
+# ==============================================================================
+# PROJECT EXTREME++ | Maintainer: PandeyJI-9
+# Device: POCO F4 (munch) | Target: HyperOS ONLY
+# Master Patch Application Suite
+# ==============================================================================
 KERNEL_SRC="${1:-.}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 

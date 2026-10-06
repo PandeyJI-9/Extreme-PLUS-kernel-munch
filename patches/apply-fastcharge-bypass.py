@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """
-PROJECT EXTREME+ V2: 67W Fast Charging & True Bypass Charging Patcher
+PROJECT EXTREME++ | Maintainer: PandeyJI-9
+Device: POCO F4 (munch) | Target: HyperOS ONLY
+67W Fast Charging & True Bypass Charging Patcher
 Applies proven SenseiiX (fusionX_sm8250) power subsystem patches for POCO F4 (munch):
 1. pd_policy_manager_munch.c & pd_policy_manager.c: Bypass DS28E16 authenticity check -> Full 67W Flash Charge
 2. qpnp-smb5.c: Expose 6.0A (6000000 uA) for fastcharge mode & rerun APSD on plug-in

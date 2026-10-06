@@ -1,4 +1,4 @@
-name: 📲 Send ReSukiSU Manager
+name: 📲 Send RKSU Manager (PandeyJI-9)
 
 on:
   workflow_dispatch: # Manual trigger button
@@ -14,7 +14,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           echo "[*] Contacting GitHub API for APK..."
-          # Fetching from rsuntk as ReSukiSU doesn't host compiled APKs
+          # Fetching from rsuntk for RKSU
           API_URL="https://api.github.com/repos/rsuntk/KernelSU/releases"
           
           # Bulletproof extraction using grep
@@ -22,7 +22,7 @@ jobs:
           VERSION_TAG=$(curl -sL -H "Authorization: Bearer $GH_TOKEN" $API_URL | grep '"tag_name":' | cut -d '"' -f 4 | head -n 1)
           
           echo "Downloading version: $VERSION_TAG"
-          FILE_NAME="ReSukiSU_Manager_${VERSION_TAG}.apk"
+          FILE_NAME="RKSU_Manager_${VERSION_TAG}.apk"
           
           wget -q -O "$FILE_NAME" "$APK_URL"
           
@@ -38,10 +38,10 @@ jobs:
 
       - name: "🚀 Send APK to Telegram"
         run: |
-          CAPTION="🔥 <b>EXTREME++ KernelSU Manager</b>
+          CAPTION="🔥 <b>EXTREME++ RKSU Manager | Maintainer: PandeyJI-9</b>
           
           📦 <b>Version:</b> <code>${{ env.VERSION_TAG }}</code>
-          ⚙️ <b>Type:</b> ReSukiSU (Non-GKI 4.19 + SuSFS)
+          ⚙️ <b>Type:</b> RKSU (Rissu KernelSU 4.19 + SuSFS v2.3.0)
           📱 <b>Device:</b> POCO F4 (munch)
           
           ⬇️ <i>Install this specific manager to control your root access. This is perfectly synced with your EXTREME++ kernel for zero detection!</i>"

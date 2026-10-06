@@ -1,7 +1,7 @@
 #!/bin/sh
 # ═══════════════════════════════════════════════════════════════
-#  EXTREME++GAMING — Schedutil Workload Tweaks
-#  POCO F4 (munch) | HyperOS 3 Optimized
+#  PROJECT EXTREME++ | Maintainer: PandeyJI-9
+#  Schedutil Workload Tweaks | POCO F4 (munch) | HyperOS ONLY
 # ═══════════════════════════════════════════════════════════════
 # This script is injected into /vendor/bin/ and run at boot
 # via init.rc to dynamically tune the schedutil governor.

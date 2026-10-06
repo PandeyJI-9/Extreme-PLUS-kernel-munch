@@ -1,7 +1,7 @@
 # ═══════════════════════════════════════════════════════════════
-#  EXTREME++ PROJECT — Native Init & Schedtune Hardware Rules
-#  POCO F4 (munch / SM8250-AC Kona) | HyperOS & Android 13-17
-#  Zero Magisk Dependency | Native Ramdisk Injection
+#  PROJECT EXTREME++ | Maintainer: PandeyJI-9
+#  Native Init & Schedtune Hardware Rules | HyperOS ONLY
+#  POCO F4 (munch / SM8250-AC Kona) | Android 13-17
 # ═══════════════════════════════════════════════════════════════
 
 on early-init

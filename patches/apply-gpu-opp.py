@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+# ==============================================================================
+# PROJECT EXTREME++ | Maintainer: PandeyJI-9
+# Device: POCO F4 (munch) | Target: HyperOS ONLY
+# Adreno 650 GPU OPP Table Patcher
+# ==============================================================================
 import sys
 import re
 

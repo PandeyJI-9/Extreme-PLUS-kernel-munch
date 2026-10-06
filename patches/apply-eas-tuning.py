@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 """
 ═══════════════════════════════════════════════════════════════
- EXTREME++GAMING — EAS & Capacity Margin Patch
- SM8250-AC (Snapdragon 870) | POCO F4 (munch)
+ PROJECT EXTREME++ | Maintainer: PandeyJI-9
+ SM8250-AC (Snapdragon 870) | POCO F4 (munch) | HyperOS ONLY
+ EAS & Capacity Margin Optimization Suite
 ═══════════════════════════════════════════════════════════════
- Adjusts the EAS (Energy Aware Scheduling) energy model
- capacity margins to reflect the new 2841 MHz ceiling on Core 7.
 """
 import sys
 
