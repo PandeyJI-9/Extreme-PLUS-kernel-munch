@@ -1,4 +1,4 @@
-name: "🚀 Build EXTREME++ Kernel (Dual Variant: 3.2GHz & 2.7GHz)"
+name: "🚀 Build EXTREME++ Kernel (Tri-Variant: Battery, Bal-Gaming, Gaming)"
 
 on:
   workflow_dispatch:
@@ -8,10 +8,11 @@ on:
         required: true
         type: choice
         options:
-          - both
-          - 3.2GHz
-          - 2.7GHz
-        default: both
+          - all
+          - Battery
+          - Bal-Gaming
+          - Gaming
+        default: all
       build_ksu:
         description: 'Integrate RKSU + SuSFS (v2.3.0)'
         required: true
@@ -86,7 +87,7 @@ jobs:
         run: |
           cd kernel
           TARGET_VAR="${{ inputs.variant }}"
-          [ -z "$TARGET_VAR" ] && TARGET_VAR="both"
+          [ -z "$TARGET_VAR" ] && TARGET_VAR="all"
           KSU_MODE="noroot"
           if [ "${{ inputs.build_ksu }}" = "true" ]; then
             KSU_MODE="ksu"
@@ -94,7 +95,15 @@ jobs:
           ./build_kernel.sh munch "$KSU_MODE" "$TARGET_VAR"
           
           echo "✅ Built ZIP files:"
-          ls -lh *munch*.zip
+          ls -lh EXTREME++*.zip
+
+      - name: "📦 Upload Build Artifacts"
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: EXTREME++_Release_${{ github.run_number }}
+          path: kernel/EXTREME++*.zip
+          if-no-files-found: error
 
       - name: "📢 Telegram: Official Release Broadcast"
         if: success()
@@ -108,14 +117,12 @@ jobs:
           MSG="${MSG}📱 <b>Device:</b> POCO F4 (munch)%0A"
           MSG="${MSG}⚡ <b>Target ROM:</b> HyperOS / MIUI Android 13–17%0A"
           MSG="${MSG}🛠️ <b>Toolchain:</b> ZyC-Clang 16.0.6 + LLD%0A"
+          MSG="${MSG}👑 <b>Author:</b> Extreme++gaming by PandeyJi%0A"
           MSG="${MSG}${ROOT_DESC}%0A%0A"
-          MSG="${MSG}✨ <b>Key Features:</b>%0A"
-          MSG="${MSG}• <b>Dual Variants:</b> 3.2GHz Benchmark & 2.7GHz Cool Gaming%0A"
-          MSG="${MSG}• <b>Network:</b> TCP BBR Congestion Control (Low Ping in BGMI/COD)%0A"
-          MSG="${MSG}• <b>GPU:</b> FakeDreamer 150MHz - 670MHz UV & msm-adreno-tz%0A"
-          MSG="${MSG}• <b>Storage:</b> Zero-Overhead Block I/O Stats Disabled%0A"
-          MSG="${MSG}• <b>Memory:</b> Smart LMK Sniper Method & App Protection%0A"
-          MSG="${MSG}• <b>Governor:</b> 100% Safe Schedutil Boot + EXTREME+ Module%0A%0A"
+          MSG="${MSG}✨ <b>Available Variants:</b>%0A"
+          MSG="${MSG}• 🔋 <b>Battery:</b> ~2.5GHz (2419200 kHz) - Massive Battery Backup%0A"
+          MSG="${MSG}• ⚖️ <b>Bal-Gaming:</b> 2.84GHz (2841600 kHz) - Balanced Long Gaming%0A"
+          MSG="${MSG}• 🚀 <b>Gaming:</b> 3.19GHz (3187200 kHz) - Pure Performance Monster%0A%0A"
           MSG="${MSG}📦 <i>Uploading flashable ZIP packages below...</i>"
 
           TARGETS=()
@@ -129,7 +136,7 @@ jobs:
               -d parse_mode="HTML" || true
           done
 
-          for z in $(find "$GITHUB_WORKSPACE/kernel" -maxdepth 1 -name "*munch*.zip"); do
+          for z in $(find "$GITHUB_WORKSPACE/kernel" -maxdepth 1 -name "EXTREME++*.zip"); do
             echo "Uploading $z to Telegram..."
             for chat in "${TARGETS[@]}"; do
               curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendDocument" \

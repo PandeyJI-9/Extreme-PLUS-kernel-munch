@@ -25,9 +25,9 @@ find "${KERNEL_SRC}/arch/arm64/configs" "${KERNEL_SRC}/arch/arm64/configs/vendor
 
   # Set Kernel Name
   if grep -q "CONFIG_LOCALVERSION=" "$DEFCONFIG"; then
-    sed -i 's/CONFIG_LOCALVERSION=.*/CONFIG_LOCALVERSION="-EXTREME++HyperOS"/' "$DEFCONFIG"
+    sed -i 's/CONFIG_LOCALVERSION=.*/CONFIG_LOCALVERSION="-Extreme++Gaming-by-PandeyJi"/' "$DEFCONFIG"
   else
-    echo 'CONFIG_LOCALVERSION="-EXTREME++HyperOS"' >> "$DEFCONFIG"
+    echo 'CONFIG_LOCALVERSION="-Extreme++Gaming-by-PandeyJi"' >> "$DEFCONFIG"
   fi
 done
 echo "✅ Kernel name set in all munch defconfigs!"

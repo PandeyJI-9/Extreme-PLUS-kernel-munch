@@ -1,30 +1,52 @@
 #!/usr/bin/env python3
-"""
-PROJECT EXTREME++ | Maintainer: PandeyJI-9
-Native C-Level 2.7 GHz (2745600 kHz) Prime Core Hard Clamp
-Device: POCO F4 (munch) | Target: HyperOS ONLY
-C-level clamp in drivers/cpufreq/qcom-cpufreq-hw.c:
-- Clamps CPU 7 (Prime Core) cpufreq OPP table right at 2745600 kHz (2.74 GHz)
-- Sets CPUFREQ_TABLE_END at 2745600 kHz, eliminating higher frequencies
-- Qualcomm hardware registers are read with 100% stock voltages (ZERO PMIC crash)
-- Thermal-engine, Joyose, and Schedutil see 2.745 GHz as the physical hardware max
-"""
-
+# ==============================================================================
+# PROJECT EXTREME++ | Maintainer: PandeyJI-9
+# Device: POCO F4 (munch / SM8250-AC Kona) | Target: HyperOS ONLY
+# Prime Core (CPU 7) Hardware Frequency Clamping Architecture
+# ==============================================================================
+# Supported Target Frequencies (Validated Qualcomm Kona EPSS LUT steps):
+# 1. 2419200 kHz (~2.42 GHz) -> Battery Variant (Matched to Gold Core Peak)
+# 2. 2841600 kHz (2.84 GHz)  -> Bal-Gaming Variant (Balanced Kryo 585 Prime)
+# 3. 3187200 kHz (3.19 GHz)  -> Gaming Variant (Max Stock Prime Core Boost)
+# ==============================================================================
 import sys
 import os
 import re
 
-def patch_driver(path="drivers/cpufreq/qcom-cpufreq-hw.c"):
+def parse_target_freq(arg):
+    s = str(arg).strip().lower()
+    if s in ("battery", "bat", "2.5", "2.5ghz", "2.4", "2.4ghz", "2419200"):
+        return 2419200
+    elif s in ("bal-gaming", "bal_gaming", "bal", "balanced", "2.8", "2.8ghz", "2841600"):
+        return 2841600
+    elif s in ("gaming", "game", "perf", "performance", "3.2", "3.2ghz", "3.19", "3.19ghz", "3187200", "stock"):
+        return 3187200
+    try:
+        val = int(s)
+        if val >= 1000000:
+            return val
+    except ValueError:
+        pass
+    return None
+
+def patch_driver(path="drivers/cpufreq/qcom-cpufreq-hw.c", cap_freq=2841600):
     if not os.path.exists(path):
-        print(f"⚠️ [2.7GHz C-Clamp] File not found: {path}")
+        print(f"⚠️ [CPU Cap] Driver file not found at: {path}")
         return False
+
     with open(path, "r") as f:
         content = f.read()
 
-    if "/* EXTREME+ V2: Native 2.7 GHz Prime Core Clamp */" in content:
-        print("ℹ️ [2.7GHz C-Clamp] Driver already patched.")
+    # Match existing clamp block regardless of comment style
+    p = re.compile(r"(cpumask_test_cpu\(7, &c->related_cpus\) && c->table\[i\]\.frequency >= )\d+(\) \{\s*c->table\[i\]\.frequency = )\d+(;)")
+    if p.search(content):
+        content = p.sub(rf"\g<1>{cap_freq}\g<2>{cap_freq}\g<3>", content)
+        with open(path, "w") as f:
+            f.write(content)
+        print(f"✅ [CPU Cap] Updated drivers/cpufreq/qcom-cpufreq-hw.c Prime Core clamp to {cap_freq} kHz")
         return True
 
+    # If not yet patched, insert the clamp logic into stock qcom_cpufreq_hw_read_lut
     target = """\t\tfor_each_cpu(cpu, &c->related_cpus) {
 \t\t\tcpu_dev = get_cpu_device(cpu);
 \t\t\tif (!cpu_dev)
@@ -33,49 +55,50 @@ def patch_driver(path="drivers/cpufreq/qcom-cpufreq-hw.c"):
 \t\t\t\t\t\t\tvolt);
 \t\t}"""
 
-    replacement = """\t\t/* EXTREME+ V2: Native 2.7 GHz Prime Core Clamp */
-\t\tif (cpumask_test_cpu(7, &c->related_cpus) && c->table[i].frequency >= 2745600) {
-\t\t\tc->table[i].frequency = 2745600;
-\t\t\tfor_each_cpu(cpu, &c->related_cpus) {
+    replacement = f"""\t\t/* EXTREME+: Prime Core Hardware Frequency Clamp */
+\t\tif (cpumask_test_cpu(7, &c->related_cpus) && c->table[i].frequency >= {cap_freq}) {{
+\t\t\tc->table[i].frequency = {cap_freq};
+\t\t\tfor_each_cpu(cpu, &c->related_cpus) {{
 \t\t\t\tcpu_dev = get_cpu_device(cpu);
 \t\t\t\tif (!cpu_dev)
 \t\t\t\t\tcontinue;
-\t\t\tdev_pm_opp_add(cpu_dev, c->table[i].frequency * 1000, volt);
-\t\t\t}
+\t\t\t\tdev_pm_opp_add(cpu_dev, c->table[i].frequency * 1000, volt);
+\t\t\t}}
 \t\t\tc->table[i + 1].frequency = CPUFREQ_TABLE_END;
 \t\t\tc->table[i + 1].flags = 0;
 \t\t\tbreak;
-\t\t}
+\t\t}}
 
-\t\tfor_each_cpu(cpu, &c->related_cpus) {
+\t\tfor_each_cpu(cpu, &c->related_cpus) {{
 \t\t\tcpu_dev = get_cpu_device(cpu);
 \t\t\tif (!cpu_dev)
 \t\t\t\tcontinue;
 \t\t\tdev_pm_opp_add(cpu_dev, c->table[i].frequency * 1000,
 \t\t\t\t\t\t\tvolt);
-\t\t}"""
+\t\t}}"""
 
     if target in content:
         content = content.replace(target, replacement, 1)
         with open(path, "w") as f:
             f.write(content)
-        print("✅ [2.7GHz C-Clamp] Successfully patched drivers/cpufreq/qcom-cpufreq-hw.c to 2745600 kHz")
+        print(f"✅ [CPU Cap] Successfully patched drivers/cpufreq/qcom-cpufreq-hw.c to {cap_freq} kHz")
         return True
     else:
-        print("⚠️ [2.7GHz C-Clamp] Target pattern not found in qcom-cpufreq-hw.c")
+        print("⚠️ [CPU Cap] Target pattern not found in qcom-cpufreq-hw.c")
         return False
 
-def patch_dts(path="arch/arm64/boot/dts/vendor/qcom/kona.dtsi"):
+def patch_dts(path="arch/arm64/boot/dts/vendor/qcom/kona.dtsi", cap_freq=2841600):
     if not os.path.exists(path):
         return True
-    with open(path, 'r') as f:
+
+    with open(path, "r") as f:
         text = f.read()
 
-    if 'qcom,freq-domain-max-freq' in text:
-        text = re.sub(r"qcom,freq-domain-max-freq\s*=\s*<[^>]+>;", "qcom,freq-domain-max-freq = <2745600>;", text)
-        with open(path, 'w') as f:
+    if "qcom,freq-domain-max-freq" in text:
+        text = re.sub(r"qcom,freq-domain-max-freq\s*=\s*<[^>]+>;", f"qcom,freq-domain-max-freq = <{cap_freq}>;", text)
+        with open(path, "w") as f:
             f.write(text)
-        print("✅ [2.7GHz C-Clamp] CPU Prime Core cap updated in kona.dtsi to 2745600 kHz")
+        print(f"✅ [CPU Cap] CPU Prime Core cap updated in kona.dtsi to {cap_freq} kHz")
         return True
 
     markers = [
@@ -86,16 +109,30 @@ def patch_dts(path="arch/arm64/boot/dts/vendor/qcom/kona.dtsi"):
 
     for marker in markers:
         if marker in text:
-            insert = '\n\t\t\t/* EXTREME+ V2: Cap Prime Core (CPU7) to 2.7 GHz (2745600 kHz) */\n\t\t\tqcom,freq-domain-max-freq = <2745600>;\n'
+            insert = f'\n\t\t\t/* EXTREME+: Cap Prime Core (CPU7) to {cap_freq} kHz */\n\t\t\tqcom,freq-domain-max-freq = <{cap_freq}>;\n'
             text = text.replace(marker, marker + insert, 1)
-            with open(path, 'w') as f:
+            with open(path, "w") as f:
                 f.write(text)
-            print(f"✅ [2.7GHz C-Clamp] CPU Prime Core capped in kona.dtsi to 2745600 kHz via {marker.strip()}")
+            print(f"✅ [CPU Cap] CPU Prime Core capped in kona.dtsi to {cap_freq} kHz via {marker.strip()}")
             return True
     return True
 
-if __name__ == '__main__':
-    dts_target = sys.argv[1] if len(sys.argv) > 1 and sys.argv[1].endswith('.dtsi') else "arch/arm64/boot/dts/vendor/qcom/kona.dtsi"
-    patch_dts(dts_target)
-    patch_driver()
+if __name__ == "__main__":
+    target_freq = 2841600 # Default to 2.84 GHz balanced
+    dts_path = "arch/arm64/boot/dts/vendor/qcom/kona.dtsi"
+    driver_path = "drivers/cpufreq/qcom-cpufreq-hw.c"
+
+    for arg in sys.argv[1:]:
+        if arg.endswith(".dtsi"):
+            dts_path = arg
+        elif arg.endswith(".c"):
+            driver_path = arg
+        else:
+            freq = parse_target_freq(arg)
+            if freq:
+                target_freq = freq
+
+    print(f"🚀 [CPU Cap] Configuring Prime Core clamp at {target_freq} kHz...")
+    patch_dts(dts_path, target_freq)
+    patch_driver(driver_path, target_freq)
     sys.exit(0)

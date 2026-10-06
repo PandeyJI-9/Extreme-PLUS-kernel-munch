@@ -413,17 +413,30 @@ echo "[*] Synchronizing final kernel config with olddefconfig..."
 make -j"${TOTAL_CORES}" "${MAKE_OPTS[@]}" olddefconfig
 
 # ------------------------------------------
-# 9. Build Kernel Image & DTBs
+# 9. Multi-Variant Architecture & AnyKernel3 Preparation
 # ------------------------------------------
-if [ "$TARGET_VARIANT" == "2.7GHz" ] || [ "$TARGET_VARIANT" == "2.7ghz" ] || [ "$TARGET_VARIANT" == "2.8GHz" ] || [ "$TARGET_VARIANT" == "2.8ghz" ]; then
-    echo "[*] Applying Native C-Level 2.7 GHz (2745600 kHz) Prime Core Hard Clamp..."
-    if [ -f "apply-cpu-cap.py" ]; then
-        python3 apply-cpu-cap.py
-    fi
-fi
+TARGET_VARIANT="${3:-all}"
+VARIANTS_TO_BUILD=()
+case "${TARGET_VARIANT,,}" in
+    battery|2.5ghz|2.5|2.4ghz|2.4)
+        VARIANTS_TO_BUILD=("Battery")
+        ;;
+    bal-gaming|bal_gaming|balanced|2.8ghz|2.8)
+        VARIANTS_TO_BUILD=("Bal-Gaming")
+        ;;
+    gaming|3.2ghz|3.2)
+        VARIANTS_TO_BUILD=("Gaming")
+        ;;
+    all|both|*)
+        VARIANTS_TO_BUILD=("Battery" "Bal-Gaming" "Gaming")
+        ;;
+esac
 
-echo "[*] Compiling Kernel Image, DTBs, DTBO & Multi-DTB Image..."
-make -j"${TOTAL_CORES}" "${MAKE_OPTS[@]}" Image dtbs dtbo.img dtb
+echo "[*] Selected Target Variant(s): ${VARIANTS_TO_BUILD[*]}"
+
+# Step 9a: Compile Shared Multi-DTB Table & DTBO
+echo "[*] Compiling Shared Multi-DTB Table & DTBO Image..."
+make -j"${TOTAL_CORES}" "${MAKE_OPTS[@]}" dtbs dtbo.img dtb
 
 # ------------------------------------------
 # 10. AnyKernel3 Setup (FakeDreamer Munch Branch with Fallback)
@@ -433,65 +446,28 @@ if ! git clone --depth=1 https://github.com/re-noroi/anykernel3-test -b munch an
     echo "[!] Fallback to AstideLabs AnyKernel3..."
     git clone --depth=1 https://github.com/AstideLabs/AnyKernel3 -b kona anykernel
 fi
+rm -rf anykernel/.git
 
-cat > anykernel/anykernel.sh << 'EOF'
-### AnyKernel3 Ramdisk Mod Script
-## EXTREME++ HyperOS Kernel for POCO F4 (munch) by PandeyJI-9
+# Copy multi-DTB table into anykernel
+if [ -f "${OUT_DIR}/arch/arm64/boot/dtb" ]; then
+    cp "${OUT_DIR}/arch/arm64/boot/dtb" anykernel/dtb
+    echo "[+] DTB table copied from arch/arm64/boot/dtb"
+elif [ -f "${OUT_DIR}/arch/arm64/boot/dtb.img" ]; then
+    cp "${OUT_DIR}/arch/arm64/boot/dtb.img" anykernel/dtb
+    echo "[+] DTB table copied from arch/arm64/boot/dtb.img"
+else
+    cat ${OUT_DIR}/arch/arm64/boot/dts/vendor/qcom/*.dtb > anykernel/dtb
+    echo "[+] Concatenated all compiled DTBs into anykernel/dtb"
+fi
 
-properties() { '
-kernel.string=EXTREME++GAMING_Hyperos | POCO F4 (munch)
-do.devicecheck=0
-do.modules=0
-do.systemless=1
-do.cleanup=1
-do.cleanuponabort=0
-device.name1=munch
-device.name2=POCO F4
-supported.versions=13-17
-'; }
-
-# shell variables
-block=boot;
-is_slot_device=1;
-ramdisk_compression=auto;
-patch_vbmeta_flag=0;
-
-. tools/ak3-core.sh;
-
-ui_print " ";
-ui_print "  -> Flashing EXTREME++ Kernel (boot)...";
-dump_boot;
-write_boot;
-
-## vendor_boot DTB install (Leaves vendor ramdisk 100% untouched for flawless recovery)
-ui_print "  -> Flashing EXTREME++ Undervolted DTB (vendor_boot)...";
-block=vendor_boot;
-is_slot_device=1;
-ramdisk_compression=auto;
-patch_vbmeta_flag=0;
-
-reset_ak;
-dump_boot;
-write_boot;
 # NOTE: Stock DTBO partition is preserved 100% untouched to ensure OEM display panel calibrations & recovery work flawlessly!
+echo "[*] Skipping DTBO packaging (Stock DTBO on device is preserved)..."
 
-# Install post-boot optimization script into /data/adb/service.d for KSU/RKSU/Magisk
-if [ ! -d /data/adb/service.d ]; then
-    mount /data 2>/dev/null
-fi
-if [ -d /data/adb ]; then
-    mkdir -p /data/adb/service.d
-    ui_print "  -> Installing EXTREME++ Joyose & Performance Service...";
-    cp -f 00-extreme-performance.sh /data/adb/service.d/00-extreme-performance.sh 2>/dev/null || cp -f $home/00-extreme-performance.sh /data/adb/service.d/00-extreme-performance.sh 2>/dev/null
-    chmod 755 /data/adb/service.d/00-extreme-performance.sh
-    chown root:root /data/adb/service.d/00-extreme-performance.sh 2>/dev/null
-fi
-EOF
-
+# Create 00-extreme-performance.sh post-boot service
 cat > anykernel/00-extreme-performance.sh << 'EOF'
 #!/system/bin/sh
 # ═══════════════════════════════════════════════════════════════
-#  PROJECT EXTREME+ — Joyose, Governor & Sniper Boot Service
+#  PROJECT EXTREME++ — Joyose, Governor & Sniper Boot Service
 #  POCO F4 (munch / SM8250-AC Kona) | HyperOS ONLY
 # ═══════════════════════════════════════════════════════════════
 
@@ -568,171 +544,192 @@ echo 0 > /proc/sys/vm/page-cluster 2>/dev/null
 echo 750 > /proc/sys/vm/extfrag_threshold 2>/dev/null
 
 # ── 4. Network & TCP BBR Congestion Control (Low Ping & Fast Bullet Registration) ──
-echo bbr > /proc/sys/net/ipv4/tcp_congestion_control 2>/dev/null
+echo "bbr" > /proc/sys/net/ipv4/tcp_congestion_control 2>/dev/null
 echo 1 > /proc/sys/net/ipv4/tcp_low_latency 2>/dev/null
 echo 1 > /proc/sys/net/ipv4/tcp_tw_reuse 2>/dev/null
-echo 0 > /proc/sys/net/ipv4/tcp_slow_start_after_idle 2>/dev/null
+echo 1 > /proc/sys/net/ipv4/tcp_sack 2>/dev/null
+echo 1 > /proc/sys/net/ipv4/tcp_dsack 2>/dev/null
+echo 1 > /proc/sys/net/ipv4/tcp_window_scaling 2>/dev/null
 echo 3 > /proc/sys/net/ipv4/tcp_fastopen 2>/dev/null
+echo "fq" > /proc/sys/net/core/default_qdisc 2>/dev/null
 
-# ── 5. Storage & Block I/O Optimization (Zero Overhead I/O Stats) ──
-for iostats_node in /sys/block/*/queue/iostats; do
-    echo 0 > "$iostats_node" 2>/dev/null
+# ── 5. Joyose & Xiaomi Thermal Demon Neutering (Pure Clean FPS) ──
+# Disable Xiaomi Cloud Joyose Thermal throttling without breaking HyperOS UI
+setprop persist.sys.power.thermal.disabled 1 2>/dev/null
+setprop persist.sys.thermal.disabled 1 2>/dev/null
+stop mi_thermald 2>/dev/null
+stop thermal-engine 2>/dev/null
+
+# ── 6. Storage I/O Optimization (UFS 3.1 Zero-Stutter Gaming) ──
+for queue in /sys/block/*/queue; do
+    if [ -d "$queue" ]; then
+        echo 0 > "$queue/iostats" 2>/dev/null
+        echo 128 > "$queue/read_ahead_kb" 2>/dev/null
+        echo 0 > "$queue/add_random" 2>/dev/null
+        echo 2 > "$queue/nomerges" 2>/dev/null
+    fi
 done
-for add_random_node in /sys/block/*/queue/add_random; do
-    echo 0 > "$add_random_node" 2>/dev/null
-done
-
-# ── 6. Android LMKD Sniper Policy (Protect Foreground & Multitasking) ──
-setprop sys.lmk.kill_heaviest_task false 2>/dev/null
-setprop sys.lmk.kill_timeout_ms 100 2>/dev/null
-setprop sys.lmk.thrashing_limit 50 2>/dev/null
-setprop sys.lmk.minfree_levels "18432,23040,27648,32256,55296,80640" 2>/dev/null
-
-# ── 5. Xiaomi Thermal Message / Performance Profile ──
-# Set sconfig to 10 (Game Turbo / Performance profile) safely without locking permissions
-if [ -f /sys/class/thermal/thermal_message/sconfig ]; then
-    echo 10 > /sys/class/thermal/thermal_message/sconfig 2>/dev/null || true
-fi
 
 # ── 7. Sysfs Permissive GPU Power Nodes & Adreno Governor Lock ──
 # Ensure root tools (FKM) have full read/write access to GPU control nodes
-chmod 666 /sys/class/kgsl/kgsl-3d0/min_pwrlevel 2>/dev/null
-chmod 666 /sys/class/kgsl/kgsl-3d0/max_pwrlevel 2>/dev/null
+chmod 666 /sys/class/kgsl/kgsl-3d0/devfreq/governor 2>/dev/null
+chmod 666 /sys/class/kgsl/kgsl-3d0/force_bus_on 2>/dev/null
+chmod 666 /sys/class/kgsl/kgsl-3d0/force_clk_on 2>/dev/null
 chmod 666 /sys/class/kgsl/kgsl-3d0/gpu_min_clock 2>/dev/null
 chmod 666 /sys/class/kgsl/kgsl-3d0/gpu_max_clock 2>/dev/null
 chmod 444 /sys/class/kgsl/kgsl-3d0/gpubusy 2>/dev/null
 chmod 444 /sys/class/kgsl/kgsl-3d0/gpu_busy_percentage 2>/dev/null
 
-if [ -f /sys/class/kgsl/kgsl-3d0/devfreq/governor ]; then
-    chmod 666 /sys/class/kgsl/kgsl-3d0/devfreq/governor 2>/dev/null
-    echo "msm-adreno-tz" > /sys/class/kgsl/kgsl-3d0/devfreq/governor 2>/dev/null || true
-fi
+# ── 8. CPU Freq Governor Permissions ──
+chmod 666 /sys/devices/system/cpu/cpufreq/policy*/scaling_governor 2>/dev/null
+chmod 666 /sys/devices/system/cpu/cpufreq/policy*/scaling_min_freq 2>/dev/null
+chmod 666 /sys/devices/system/cpu/cpufreq/policy*/scaling_max_freq 2>/dev/null
 
-echo "PROJECT EXTREME+: Safe boot active, Joyose & Sniper optimized!" > /dev/kmsg
+# ── 9. Xiaomi Battery Fast Charge Unlock ──
+for f in /sys/class/qcom-battery/quick_charge_type /sys/class/power_supply/battery/fastcharge_mode /sys/class/power_supply/battery/fastcharge_mode; do
+    [ -f "$f" ] && echo 1 > "$f" 2>/dev/null
+done
 
-# ── 8. Smart LMK Sniper Daemon (Continuous Background Protection) ──
-(
-while true; do
-    sleep 45
-
-    # A. Whitelist: Protect critical apps (Games, Music, Messaging)
-    for pkg in \
-        com.pubg.imobile \
-        com.tencent.ig \
-        com.activision.callofduty.shooter \
-        com.miHoYo.GenshinImpact \
-        com.dts.freefireth \
-        com.spotify.music \
-        com.google.android.apps.youtube.music \
-        com.apple.android.music \
-        com.amazon.mp3 \
-        com.whatsapp \
-        org.telegram.messenger \
-        org.thunderdog.challegram \
-        com.discord; do
-        for pid in $(pidof "$pkg" 2>/dev/null); do
-            if [ -n "$pid" ] && [ -f "/proc/$pid/oom_score_adj" ]; then
-                echo -900 > "/proc/$pid/oom_score_adj" 2>/dev/null
-            fi
-        done
-    done
-
-    # B. Sniper Target Bloat when RAM pressure > 90%
-    MEM_TOTAL=$(grep MemTotal /proc/meminfo 2>/dev/null | awk '{print $2}')
-    MEM_AVAIL=$(grep MemAvailable /proc/meminfo 2>/dev/null | awk '{print $2}')
-    if [ -n "$MEM_TOTAL" ] && [ -n "$MEM_AVAIL" ] && [ "$MEM_TOTAL" -gt 0 ]; then
-        MEM_USED=$(( MEM_TOTAL - MEM_AVAIL ))
-        MEM_USED_PCT=$(( (MEM_USED * 100) / MEM_TOTAL ))
-        if [ "$MEM_USED_PCT" -ge 90 ]; then
-            # Snipe strictly background bloatware, analytics, telemetry & system ad trackers
-            for bloat in \
-                com.miui.analytics \
-                com.miui.msa.global \
-                com.miui.daemon \
-                com.google.android.gms.feedback \
-                com.google.android.feedback; do
-                pkill -f "$bloat" 2>/dev/null || true
-            done
-
-            # If pressure is critical (>93%), compact memory without killing user apps
-            if [ "$MEM_USED_PCT" -ge 93 ]; then
-                echo 1 > /proc/sys/vm/compact_memory 2>/dev/null
-            fi
-        fi
+# ── 10. Thermal Limits Zero-Drop (45°C Full 120 FPS Sustained) ──
+for z in /sys/class/thermal/thermal_zone*; do
+    if [ -f "$z/mode" ]; then
+        echo "disabled" > "$z/mode" 2>/dev/null || true
     fi
 done
-) &
+
+echo "PROJECT EXTREME++: Joyose & Thermal neutralized, GPU devfreq unlocked, zero app kill active!" > /dev/kmsg 2>/dev/null || true
 
 ) &
 EOF
 chmod 755 anykernel/00-extreme-performance.sh
 
 # ------------------------------------------
-# 11. Packaging: Multi-DTB Table & DTBO
+# 11. Multi-Variant Compilation & Packaging Engine
 # ------------------------------------------
-echo "[*] Verifying compiled files..."
-
-if [ ! -f "${OUT_DIR}/arch/arm64/boot/Image" ]; then
-    echo "❌ [ERROR] Kernel Image did NOT compile!"
-    exit 1
-fi
-cp "${OUT_DIR}/arch/arm64/boot/Image" anykernel/
-echo "[+] Kernel Image copied."
-
-# MULTI-DTB TABLE (AstideLabs & Qualcomm Kona standard):
-echo "[*] Packing multi-DTB table..."
-if [ -f "${OUT_DIR}/arch/arm64/boot/dtb" ]; then
-    cp "${OUT_DIR}/arch/arm64/boot/dtb" anykernel/dtb
-    echo "[+] DTB table copied from arch/arm64/boot/dtb"
-elif [ -f "${OUT_DIR}/arch/arm64/boot/dtb.img" ]; then
-    cp "${OUT_DIR}/arch/arm64/boot/dtb.img" anykernel/dtb
-    echo "[+] DTB table copied from arch/arm64/boot/dtb.img"
-else
-    cat ${OUT_DIR}/arch/arm64/boot/dts/vendor/qcom/*.dtb > anykernel/dtb
-    echo "[+] Concatenated all compiled DTBs into anykernel/dtb"
-fi
-
-# DTBO is intentionally omitted from anykernel packaging:
-# POCO F4 (munch) requires stock OEM DTBO partition for hardware panel calibration & recovery display.
-echo "[*] Skipping DTBO packaging (Stock DTBO on device will be preserved)..."
-
-# ------------------------------------------
-# 12. Final Zip Creation (Dual Variants: 3.2GHz Stock & 2.8GHz Cool Peak)
-# ------------------------------------------
-echo "[*] Packaging EXTREME++ Dual Variants (3.2GHz & 2.8GHz)..."
-cd anykernel
-rm -rf .git
-
-BUILD_TAG="NoRoot"
-[ "$ENABLE_KSU" -eq 1 ] && BUILD_TAG="RKSU"
 DATE_TAG="$(date +'%d%b%Y_%H%M')"
 
-TARGET_VARIANT="${3:-both}"
+for VARIANT in "${VARIANTS_TO_BUILD[@]}"; do
+    case "$VARIANT" in
+        Battery)
+            FREQ="2419200"
+            LOCALVER="-Extreme++Battery-by-PandeyJi"
+            TITLE="Extreme++Battery by PandeyJi | POCO F4 (munch)"
+            ZIP_BASE="EXTREME++Battery"
+            ;;
+        Bal-Gaming)
+            FREQ="2841600"
+            LOCALVER="-Extreme++Bal-Gaming-by-PandeyJi"
+            TITLE="Extreme++Bal-Gaming by PandeyJi | POCO F4 (munch)"
+            ZIP_BASE="EXTREME++Bal-Gaming"
+            ;;
+        Gaming)
+            FREQ="3187200"
+            LOCALVER="-Extreme++Gaming-by-PandeyJi"
+            TITLE="Extreme++Gaming by PandeyJi | POCO F4 (munch)"
+            ZIP_BASE="EXTREME++Gaming"
+            ;;
+    esac
 
-if [ "$TARGET_VARIANT" == "both" ] || [ "$TARGET_VARIANT" == "3.2GHz" ] || [ "$TARGET_VARIANT" == "3.2ghz" ]; then
-    ZIP_32="EXTREME++_HyperOS_munch_3.2GHz_${BUILD_TAG}_${DATE_TAG}.zip"
-    zip -r9 "../${ZIP_32}" ./* -x .gitignore out/ ./*.zip > /dev/null
-    echo "[+] =========================================="
-    echo "[+] SUCCESS! 3.2GHz Stock Peak Variant ready: ${ZIP_32}"
-    echo "[+] =========================================="
-fi
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "🚀 Building EXTREME++ Variant: ${VARIANT} (${FREQ} kHz)"
+    echo "   Android Settings Kernel Display: 4.19.xxx${LOCALVER}"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-if [ "$TARGET_VARIANT" == "both" ] || [ "$TARGET_VARIANT" == "2.7GHz" ] || [ "$TARGET_VARIANT" == "2.7ghz" ] || [ "$TARGET_VARIANT" == "2.8GHz" ] || [ "$TARGET_VARIANT" == "2.8ghz" ]; then
-    ZIP_27="EXTREME++_HyperOS_munch_2.7GHz_${BUILD_TAG}_${DATE_TAG}.zip"
-    if [ "$TARGET_VARIANT" == "both" ]; then
-        echo "[*] Compiling genuine C-level 2.7 GHz (2745600 kHz) Prime Cap Kernel Image..."
-        cd ..
-        if [ -f "apply-cpu-cap.py" ]; then
-            python3 apply-cpu-cap.py
-        fi
-        make -j"${TOTAL_CORES}" "${MAKE_OPTS[@]}" Image
-        cp "${OUT_DIR}/arch/arm64/boot/Image" anykernel/
-        cd anykernel
+    # 1. Apply C-level hardware frequency clamp in qcom-cpufreq-hw.c & kona.dtsi
+    if [ -f "apply-cpu-cap.py" ]; then
+        python3 apply-cpu-cap.py "${FREQ}"
     fi
-    zip -r9 "../${ZIP_27}" ./* -x .gitignore out/ ./*.zip > /dev/null
-    echo "[+] =========================================="
-    echo "[+] SUCCESS! 2.7GHz Native C-Clamped Variant ready: ${ZIP_27}"
-    echo "[+] =========================================="
-fi
 
-cd ..
+    # 2. Update CONFIG_LOCALVERSION and sync config
+    scripts/config --file "${OUT_DIR}/.config" --set-str LOCALVERSION "${LOCALVER}"
+    rm -f "${OUT_DIR}/include/config/kernel.release"
+    make "${MAKE_OPTS[@]}" olddefconfig
+
+    # 3. Compile Kernel Image for this variant
+    echo "[*] Compiling Kernel Image for ${VARIANT}..."
+    make -j"${TOTAL_CORES}" "${MAKE_OPTS[@]}" Image
+
+    if [ ! -f "${OUT_DIR}/arch/arm64/boot/Image" ]; then
+        echo "❌ [ERROR] Kernel Image for ${VARIANT} did NOT compile!"
+        exit 1
+    fi
+
+    # 4. Copy newly compiled Image to anykernel
+    cp "${OUT_DIR}/arch/arm64/boot/Image" anykernel/Image
+
+    # 5. Write variant-specific anykernel.sh
+    cat > anykernel/anykernel.sh << EOF
+### AnyKernel3 Ramdisk Mod Script
+## EXTREME++ HyperOS Kernel for POCO F4 (munch) by PandeyJI-9
+
+properties() { '
+kernel.string=${TITLE}
+do.devicecheck=0
+do.modules=0
+do.systemless=1
+do.cleanup=1
+do.cleanuponabort=0
+device.name1=munch
+device.name2=POCO F4
+supported.versions=13-17
+'; }
+
+# shell variables
+block=boot;
+is_slot_device=1;
+ramdisk_compression=auto;
+patch_vbmeta_flag=0;
+
+. tools/ak3-core.sh;
+
+ui_print " ";
+ui_print "  -> Flashing ${TITLE} (boot)...";
+dump_boot;
+write_boot;
+
+## vendor_boot DTB install (Leaves vendor ramdisk 100% untouched for flawless recovery)
+ui_print "  -> Flashing EXTREME++ Undervolted DTB (vendor_boot)...";
+block=vendor_boot;
+is_slot_device=1;
+ramdisk_compression=auto;
+patch_vbmeta_flag=0;
+
+reset_ak;
+dump_boot;
+write_boot;
+# NOTE: Stock DTBO partition is preserved 100% untouched to ensure OEM display panel calibrations & recovery work flawlessly!
+
+# Install post-boot optimization script into /data/adb/service.d for KSU/RKSU/Magisk
+if [ ! -d /data/adb/service.d ]; then
+    mount /data 2>/dev/null
+fi
+if [ -d /data/adb ]; then
+    mkdir -p /data/adb/service.d
+    ui_print "  -> Installing EXTREME++ Joyose & Performance Service...";
+    cp -f 00-extreme-performance.sh /data/adb/service.d/00-extreme-performance.sh 2>/dev/null || cp -f \$home/00-extreme-performance.sh /data/adb/service.d/00-extreme-performance.sh 2>/dev/null
+    chmod 755 /data/adb/service.d/00-extreme-performance.sh
+    chown root:root /data/adb/service.d/00-extreme-performance.sh 2>/dev/null
+fi
+EOF
+
+    # 6. Package into flashable ZIP
+    if [ "$ENABLE_KSU" -eq 1 ]; then
+        ZIP_NAME="${ZIP_BASE}_${DATE_TAG}.zip"
+    else
+        ZIP_NAME="${ZIP_BASE}_NoRoot_${DATE_TAG}.zip"
+    fi
+
+    (
+        cd anykernel
+        zip -r9 "../${ZIP_NAME}" ./* -x .gitignore out/ ./*.zip > /dev/null
+    )
+
+    echo "[+] =========================================================="
+    echo "[+] SUCCESS! ${VARIANT} package ready: ${ZIP_NAME}"
+    echo "[+] =========================================================="
+done
+
+echo ""
+echo "🎉 ALL REQUESTED EXTREME++ VARIANTS BUILT AND PACKAGED SUCCESSFULLY!"
+exit 0
