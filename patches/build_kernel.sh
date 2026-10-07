@@ -553,12 +553,10 @@ echo 1 > /proc/sys/net/ipv4/tcp_window_scaling 2>/dev/null
 echo 3 > /proc/sys/net/ipv4/tcp_fastopen 2>/dev/null
 echo "fq" > /proc/sys/net/core/default_qdisc 2>/dev/null
 
-# ── 5. Joyose & Xiaomi Thermal Demon Neutering (Pure Clean FPS) ──
-# Disable Xiaomi Cloud Joyose Thermal throttling without breaking HyperOS UI
-setprop persist.sys.power.thermal.disabled 1 2>/dev/null
-setprop persist.sys.thermal.disabled 1 2>/dev/null
-stop mi_thermald 2>/dev/null
-stop thermal-engine 2>/dev/null
+# ── 5. Joyose & Xiaomi Game Throttling Neutering (Pure Clean FPS) ──
+# Keep mi_thermald & thermal-engine running for stock 67W Mi Turbo authentication & battery health.
+# Only neutralize Joyose cloud game throttling.
+setprop persist.sys.joyose.thermal.disabled 1 2>/dev/null || true
 
 # ── 6. Storage I/O Optimization (UFS 3.1 Zero-Stutter Gaming) ──
 for queue in /sys/block/*/queue; do
@@ -586,18 +584,11 @@ chmod 666 /sys/devices/system/cpu/cpufreq/policy*/scaling_min_freq 2>/dev/null
 chmod 666 /sys/devices/system/cpu/cpufreq/policy*/scaling_max_freq 2>/dev/null
 
 # ── 9. Xiaomi Battery Fast Charge Unlock ──
-for f in /sys/class/qcom-battery/quick_charge_type /sys/class/power_supply/battery/fastcharge_mode /sys/class/power_supply/battery/fastcharge_mode; do
+for f in /sys/class/qcom-battery/quick_charge_type /sys/class/power_supply/battery/fastcharge_mode; do
     [ -f "$f" ] && echo 1 > "$f" 2>/dev/null
 done
 
-# ── 10. Thermal Limits Zero-Drop (45°C Full 120 FPS Sustained) ──
-for z in /sys/class/thermal/thermal_zone*; do
-    if [ -f "$z/mode" ]; then
-        echo "disabled" > "$z/mode" 2>/dev/null || true
-    fi
-done
-
-echo "PROJECT EXTREME++: Joyose & Thermal neutralized, GPU devfreq unlocked, zero app kill active!" > /dev/kmsg 2>/dev/null || true
+echo "PROJECT EXTREME++: Joyose neutralized, 67W Mi Turbo authentication preserved, GPU devfreq unlocked!" > /dev/kmsg 2>/dev/null || true
 
 ) &
 EOF

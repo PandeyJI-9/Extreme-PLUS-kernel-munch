@@ -33,8 +33,12 @@ done
 echo "✅ Kernel name set in all munch defconfigs!"
 echo ""
 
-echo "━━━ [5/5] Patching Kernel for Bootloader Spoofing (Play Integrity) ━━━"
+echo "━━━ [5/6] Patching Kernel for Bootloader Spoofing (Play Integrity) ━━━"
 python3 "${SCRIPT_DIR}/apply-bootloader-spoof.py" "${KERNEL_SRC}" || echo "⚠️ Spoofing Script issue, continuing build..."
+echo ""
+
+echo "━━━ [6/6] Patching Universal Fast Charging, 67W Handshake & Thermal Guard ━━━"
+(cd "${KERNEL_SRC}" && python3 "${SCRIPT_DIR}/apply-fastcharge-bypass.py") || echo "⚠️ Fast charging script issue, continuing build..."
 echo ""
 
 echo "✅ ALL PATCHES APPLIED SUCCESSFULLY!"
