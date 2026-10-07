@@ -8,6 +8,11 @@ on:
         required: false
         type: boolean
         default: true
+      build_number:
+        description: 'Override Build Number (optional, leave blank to auto-detect latest Telegram/Actions build)'
+        required: false
+        type: string
+        default: ''
 
 jobs:
   update_changelog:
@@ -27,6 +32,7 @@ jobs:
           python3 patches/update_changelog.py
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BUILD_NUMBER: ${{ github.event.inputs.build_number }}
 
       - name: 🚀 Push Changelog to Repository
         run: |
@@ -44,3 +50,5 @@ jobs:
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_DM_ID: ${{ secrets.TELEGRAM_DM_ID }}
+

@@ -5,6 +5,18 @@ Device codename: munch
 Target ROM: Xiaomi HyperOS
 Kernel maintainer: @pandey_ji_8
 
+==========07/10/2026 (Build #82)==========
+* fix(power): use lambda in re.sub to prevent C string escape sequence mangling
+* feat(power): overhaul charging architecture, unlock universal fast charging (PD/PPS/QC), fix 67W Mi Turbo handshake & add dynamic thermal guard
+* feat(arch): implement Tri-Variant architecture (Battery 2.42GHz, Bal-Gaming 2.84GHz, Gaming 3.19GHz) with live Settings kernel name display
+* fix(boot/recovery): eliminate ramdisk tampering, fix cmdline pointer offsets & enforce post-boot resetprop lock
+* fix(boot): eliminate early-boot AVB crash & implement post-boot bootloader lock spoofing
+* fix(core): sync KSU hooks with AstideLabs tree via multi-manager ReSukiSU v4.2.0-rc3 & SuSFS v2.3.0
+* fix(rksu): bridge AstideLabs SuSFS v2.3.0 symbols with RKSU supercalls & fix APK fallback
+* feat(core): integrate RKSU + SuSFS v2.3.0, 2.7GHz clamp, universal bootloader lock & branding by PandeyJI-9
+* fix(build): eliminate post-olddefconfig KSU stripping & set KSU_SUSFS default hook
+* feat(root): integrate ReSukiSU v4.2.0-rc3 + SuSFS v2.3.0 with universal manager fallback & zero-latency VFS hooks
+
 ==========04/10/2026 (Build #67)==========
 * feat(workflow): dual-variant packaging in single build run (3.2GHz Stock Peak & 2.8GHz Cool Gaming Peak)
 * feat(cpu): safe post-boot Prime core 2.84 GHz cap in 00-extreme-performance.sh for 2.8GHz variant (zero PMIC risk)
