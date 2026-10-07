@@ -133,7 +133,7 @@ def patch_smb5_lib_c():
             else:
                 c_content = "static int bypass_charging = 0;\n" + c_content
 
-        # 2. Update smblib_get_prop_input_suspend for NKM
+        # 2. Update smblib_get_prop_input_suspend for NKM (Use lambda to prevent escape mangling)
         old_get = r"int smblib_get_prop_input_suspend\(struct smb_charger \*chg,\s*union power_supply_propval \*val\)\s*\{.*?\n\}"
         new_get = """int smblib_get_prop_input_suspend(struct smb_charger *chg,
 \t\t\t\t  union power_supply_propval *val)
@@ -145,9 +145,9 @@ def patch_smb5_lib_c():
 \t}
 \treturn 0;
 }"""
-        c_content = re.sub(old_get, new_get, c_content, flags=re.DOTALL)
+        c_content = re.sub(old_get, lambda m: new_get, c_content, flags=re.DOTALL)
 
-        # 3. Update smblib_set_prop_input_suspend (modes 0, 1, 2)
+        # 3. Update smblib_set_prop_input_suspend (modes 0, 1, 2) (Use lambda to prevent escape mangling)
         old_set = r"int smblib_set_prop_input_suspend\(struct smb_charger \*chg,\s*const union power_supply_propval \*val\)\s*\{.*?\n\}"
         new_set = """int smblib_set_prop_input_suspend(struct smb_charger *chg,
 \t\t\t\t  const union power_supply_propval *val)
@@ -174,7 +174,7 @@ def patch_smb5_lib_c():
 \tpower_supply_changed(chg->batt_psy);
 \treturn rc;
 }"""
-        c_content = re.sub(old_set, new_set, c_content, flags=re.DOTALL)
+        c_content = re.sub(old_set, lambda m: new_set, c_content, flags=re.DOTALL)
 
         # 4. Thermal setting work bypass reset
         if "if (bypass_charging)\n\t\tchg->pps_thermal_level = 0;" not in c_content:
@@ -188,13 +188,13 @@ def patch_smb5_lib_c():
         old_pd_icl = r"vote\(chg->usb_icl_votable,\s*PD_VOTER,\s*true,\s*USBIN_100MA\);"
         new_pd_icl = "vote(chg->usb_icl_votable, PD_VOTER, true, 3000000);\n\t\tchg->pd_verifed = true;"
         if re.search(old_pd_icl, c_content):
-            c_content = re.sub(old_pd_icl, new_pd_icl, c_content, count=1)
+            c_content = re.sub(old_pd_icl, lambda m: new_pd_icl, c_content, count=1)
             print(f"✅ [PD Fast Charge] Raised default PD ICL to 3.0A (3000000 uA) in {path_c}")
 
         old_pd_unverified = r"if\s*\(!chg->pd_verifed\)\s*\{\s*rc = vote\(chg->fcc_votable,\s*PD_VERIFED_VOTER,\s*true,\s*PD_UNVERIFED_CURRENT\);\s*if \(rc < 0\)\s*smblib_err\(.*?\);\s*\}\s*else\s*\{\s*vote\(chg->fcc_votable,\s*PD_VERIFED_VOTER,\s*false,\s*0\);\s*\}"
         new_pd_unverified = "vote(chg->fcc_votable, PD_VERIFED_VOTER, false, 0);"
         if re.search(old_pd_unverified, c_content, flags=re.DOTALL):
-            c_content = re.sub(old_pd_unverified, new_pd_unverified, c_content, count=1, flags=re.DOTALL)
+            c_content = re.sub(old_pd_unverified, lambda m: new_pd_unverified, c_content, count=1, flags=re.DOTALL)
             print(f"✅ [PD Fast Charge] Unvoted PD_VERIFED_VOTER restrictions in {path_c}")
 
         with open(path_c, "w") as f:
@@ -260,7 +260,7 @@ def patch_jeita_dtsi():
 
         pattern = r"qcom,jeita-fcc-ranges\s*=\s*<[^>]+>;"
         if re.search(pattern, content):
-            content = re.sub(pattern, new_ranges.strip(), content)
+            content = re.sub(pattern, lambda m: new_ranges.strip(), content)
             with open(path, "w") as f:
                 f.write(content)
             print(f"✅ [Thermal Guard] Updated jeita-fcc-ranges thermal curve in {path}")
