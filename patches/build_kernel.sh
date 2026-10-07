@@ -234,10 +234,10 @@ else:
 echo "[*] Preserving 100% Native AstideLabs Display & Panel DTS (prevents black screen)..."
 
 # ------------------------------------------
-# 6. 67W Fast Charging & True Bypass Charging (SenseiiX fusionX_sm8250 tested)
+# 6. Safe PD / PPS Fast Charging & Thermal DTS Stepping
 # ------------------------------------------
 if [ -f "apply-fastcharge-bypass.py" ]; then
-    echo "[*] Applying 67W Fast Charge & True Bypass Charging patches..."
+    echo "[*] Applying safe PD/PPS Fast Charge & Thermal DTS Stepping patches..."
     python3 apply-fastcharge-bypass.py
 fi
 
