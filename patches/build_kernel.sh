@@ -310,12 +310,12 @@ scripts/config --file "${OUT_DIR}/.config" \
 
 # Native source patches for VM & Schedutil tunables
 if [ -f "kernel/sched/cpufreq_schedutil.c" ]; then
-    sed -i 's/tunables->up_rate_limit_us = CONFIG_SCHEDUTIL_UP_RATE_LIMIT;/tunables->up_rate_limit_us = 0;/' kernel/sched/cpufreq_schedutil.c
-    echo "[+] Schedutil up_rate_limit_us set to 0 in kernel/sched/cpufreq_schedutil.c"
+    sed -i 's/tunables->up_rate_limit_us = CONFIG_SCHEDUTIL_UP_RATE_LIMIT;/tunables->up_rate_limit_us = 500;/' kernel/sched/cpufreq_schedutil.c
+    echo "[+] Schedutil up_rate_limit_us tuned to 500us in kernel/sched/cpufreq_schedutil.c"
 fi
 if [ -f "drivers/cpufreq/cpufreq_schedutil.c" ]; then
-    sed -i 's/tunables->up_rate_limit_us = CONFIG_SCHEDUTIL_UP_RATE_LIMIT;/tunables->up_rate_limit_us = 0;/' drivers/cpufreq/cpufreq_schedutil.c
-    echo "[+] Schedutil up_rate_limit_us set to 0 in drivers/cpufreq/cpufreq_schedutil.c"
+    sed -i 's/tunables->up_rate_limit_us = CONFIG_SCHEDUTIL_UP_RATE_LIMIT;/tunables->up_rate_limit_us = 500;/' drivers/cpufreq/cpufreq_schedutil.c
+    echo "[+] Schedutil up_rate_limit_us tuned to 500us in drivers/cpufreq/cpufreq_schedutil.c"
 fi
 if [ -f "mm/vmscan.c" ]; then
     sed -i 's/int vm_swappiness = 60;/int vm_swappiness = 100;/' mm/vmscan.c
