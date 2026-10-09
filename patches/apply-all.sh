@@ -11,12 +11,11 @@ echo "━━━ [1/5] Patching GPU OPP Table (Adreno 650) ━━━"
 python3 "${SCRIPT_DIR}/apply-gpu-opp.py" "${KERNEL_SRC}/arch/arm64/boot/dts/vendor/qcom/kona-gpu.dtsi" || echo "⚠️ GPU Script issue, continuing build..."
 echo ""
 
-TARGET_VAR="${2:-Gaming}"
-echo "━━━ [2/5] Configuring CPU Prime Core Architecture (${TARGET_VAR}) ━━━"
-(cd "${KERNEL_SRC}" && python3 "${SCRIPT_DIR}/apply-cpu-cap.py" "${TARGET_VAR}") || echo "⚠️ CPU Script issue, continuing build..."
+echo "━━━ [2/5] Patching CPU Prime Core Cap ━━━"
+python3 "${SCRIPT_DIR}/apply-cpu-cap.py" "${KERNEL_SRC}/arch/arm64/boot/dts/vendor/qcom/kona.dtsi" || echo "⚠️ CPU Script issue, continuing build..."
 echo ""
 
-echo "━━━ [3/5] Verifying EAS Energy Model ━━━"
+echo "━━━ [3/5] Patching EAS Energy Model ━━━"
 python3 "${SCRIPT_DIR}/apply-eas-tuning.py" "${KERNEL_SRC}/arch/arm64/boot/dts/vendor/qcom/kona.dtsi" || echo "⚠️ EAS Script issue, continuing build..."
 echo ""
 

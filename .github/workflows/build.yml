@@ -37,7 +37,7 @@ jobs:
 
           ROOT_LABEL="🛡️ Architecture: Pure Clean Base (No Root)"
           if [ "${{ inputs.build_ksu }}" = "true" ]; then
-            ROOT_LABEL="⚡ Root: KowSU (KOWX712 Multi-Manager v3.x)"
+            ROOT_LABEL="⚡ Root: Inbuilt Multi-Manager Root (SuSFS v2.3.0)"
           fi
 
           VAR_LABEL="${{ inputs.variant }}"
@@ -117,7 +117,7 @@ jobs:
         run: |
           ROOT_DESC="🛡️ <b>Root:</b> Pure Clean Base (No Root)"
           if [ "${{ inputs.build_ksu }}" = "true" ]; then
-            ROOT_DESC="⚡ <b>Root:</b> Inbuilt KowSU (KOWX712 Multi-Manager v3.x)"
+            ROOT_DESC="⚡ <b>Root:</b> Inbuilt Multi-Manager Root (SuSFS v2.3.0)"
           fi
 
           MSG="🔥 <b>EXTREME++ Official Release #${{ github.run_number }}</b>%0A%0A"
