@@ -399,7 +399,7 @@ if ! git clone --depth=1 https://github.com/re-noroi/anykernel3-test -b munch an
     echo "[!] Fallback to AstideLabs AnyKernel3..."
     git clone --depth=1 https://github.com/AstideLabs/AnyKernel3 -b kona anykernel
 fi
-rm -rf anykernel/.git
+rm -rf anykernel/.git anykernel/kernels
 
 # Copy multi-DTB table into anykernel
 if [ -f "${OUT_DIR}/arch/arm64/boot/dtb" ]; then
@@ -629,30 +629,23 @@ device.name2=POCO F4
 supported.versions=13-17
 '; }
 
-# shell variables
+# boot shell variables
 block=boot;
-is_slot_device=1;
+is_slot_device=auto;
 ramdisk_compression=auto;
-patch_vbmeta_flag=0;
+patch_vbmeta_flag=auto;
+no_block_display=1;
 
+# import functions/variables and setup patching - see for reference (DO NOT REMOVE)
 . tools/ak3-core.sh;
 
 ui_print " ";
 ui_print "  -> Flashing ${TITLE} (boot)...";
-dump_boot;
-write_boot;
 
-## vendor_boot DTB install (Leaves vendor ramdisk 100% untouched for flawless recovery)
-ui_print "  -> Flashing EXTREME++ Undervolted DTB (vendor_boot)...";
-block=vendor_boot;
-is_slot_device=1;
-ramdisk_compression=auto;
-patch_vbmeta_flag=0;
-
-reset_ak;
-dump_boot;
-write_boot;
-# NOTE: Stock DTBO partition is preserved 100% untouched to ensure OEM display panel calibrations & recovery work flawlessly!
+# Safe boot install (Preserves first-stage ramdisk 100% untouched, replaces only Image and DTB)
+split_boot;
+flash_boot;
+# NOTE: Stock vendor_boot and DTBO partitions are preserved 100% untouched to prevent any bootloops!
 
 # Install post-boot optimization script into /data/adb/service.d for KSU/RKSU/Magisk
 if [ ! -d /data/adb/service.d ]; then
