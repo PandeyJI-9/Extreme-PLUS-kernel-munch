@@ -733,7 +733,27 @@ static const struct fsnotify_ops ksu_ops = {
         )
     ])
 
-    # 16. Update Kbuild compiler flags for Linux 4.19 compatibility
+    # 16. Update policy/app_profile.c for Linux 4.19 seccomp compatibility
+    profile_c = os.path.join(ksu_dir, "policy", "app_profile.c")
+    patch_file(profile_c, [
+        (
+            "void seccomp_filter_release(struct task_struct *tsk);",
+            '''#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 9, 0)
+void seccomp_filter_release(struct task_struct *tsk);
+#else
+void put_seccomp_filter(struct task_struct *tsk);
+#define seccomp_filter_release put_seccomp_filter
+#endif'''
+        ),
+        (
+            "    atomic_set(&current->seccomp.filter_count, 0);",
+            '''#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 9, 0)
+    atomic_set(&current->seccomp.filter_count, 0);
+#endif'''
+        )
+    ])
+
+    # 17. Update Kbuild compiler flags for Linux 4.19 compatibility
     kbuild_file = os.path.join(ksu_dir, "Kbuild")
     if os.path.exists(kbuild_file):
         with open(kbuild_file, "r", encoding="utf-8") as f:
