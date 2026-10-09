@@ -614,7 +614,8 @@ static void ksu_sys_umount(const char *mnt, int flags)
     patch_file(sulog_c, [
         (
             "#include <linux/minmax.h>",
-            '''#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
+            '''#include <linux/version.h>
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 9, 0)
 #include <linux/minmax.h>
 #else
 #include <linux/kernel.h>
