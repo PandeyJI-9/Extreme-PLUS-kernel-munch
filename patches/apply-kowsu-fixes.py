@@ -835,6 +835,46 @@ void ksu_selinux_hide_handle_post_fs_data(void) {}
         )
     ])
 
+    # 23. Add legacy manual hook symbols to extras.c
+    extras_c = os.path.join(ksu_dir, "extras.c")
+    if os.path.exists(extras_c):
+        with open(extras_c, "a", encoding="utf-8") as f:
+            f.write('''
+#include <linux/jump_label.h>
+DEFINE_STATIC_KEY_TRUE(ksu_is_init_rc_hook_enabled);
+int __attribute__((cold)) ksu_handle_sys_read(unsigned int fd)
+{
+    (void)fd;
+    return 0;
+}
+
+DEFINE_STATIC_KEY_TRUE(ksu_is_input_hook_enabled);
+int ksu_handle_input_handle_event(unsigned int *type, unsigned int *code, int *value)
+{
+    (void)type; (void)code; (void)value;
+    return 0;
+}
+''')
+        print(f"[+] Appended legacy manual hook symbols to {extras_c}")
+
+    # 24. Clean legacy manual read hook in fs/read_write.c
+    for rw_path in ["fs/read_write.c", "../fs/read_write.c", "kernel/fs/read_write.c"]:
+        if os.path.exists(rw_path):
+            with open(rw_path, "r", encoding="utf-8") as f:
+                rw_content = f.read()
+            if "ksu_handle_sys_read" in rw_content:
+                rw_content = rw_content.replace(
+                    "if (static_branch_unlikely(&ksu_is_init_rc_hook_enabled))\n\t\tksu_handle_sys_read(fd);",
+                    "/* dynamic ksu hook handled via syscall_hook */"
+                )
+                rw_content = rw_content.replace(
+                    "if (static_branch_unlikely(&ksu_is_init_rc_hook_enabled))\n        ksu_handle_sys_read(fd);",
+                    "/* dynamic ksu hook handled via syscall_hook */"
+                )
+                with open(rw_path, "w", encoding="utf-8") as f:
+                    f.write(rw_content)
+                print(f"[+] Cleaned legacy manual read hook in {rw_path}")
+
     print("🎉 KowSU Multi-Manager & App Profile Patching Completed Successfully!")
     return 0
 
