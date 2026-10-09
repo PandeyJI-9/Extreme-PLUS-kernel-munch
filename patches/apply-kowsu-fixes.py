@@ -415,8 +415,39 @@ uid_t ksu_manager_appids[KSU_MAX_MANAGERS] = {
                 f.write(m_content)
             print(f"[+] Patched {mem_c} with Linux 4.19 nofault fallback")
 
+    # 9. Update core/init.c for Linux 4.19 MODULE_IMPORT_NS compatibility
+    init_c = os.path.join(ksu_dir, "core", "init.c")
+    patch_file(init_c, [
+        (
+            '''#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 13, 0)
+MODULE_IMPORT_NS("VFS_internal_I_am_really_a_filesystem_and_am_NOT_a_driver");
+#else
+MODULE_IMPORT_NS(VFS_internal_I_am_really_a_filesystem_and_am_NOT_a_driver);
+#endif''',
+            '''#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 13, 0)
+MODULE_IMPORT_NS("VFS_internal_I_am_really_a_filesystem_and_am_NOT_a_driver");
+#else
+MODULE_IMPORT_NS(VFS_internal_I_am_really_a_filesystem_and_am_NOT_a_driver);
+#endif
+#endif'''
+        )
+    ])
+
+    # 10. Update Kbuild compiler flags for Linux 4.19 compatibility
+    kbuild_file = os.path.join(ksu_dir, "Kbuild")
+    if os.path.exists(kbuild_file):
+        with open(kbuild_file, "r", encoding="utf-8") as f:
+            kb_content = f.read()
+        if "-Wno-implicit-int" not in kb_content:
+            kb_content += "\nccflags-y += -Wno-implicit-int -Wno-incompatible-pointer-types\n"
+            with open(kbuild_file, "w", encoding="utf-8") as f:
+                f.write(kb_content)
+            print(f"[+] Patched {kbuild_file} with -Wno-implicit-int")
+
     print("🎉 KowSU Multi-Manager & App Profile Patching Completed Successfully!")
     return 0
 
 if __name__ == "__main__":
     sys.exit(main())
+
