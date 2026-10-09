@@ -753,7 +753,76 @@ void put_seccomp_filter(struct task_struct *tsk);
         )
     ])
 
-    # 17. Update Kbuild compiler flags for Linux 4.19 compatibility
+    # 17. Update selinux/rules.c for Linux 4.19 compatibility
+    rules_c = os.path.join(ksu_dir, "selinux", "rules.c")
+    rules_src_candidates = [
+        "selinux_rules.c",
+        "patches/selinux_rules.c",
+        os.path.join(os.path.dirname(__file__), "selinux_rules.c")
+    ]
+    for rsrc in rules_src_candidates:
+        if os.path.exists(rsrc):
+            import shutil
+            shutil.copyfile(rsrc, rules_c)
+            print(f"[+] Replaced {rules_c} with 4.19 compatible {rsrc}")
+            break
+
+    # 18. Update selinux/sepolicy.h for Linux 4.19 compatibility
+    sepol_h = os.path.join(ksu_dir, "selinux", "sepolicy.h")
+    patch_file(sepol_h, [
+        (
+            '''struct selinux_policy *ksu_dup_sepolicy(struct selinux_policy *old_pol);
+
+void ksu_destroy_sepolicy(struct selinux_policy *orig);''',
+            '''#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)
+struct selinux_policy *ksu_dup_sepolicy(struct selinux_policy *old_pol);
+
+void ksu_destroy_sepolicy(struct selinux_policy *orig);
+#endif'''
+        )
+    ])
+
+    # 19. Update selinux/sepolicy.c for Linux 4.19 compatibility
+    sepol_c = os.path.join(ksu_dir, "selinux", "sepolicy.c")
+    patch_file(sepol_c, [
+        (
+            "void ksu_destroy_sepolicy(struct selinux_policy *pol)",
+            "#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)\nvoid ksu_destroy_sepolicy(struct selinux_policy *pol)"
+        ),
+        (
+            "    return ERR_PTR(ret);\n}",
+            "    return ERR_PTR(ret);\n}\n#endif"
+        )
+    ])
+
+    # 20. Update feature/selinux_hide.c for Linux 4.19 compatibility
+    hide_c = os.path.join(ksu_dir, "feature", "selinux_hide.c")
+    patch_file(hide_c, [
+        (
+            '#include "selinux_hide.h"',
+            '''#include <linux/version.h>
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 10, 0)
+#include <linux/types.h>
+#include "feature/selinux_hide.h"
+
+void ksu_selinux_hide_init(void) {}
+void ksu_selinux_hide_exit(void) {}
+void ksu_selinux_hide_drop_backup_if_unused(void) {}
+void ksu_selinux_hide_handle_second_stage(void) {}
+void ksu_selinux_hide_handle_post_fs_data(void) {}
+#else
+#include "selinux_hide.h"'''
+        )
+    ])
+    if os.path.exists(hide_c):
+        with open(hide_c, "r", encoding="utf-8") as f:
+            hide_content = f.read()
+        if not hide_content.strip().endswith("#endif"):
+            with open(hide_c, "a", encoding="utf-8") as f:
+                f.write("\n#endif\n")
+            print(f"[+] Appended #endif to {hide_c}")
+
+    # 21. Update Kbuild compiler flags for Linux 4.19 compatibility
     kbuild_file = os.path.join(ksu_dir, "Kbuild")
     if os.path.exists(kbuild_file):
         with open(kbuild_file, "r", encoding="utf-8") as f:
