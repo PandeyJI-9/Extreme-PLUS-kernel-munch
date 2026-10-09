@@ -414,7 +414,203 @@ MODULE_IMPORT_NS(VFS_internal_I_am_really_a_filesystem_and_am_NOT_a_driver);
         )
     ])
 
-    # 9. Update Kbuild compiler flags for Linux 4.19 compatibility
+    # 9. Update infra/file_wrapper.c for Linux 4.19 compatibility (iopoll & remap_file_range)
+    wrap_c = os.path.join(ksu_dir, "infra", "file_wrapper.c")
+    patch_file(wrap_c, [
+        (
+            '''#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0)
+static int ksu_wrapper_iopoll(struct kiocb *kiocb, struct io_comp_batch *icb, unsigned int v)
+{
+    struct ksu_file_wrapper *data = kiocb->ki_filp->private_data;
+    struct file *orig = data->orig;
+    kiocb->ki_filp = orig;
+    return orig->f_op->iopoll(kiocb, icb, v);
+}
+#else
+static int ksu_wrapper_iopoll(struct kiocb *kiocb, bool spin)
+{
+    struct ksu_file_wrapper *data = kiocb->ki_filp->private_data;
+    struct file *orig = data->orig;
+    kiocb->ki_filp = orig;
+    return orig->f_op->iopoll(kiocb, spin);
+}
+#endif''',
+            '''#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0)
+static int ksu_wrapper_iopoll(struct kiocb *kiocb, struct io_comp_batch *icb, unsigned int v)
+{
+    struct ksu_file_wrapper *data = kiocb->ki_filp->private_data;
+    struct file *orig = data->orig;
+    kiocb->ki_filp = orig;
+    return orig->f_op->iopoll(kiocb, icb, v);
+}
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(5, 1, 0)
+static int ksu_wrapper_iopoll(struct kiocb *kiocb, bool spin)
+{
+    struct ksu_file_wrapper *data = kiocb->ki_filp->private_data;
+    struct file *orig = data->orig;
+    kiocb->ki_filp = orig;
+    return orig->f_op->iopoll(kiocb, spin);
+}
+#endif'''
+        ),
+        (
+            '''// no REMAP_FILE_DEDUP: use file_in
+// https://cs.android.com/android/kernel/superproject/+/common-android-mainline:common/fs/read_write.c;l=1598-1599;drc=398da7defe218d3e51b0f3bdff75147e28125b60
+// https://cs.android.com/android/kernel/superproject/+/common-android-mainline:common/fs/remap_range.c;l=403-404;drc=398da7defe218d3e51b0f3bdff75147e28125b60
+// REMAP_FILE_DEDUP: use file_out
+// https://cs.android.com/android/kernel/superproject/+/common-android-mainline:common/fs/remap_range.c;l=483-484;drc=398da7defe218d3e51b0f3bdff75147e28125b60
+static loff_t ksu_wrapper_remap_file_range(struct file *file_in, loff_t pos_in, struct file *file_out, loff_t pos_out,
+                                           loff_t len, unsigned int remap_flags)
+{
+    if (remap_flags & REMAP_FILE_DEDUP) {
+        struct ksu_file_wrapper *data = file_out->private_data;
+        struct file *orig = data->orig;
+        return orig->f_op->remap_file_range(file_in, pos_in, orig, pos_out, len, remap_flags);
+    } else {
+        struct ksu_file_wrapper *data = file_in->private_data;
+        struct file *orig = data->orig;
+        return orig->f_op->remap_file_range(orig, pos_in, file_out, pos_out, len, remap_flags);
+    }
+}''',
+            '''#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 20, 0)
+// no REMAP_FILE_DEDUP: use file_in
+// https://cs.android.com/android/kernel/superproject/+/common-android-mainline:common/fs/read_write.c;l=1598-1599;drc=398da7defe218d3e51b0f3bdff75147e28125b60
+// https://cs.android.com/android/kernel/superproject/+/common-android-mainline:common/fs/remap_range.c;l=403-404;drc=398da7defe218d3e51b0f3bdff75147e28125b60
+// REMAP_FILE_DEDUP: use file_out
+// https://cs.android.com/android/kernel/superproject/+/common-android-mainline:common/fs/remap_range.c;l=483-484;drc=398da7defe218d3e51b0f3bdff75147e28125b60
+static loff_t ksu_wrapper_remap_file_range(struct file *file_in, loff_t pos_in, struct file *file_out, loff_t pos_out,
+                                           loff_t len, unsigned int remap_flags)
+{
+    if (remap_flags & REMAP_FILE_DEDUP) {
+        struct ksu_file_wrapper *data = file_out->private_data;
+        struct file *orig = data->orig;
+        return orig->f_op->remap_file_range(file_in, pos_in, orig, pos_out, len, remap_flags);
+    } else {
+        struct ksu_file_wrapper *data = file_in->private_data;
+        struct file *orig = data->orig;
+        return orig->f_op->remap_file_range(orig, pos_in, file_out, pos_out, len, remap_flags);
+    }
+}
+#endif'''
+        ),
+        (
+            '''    p->ops.write_iter = fp->f_op->write_iter ? ksu_wrapper_write_iter : NULL;
+    p->ops.iopoll = fp->f_op->iopoll ? ksu_wrapper_iopoll : NULL;''',
+            '''    p->ops.write_iter = fp->f_op->write_iter ? ksu_wrapper_write_iter : NULL;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 1, 0)
+    p->ops.iopoll = fp->f_op->iopoll ? ksu_wrapper_iopoll : NULL;
+#endif'''
+        ),
+        (
+            '''    p->ops.copy_file_range = fp->f_op->copy_file_range ? ksu_wrapper_copy_file_range : NULL;
+    p->ops.remap_file_range = fp->f_op->remap_file_range ? ksu_wrapper_remap_file_range : NULL;
+    p->ops.fadvise = fp->f_op->fadvise ? ksu_wrapper_fadvise : NULL;''',
+            '''    p->ops.copy_file_range = fp->f_op->copy_file_range ? ksu_wrapper_copy_file_range : NULL;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 20, 0)
+    p->ops.remap_file_range = fp->f_op->remap_file_range ? ksu_wrapper_remap_file_range : NULL;
+#endif
+    p->ops.fadvise = fp->f_op->fadvise ? ksu_wrapper_fadvise : NULL;'''
+        )
+    ])
+
+    # 10. Update infra/su_mount_ns.c for Linux 4.19 path_mount compatibility
+    mount_c = os.path.join(ksu_dir, "infra", "su_mount_ns.c")
+    patch_file(mount_c, [
+        (
+            '''extern int path_mount(const char *dev_name, struct path *path, const char *type_page, unsigned long flags,
+                      void *data_page);''',
+            '''#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 8, 0)
+extern int path_mount(const char *dev_name, struct path *path, const char *type_page, unsigned long flags,
+                      void *data_page);
+#else
+extern long do_mount(const char *dev_name, const char __user *dir_name,
+		     const char *type_page, unsigned long flags,
+		     void *data_page);
+
+static int path_mount(const char *dev_name, struct path *path, const char *type_page,
+	       unsigned long flags, void *data_page)
+{
+	mm_segment_t old_fs;
+	long ret = 0;
+	char buf[384];
+
+	char *realpath = d_path(path, buf, sizeof(buf));
+	if (IS_ERR(realpath)) {
+		pr_err("ksu_mount: d_path failed, err: %ld\\n", PTR_ERR(realpath));
+		return PTR_ERR(realpath);
+	}
+
+	old_fs = get_fs();
+	set_fs(KERNEL_DS);
+	ret = do_mount(dev_name, (const char __user *)realpath, type_page,
+		       flags, data_page);
+	set_fs(old_fs);
+	return ret;
+}
+#endif'''
+        )
+    ])
+
+    # 11. Update feature/kernel_umount.c for Linux 4.19 path_umount compatibility
+    umount_c = os.path.join(ksu_dir, "feature", "kernel_umount.c")
+    patch_file(umount_c, [
+        (
+            '''extern int path_umount(struct path *path, int flags);
+
+static void ksu_umount_mnt(const char *mnt, struct path *path, int flags)
+{
+    int err = path_umount(path, flags);
+    if (err) {
+        pr_info("umount %s failed: %d\\n", mnt, err);
+    }
+}''',
+            '''#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 9, 0)
+extern int path_umount(struct path *path, int flags);
+
+static void ksu_umount_mnt(const char *mnt, struct path *path, int flags)
+{
+    int err = path_umount(path, flags);
+    if (err) {
+        pr_info("umount %s failed: %d\\n", mnt, err);
+    }
+}
+#else
+#include <linux/syscalls.h>
+
+static void ksu_sys_umount(const char *mnt, int flags)
+{
+	char __user *usermnt = (char __user *)mnt;
+	mm_segment_t old_fs;
+
+	old_fs = get_fs();
+	set_fs(KERNEL_DS);
+	ksys_umount(usermnt, flags);
+	set_fs(old_fs);
+}
+
+#define ksu_umount_mnt(mnt, __unused, flags) \\
+	({ \\
+		path_put(__unused); \\
+		ksu_sys_umount(mnt, flags); \\
+	})
+#endif'''
+        )
+    ])
+
+    # 12. Update sulog/event.c for Linux 4.19 minmax.h compatibility
+    sulog_c = os.path.join(ksu_dir, "sulog", "event.c")
+    patch_file(sulog_c, [
+        (
+            "#include <linux/minmax.h>",
+            '''#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
+#include <linux/minmax.h>
+#else
+#include <linux/kernel.h>
+#endif'''
+        )
+    ])
+
+    # 13. Update Kbuild compiler flags for Linux 4.19 compatibility
     kbuild_file = os.path.join(ksu_dir, "Kbuild")
     if os.path.exists(kbuild_file):
         with open(kbuild_file, "r", encoding="utf-8") as f:
