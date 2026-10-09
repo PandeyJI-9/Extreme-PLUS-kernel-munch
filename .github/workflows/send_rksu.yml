@@ -65,11 +65,17 @@ jobs:
           
           ⬇️ <i>Install this manager to control your root access. Seamlessly synced with EXTREME++ KowSU engine with 100% root grant support!</i>"
           
-          echo "[*] Uploading APK to Telegram..."
-          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendDocument" \
-            -F chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
-            -F document="@${{ env.APK_FILE }}" \
-            -F caption="$CAPTION" \
-            -F parse_mode="HTML"
+          TARGETS=()
+          [ -n "${{ secrets.TELEGRAM_CHAT_ID }}" ] && TARGETS+=("${{ secrets.TELEGRAM_CHAT_ID }}")
+          [ -n "${{ secrets.TELEGRAM_DM_ID }}" ] && TARGETS+=("${{ secrets.TELEGRAM_DM_ID }}")
+
+          for chat in "${TARGETS[@]}"; do
+            echo "[*] Uploading APK to Telegram $chat..."
+            curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendDocument" \
+              -F chat_id="$chat" \
+              -F document="@${{ env.APK_FILE }}" \
+              -F caption="$CAPTION" \
+              -F parse_mode="HTML" || true
+          done
           
           echo "[+] Successfully pushed to Telegram!"

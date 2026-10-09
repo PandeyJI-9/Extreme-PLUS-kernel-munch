@@ -40,10 +40,17 @@ jobs:
             ROOT_LABEL="⚡ Root: KowSU (KOWX712 Multi-Manager v3.x)"
           fi
 
+          VAR_LABEL="${{ inputs.variant }}"
+          if [ "$VAR_LABEL" = "Gaming" ]; then
+            VAR_LABEL="Truly Gaming (3.2GHz Monster)"
+          elif [ "$VAR_LABEL" = "all" ]; then
+            VAR_LABEL="All (Battery, Bal-Gaming, Truly Gaming 3.2GHz)"
+          fi
+
           for chat in "${TARGETS[@]}"; do
             curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
               -d chat_id="$chat" \
-              -d text="🚀 <b>EXTREME++ Build Started!</b>%0A📱 Device: POCO F4 (munch)%0A${ROOT_LABEL}%0A⚡ Variant: ${{ inputs.variant }}" -d parse_mode="HTML" || true
+              -d text="🚀 <b>EXTREME++ Build Started!</b>%0A📱 Device: POCO F4 (munch)%0A${ROOT_LABEL}%0A⚡ Variant: ${VAR_LABEL}" -d parse_mode="HTML" || true
           done
 
       - name: "📦 Checkout config repo"

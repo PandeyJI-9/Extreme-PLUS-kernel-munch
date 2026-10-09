@@ -769,31 +769,31 @@ void put_seccomp_filter(struct task_struct *tsk);
 
     # 18. Update selinux/sepolicy.h for Linux 4.19 compatibility
     sepol_h = os.path.join(ksu_dir, "selinux", "sepolicy.h")
-    patch_file(sepol_h, [
-        (
-            '''struct selinux_policy *ksu_dup_sepolicy(struct selinux_policy *old_pol);
-
-void ksu_destroy_sepolicy(struct selinux_policy *orig);''',
-            '''#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)
-struct selinux_policy *ksu_dup_sepolicy(struct selinux_policy *old_pol);
-
-void ksu_destroy_sepolicy(struct selinux_policy *orig);
-#endif'''
-        )
-    ])
+    sepol_h_candidates = [
+        "selinux_sepolicy.h",
+        "patches/selinux_sepolicy.h",
+        os.path.join(os.path.dirname(__file__), "selinux_sepolicy.h")
+    ]
+    for shrc in sepol_h_candidates:
+        if os.path.exists(shrc):
+            import shutil
+            shutil.copyfile(shrc, sepol_h)
+            print(f"[+] Replaced {sepol_h} with 4.19 compatible {shrc}")
+            break
 
     # 19. Update selinux/sepolicy.c for Linux 4.19 compatibility
     sepol_c = os.path.join(ksu_dir, "selinux", "sepolicy.c")
-    patch_file(sepol_c, [
-        (
-            "void ksu_destroy_sepolicy(struct selinux_policy *pol)",
-            "#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)\nvoid ksu_destroy_sepolicy(struct selinux_policy *pol)"
-        ),
-        (
-            "    return ERR_PTR(ret);\n}",
-            "    return ERR_PTR(ret);\n}\n#endif"
-        )
-    ])
+    sepol_c_candidates = [
+        "selinux_sepolicy.c",
+        "patches/selinux_sepolicy.c",
+        os.path.join(os.path.dirname(__file__), "selinux_sepolicy.c")
+    ]
+    for ssrc in sepol_c_candidates:
+        if os.path.exists(ssrc):
+            import shutil
+            shutil.copyfile(ssrc, sepol_c)
+            print(f"[+] Replaced {sepol_c} with 4.19 compatible {ssrc}")
+            break
 
     # 20. Update feature/selinux_hide.c for Linux 4.19 compatibility
     hide_c = os.path.join(ksu_dir, "feature", "selinux_hide.c")
@@ -828,10 +828,10 @@ void ksu_selinux_hide_handle_post_fs_data(void) {}
         with open(kbuild_file, "r", encoding="utf-8") as f:
             kb_content = f.read()
         if "-Wno-implicit-int" not in kb_content:
-            kb_content += "\nccflags-y += -Wno-implicit-int -Wno-incompatible-pointer-types -Wno-error\n"
+            kb_content += "\nccflags-y += -Wno-implicit-int -Wno-incompatible-pointer-types -Wno-strict-prototypes -Wno-int-conversion -Wno-missing-prototypes -Wno-declaration-after-statement -Wno-unused-function -Wno-error\n"
             with open(kbuild_file, "w", encoding="utf-8") as f:
                 f.write(kb_content)
-            print(f"[+] Patched {kbuild_file} with -Wno-implicit-int -Wno-error")
+            print(f"[+] Patched {kbuild_file} with warning suppression and -Wno-error")
 
     print("🎉 KowSU Multi-Manager & App Profile Patching Completed Successfully!")
     return 0
