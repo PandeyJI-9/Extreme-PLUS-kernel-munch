@@ -798,12 +798,9 @@ void put_seccomp_filter(struct task_struct *tsk);
 
     # 20. Update feature/selinux_hide.c for Linux 4.19 compatibility
     hide_c = os.path.join(ksu_dir, "feature", "selinux_hide.c")
-    patch_file(hide_c, [
-        (
-            '#include "selinux_hide.h"',
-            '''#include <linux/version.h>
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 10, 0)
-#include <linux/types.h>
+    if os.path.exists(hide_c):
+        with open(hide_c, "w", encoding="utf-8") as f:
+            f.write('''#include <linux/types.h>
 #include "feature/selinux_hide.h"
 
 void ksu_selinux_hide_init(void) {}
@@ -811,17 +808,8 @@ void ksu_selinux_hide_exit(void) {}
 void ksu_selinux_hide_drop_backup_if_unused(void) {}
 void ksu_selinux_hide_handle_second_stage(void) {}
 void ksu_selinux_hide_handle_post_fs_data(void) {}
-#else
-#include "selinux_hide.h"'''
-        )
-    ])
-    if os.path.exists(hide_c):
-        with open(hide_c, "r", encoding="utf-8") as f:
-            hide_content = f.read()
-        if not hide_content.strip().endswith("#endif"):
-            with open(hide_c, "a", encoding="utf-8") as f:
-                f.write("\n#endif\n")
-            print(f"[+] Appended #endif to {hide_c}")
+''')
+        print(f"[+] Replaced {hide_c} with 4.19 stubs")
 
     # 21. Update Kbuild compiler flags for Linux 4.19 compatibility
     kbuild_file = os.path.join(ksu_dir, "Kbuild")
