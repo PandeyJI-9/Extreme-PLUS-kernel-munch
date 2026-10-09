@@ -41,7 +41,7 @@ jobs:
           fi
 
           echo "Downloading version: $VERSION_TAG"
-          FILE_NAME="RKSU_Manager_${VERSION_TAG}.apk"
+          FILE_NAME="RootManager_${VERSION_TAG}.apk"
           
           curl -fLSs -o "$FILE_NAME" "$APK_URL" || wget -q -O "$FILE_NAME" "$APK_URL"
           

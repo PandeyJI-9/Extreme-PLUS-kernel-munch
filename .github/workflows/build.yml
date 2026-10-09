@@ -122,7 +122,7 @@ jobs:
           MSG="${MSG}✨ <b>Available Variants:</b>%0A"
           MSG="${MSG}• 🔋 <b>Battery:</b> ~2.5GHz (2419200 kHz) - Massive Battery Backup%0A"
           MSG="${MSG}• ⚖️ <b>Bal-Gaming:</b> 2.84GHz (2841600 kHz) - Balanced Long Gaming%0A"
-          MSG="${MSG}• 🚀 <b>Gaming:</b> 3.19GHz (3187200 kHz) - Pure Performance Monster%0A%0A"
+          MSG="${MSG}• 🚀 <b>Gaming:</b> Truly 3.2GHz (3187200 kHz) - Pure Performance Monster%0A%0A"
           MSG="${MSG}📦 <i>Uploading flashable ZIP packages below...</i>"
 
           TARGETS=()
