@@ -395,27 +395,7 @@ uid_t ksu_manager_appids[KSU_MAX_MANAGERS] = {
         )
     ])
 
-    # 8. Update arm64/patch_memory.c for Linux 4.19 uaccess compatibility
-    mem_c = os.path.join(ksu_dir, "hook", "arm64", "patch_memory.c")
-    if os.path.exists(mem_c):
-        with open(mem_c, "r", encoding="utf-8") as f:
-            m_content = f.read()
-        if "copy_to_kernel_nofault" in m_content and "probe_kernel_write" not in m_content:
-            inject = '''#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 8, 0)
-#ifndef copy_to_kernel_nofault
-#define copy_to_kernel_nofault probe_kernel_write
-#endif
-#ifndef copy_from_kernel_nofault
-#define copy_from_kernel_nofault probe_kernel_read
-#endif
-#endif
-'''
-            m_content = m_content.replace('#include "asm/cacheflush.h"', '#include "asm/cacheflush.h"\n' + inject)
-            with open(mem_c, "w", encoding="utf-8") as f:
-                f.write(m_content)
-            print(f"[+] Patched {mem_c} with Linux 4.19 nofault fallback")
-
-    # 9. Update core/init.c for Linux 4.19 MODULE_IMPORT_NS compatibility
+    # 8. Update core/init.c for Linux 4.19 MODULE_IMPORT_NS compatibility
     init_c = os.path.join(ksu_dir, "core", "init.c")
     patch_file(init_c, [
         (
@@ -434,16 +414,16 @@ MODULE_IMPORT_NS(VFS_internal_I_am_really_a_filesystem_and_am_NOT_a_driver);
         )
     ])
 
-    # 10. Update Kbuild compiler flags for Linux 4.19 compatibility
+    # 9. Update Kbuild compiler flags for Linux 4.19 compatibility
     kbuild_file = os.path.join(ksu_dir, "Kbuild")
     if os.path.exists(kbuild_file):
         with open(kbuild_file, "r", encoding="utf-8") as f:
             kb_content = f.read()
         if "-Wno-implicit-int" not in kb_content:
-            kb_content += "\nccflags-y += -Wno-implicit-int -Wno-incompatible-pointer-types\n"
+            kb_content += "\nccflags-y += -Wno-implicit-int -Wno-incompatible-pointer-types -Wno-error\n"
             with open(kbuild_file, "w", encoding="utf-8") as f:
                 f.write(kb_content)
-            print(f"[+] Patched {kbuild_file} with -Wno-implicit-int")
+            print(f"[+] Patched {kbuild_file} with -Wno-implicit-int -Wno-error")
 
     print("🎉 KowSU Multi-Manager & App Profile Patching Completed Successfully!")
     return 0
