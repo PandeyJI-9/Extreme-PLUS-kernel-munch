@@ -847,13 +847,6 @@ int __attribute__((cold)) ksu_handle_sys_read(unsigned int fd)
     (void)fd;
     return 0;
 }
-
-DEFINE_STATIC_KEY_TRUE(ksu_is_input_hook_enabled);
-int ksu_handle_input_handle_event(unsigned int *type, unsigned int *code, int *value)
-{
-    (void)type; (void)code; (void)value;
-    return 0;
-}
 ''')
         print(f"[+] Appended legacy manual hook symbols to {extras_c}")
 
