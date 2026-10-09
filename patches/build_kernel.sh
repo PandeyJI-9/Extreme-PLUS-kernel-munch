@@ -61,7 +61,9 @@ CONFIG_ZSTD_COMPRESS=y
 CONFIG_ZSTD_DECOMPRESS=y
 CONFIG_ZRAM_DEF_COMP_ZSTD=y
 CONFIG_ZRAM_DEF_COMP="zstd"
-CONFIG_SCHEDUTIL_UP_RATE_LIMIT=0
+CONFIG_SCHEDUTIL_UP_RATE_LIMIT=500
+CONFIG_WQ_POWER_EFFICIENT=y
+CONFIG_WQ_POWER_EFFICIENT_DEFAULT=y
 CONFIG_PM_DEVFREQ=y
 CONFIG_DEVFREQ_GOV_QCOM_ADRENO_TZ=y
 CONFIG_DEVFREQ_GOV_QCOM_GPUBW_MON=y
@@ -296,12 +298,14 @@ scripts/config --file "${OUT_DIR}/.config" \
     -d ZRAM_DEF_COMP_LZ4 \
     --set-str ZRAM_DEF_COMP "zstd"
 
-# 🚀 Instant Touch Reaction (Schedutil Governor zero-latency ramp-up)
+# 🚀 Instant Touch Reaction (Schedutil Governor 500us ramp-up)
 scripts/config --file "${OUT_DIR}/.config" \
     -e CPU_FREQ_GOV_SCHEDUTIL \
-    --set-val SCHEDUTIL_UP_RATE_LIMIT 0
+    --set-val SCHEDUTIL_UP_RATE_LIMIT 500 \
+    -e WQ_POWER_EFFICIENT \
+    -e WQ_POWER_EFFICIENT_DEFAULT
 
-# 🚀 Custom EXTREME+ Governor (Zero Latency & Anti-Choke)
+# 🚀 Custom EXTREME+ Governor (Responsive 500us ramp-up & 20ms decay)
 scripts/config --file "${OUT_DIR}/.config" \
     -e CPU_FREQ_GOV_EXTREME_PLUS \
     -d CPU_FREQ_DEFAULT_GOV_EXTREME_PLUS \
@@ -318,8 +322,7 @@ if [ -f "drivers/cpufreq/cpufreq_schedutil.c" ]; then
     echo "[+] Schedutil up_rate_limit_us tuned to 500us in drivers/cpufreq/cpufreq_schedutil.c"
 fi
 if [ -f "mm/vmscan.c" ]; then
-    sed -i 's/int vm_swappiness = 60;/int vm_swappiness = 100;/' mm/vmscan.c
-    echo "[+] Optimized default vm_swappiness to 100 in mm/vmscan.c"
+    echo "[+] Preserving balanced OEM vm_swappiness = 60 in mm/vmscan.c"
 fi
 if [ -f "fs/dcache.c" ]; then
     sed -i 's/int sysctl_vfs_cache_pressure __read_mostly = [0-9]*;/int sysctl_vfs_cache_pressure __read_mostly = 100;/' fs/dcache.c
@@ -521,31 +524,41 @@ for rp in resetprop /data/adb/ksu/bin/ksud /data/adb/ksud; do
 done
 
 # ── 1. Dynamic Task Weighting (Schedtune Boost) & WALT Core Spillover ──
-# Dynamic Task Weighting: Boost perceived load for top-app on render burst, zero locking
-echo 18 > /dev/stune/top-app/schedtune.boost 2>/dev/null
+# Dynamic Task Weighting: Lean boost for top-app on render burst without starving audio HAL or system services
+echo 5 > /dev/stune/top-app/schedtune.boost 2>/dev/null
 echo 1 > /dev/stune/top-app/schedtune.prefer_idle 2>/dev/null
-echo 15 > /dev/cpuctl/top-app/cpu.uclamp.min 2>/dev/null
+echo 5 > /dev/cpuctl/top-app/cpu.uclamp.min 2>/dev/null
 echo 1 > /dev/cpuctl/top-app/cpu.uclamp.latency_sensitive 2>/dev/null
 
-# Aggressive Core Spillover (Silver -> Gold at 65%, Gold -> Prime at 85%)
-# 15% hysteresis gap prevents migration ping-pong / jitter
-echo "65 85" > /proc/sys/kernel/sched_upmigrate 2>/dev/null
-echo "50 70" > /proc/sys/kernel/sched_downmigrate 2>/dev/null
-echo 70 > /proc/sys/kernel/sched_group_upmigrate 2>/dev/null
-echo 55 > /proc/sys/kernel/sched_group_downmigrate 2>/dev/null
+# Clean Core Spillover: Keep light/background tasks on Little cores, migrate to Gold at 85%, Prime at 95%
+echo "85 95" > /proc/sys/kernel/sched_upmigrate 2>/dev/null
+echo "65 75" > /proc/sys/kernel/sched_downmigrate 2>/dev/null
+echo 85 > /proc/sys/kernel/sched_group_upmigrate 2>/dev/null
+echo 70 > /proc/sys/kernel/sched_group_downmigrate 2>/dev/null
 
-# ── 3. Smart Multitasking & ZRAM ZSTD Tuning (No App Kills) ──
-echo 100 > /proc/sys/vm/swappiness 2>/dev/null
+# ── 2. Power Efficient Workqueues & Deep Sleep Suspend ──
+echo Y > /sys/module/workqueue/parameters/power_efficient 2>/dev/null || true
+
+# Schedutil & EXTREME+ Rate Limits (500us ramp-up, 20ms decay)
+for gov in /sys/devices/system/cpu/cpufreq/policy*/schedutil /sys/devices/system/cpu/cpufreq/policy*/extreme+; do
+    if [ -d "$gov" ]; then
+        echo 500 > "$gov/up_rate_limit_us" 2>/dev/null || true
+        echo 20000 > "$gov/down_rate_limit_us" 2>/dev/null || true
+    fi
+done
+
+# ── 3. Smart Multitasking & ZRAM ZSTD Tuning (No App Kills, No Reclaim Thrashing) ──
+echo 60 > /proc/sys/vm/swappiness 2>/dev/null
 echo 100 > /proc/sys/vm/vfs_cache_pressure 2>/dev/null
 echo 20 > /proc/sys/vm/dirty_ratio 2>/dev/null
 echo 10 > /proc/sys/vm/dirty_background_ratio 2>/dev/null
-echo 50 > /proc/sys/vm/watermark_scale_factor 2>/dev/null
+echo 16 > /proc/sys/vm/watermark_scale_factor 2>/dev/null
 echo 0 > /proc/sys/vm/page-cluster 2>/dev/null
 echo 750 > /proc/sys/vm/extfrag_threshold 2>/dev/null
 
-# ── 4. Network & TCP BBR Congestion Control (Low Ping & Fast Bullet Registration) ──
+# ── 4. Network & TCP BBR Congestion Control (Low Ping & Sleep Friendly) ──
 echo "bbr" > /proc/sys/net/ipv4/tcp_congestion_control 2>/dev/null
-echo 1 > /proc/sys/net/ipv4/tcp_low_latency 2>/dev/null
+echo 0 > /proc/sys/net/ipv4/tcp_low_latency 2>/dev/null
 echo 1 > /proc/sys/net/ipv4/tcp_tw_reuse 2>/dev/null
 echo 1 > /proc/sys/net/ipv4/tcp_sack 2>/dev/null
 echo 1 > /proc/sys/net/ipv4/tcp_dsack 2>/dev/null

@@ -14,7 +14,7 @@ on early-init
 on init
     # ── 1. Dynamic Task Weighting (Schedtune Baseline) ──
     # Optimal load margin gives instant boost on render spike and quick decay on idle
-    write /dev/stune/top-app/schedtune.boost 8
+    write /dev/stune/top-app/schedtune.boost 5
     write /dev/stune/top-app/schedtune.prefer_idle 1
     write /dev/stune/foreground/schedtune.boost 0
     write /dev/stune/foreground/schedtune.prefer_idle 0
@@ -22,19 +22,17 @@ on init
     write /dev/stune/background/schedtune.prefer_idle 0
 
     # Uclamp support if ROM/upstream kernel utilizes cpuctl uclamp
-    write /dev/cpuctl/top-app/cpu.uclamp.min 10
+    write /dev/cpuctl/top-app/cpu.uclamp.min 5
     write /dev/cpuctl/top-app/cpu.uclamp.latency_sensitive 1
     write /dev/cpuctl/foreground/cpu.uclamp.min 0
 
 on boot
-    # ── 2. Aggressive WALT Migration (Zero Silver Choke) ──
-    # Silver -> Gold: Spill at 65% (prevents Little core saturation)
-    # Gold -> Prime: Spill at 85% (reserves Prime for heavy burst, keeps it cool)
-    # 15% hysteresis gap prevents migration ping-pong / jitter
-    write /proc/sys/kernel/sched_upmigrate "65 85"
-    write /proc/sys/kernel/sched_downmigrate "50 70"
-    write /proc/sys/kernel/sched_group_upmigrate 70
-    write /proc/sys/kernel/sched_group_downmigrate 55
+    # ── 2. Qualcomm SM8250 Standard WALT Migration (Little Core Retention) ──
+    # Keep light tasks on Little cores, spill to Gold at 85%, Prime at 95%
+    write /proc/sys/kernel/sched_upmigrate "85 95"
+    write /proc/sys/kernel/sched_downmigrate "65 75"
+    write /proc/sys/kernel/sched_group_upmigrate 85
+    write /proc/sys/kernel/sched_group_downmigrate 70
 
     # Balanced 500us ramp-up and 20ms decay window for schedutil (cool & responsive)
     write /sys/devices/system/cpu/cpufreq/policy0/schedutil/up_rate_limit_us 500
@@ -44,27 +42,31 @@ on boot
     write /sys/devices/system/cpu/cpufreq/policy7/schedutil/up_rate_limit_us 500
     write /sys/devices/system/cpu/cpufreq/policy7/schedutil/down_rate_limit_us 20000
 
+    # Power Efficient Workqueues (Sleep & Battery Optimization)
+    write /sys/module/workqueue/parameters/power_efficient Y
+
 on property:sys.boot_completed=1
     # ── 3. Post-Boot Final Enforcement (Survives ROM Resets) ──
-    write /proc/sys/kernel/sched_upmigrate "65 85"
-    write /proc/sys/kernel/sched_downmigrate "50 70"
-    write /proc/sys/kernel/sched_group_upmigrate 70
-    write /proc/sys/kernel/sched_group_downmigrate 55
+    write /proc/sys/kernel/sched_upmigrate "85 95"
+    write /proc/sys/kernel/sched_downmigrate "65 75"
+    write /proc/sys/kernel/sched_group_upmigrate 85
+    write /proc/sys/kernel/sched_group_downmigrate 70
 
-    write /dev/stune/top-app/schedtune.boost 8
+    write /dev/stune/top-app/schedtune.boost 5
     write /dev/stune/top-app/schedtune.prefer_idle 1
 
-    # Network: TCP BBR Congestion Control & Low Latency
+    # Network: TCP BBR Congestion Control & Sleep-Friendly Queueing
     write /proc/sys/net/ipv4/tcp_congestion_control bbr
-    write /proc/sys/net/ipv4/tcp_low_latency 1
+    write /proc/sys/net/ipv4/tcp_low_latency 0
     write /proc/sys/net/ipv4/tcp_tw_reuse 1
     write /proc/sys/net/ipv4/tcp_fastopen 3
 
-    # VM & ZRAM optimization (ZSTD zero-stutter)
-    write /proc/sys/vm/swappiness 100
+    # VM & ZRAM optimization (ZSTD zero-stutter, no reclaim thrashing)
+    write /proc/sys/vm/swappiness 60
     write /proc/sys/vm/vfs_cache_pressure 100
     write /proc/sys/vm/dirty_ratio 20
     write /proc/sys/vm/dirty_background_ratio 10
+    write /proc/sys/vm/watermark_scale_factor 16
     write /proc/sys/vm/page-cluster 0
 
     # Ensure sconfig is set to 10 safely

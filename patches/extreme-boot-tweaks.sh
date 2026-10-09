@@ -38,8 +38,8 @@ done
 
 # Prevent upmigrate bouncing by increasing margins
 if [ -f /proc/sys/kernel/sched_upmigrate ]; then
-    echo "85 90" > /proc/sys/kernel/sched_upmigrate
-    echo "75 80" > /proc/sys/kernel/sched_downmigrate
+    echo "85 95" > /proc/sys/kernel/sched_upmigrate
+    echo "65 75" > /proc/sys/kernel/sched_downmigrate
 fi
 
 echo "EXTREME++GAMING: Tuned successfully." > /dev/kmsg
