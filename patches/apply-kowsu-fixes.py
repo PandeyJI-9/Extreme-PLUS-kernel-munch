@@ -834,6 +834,19 @@ void ksu_selinux_hide_handle_post_fs_data(void) {}
                 f.write(kb_content)
             print(f"[+] Patched {kbuild_file} with warning suppression and -Wno-error")
 
+    # 22. Update supercall/dispatch.c for Linux 4.19 sched/signal/pid compatibility
+    dispatch_c = os.path.join(ksu_dir, "supercall", "dispatch.c")
+    patch_file(dispatch_c, [
+        (
+            '#include <linux/capability.h>',
+            '''#include <linux/capability.h>
+#include <linux/sched.h>
+#include <linux/sched/task.h>
+#include <linux/sched/signal.h>
+#include <linux/pid.h>'''
+        )
+    ])
+
     print("🎉 KowSU Multi-Manager & App Profile Patching Completed Successfully!")
     return 0
 
