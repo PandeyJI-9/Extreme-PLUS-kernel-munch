@@ -650,7 +650,7 @@ static void ksu_sys_umount(const char *mnt, int flags)
         )
     ])
 
-    # 14. Update manager/pkg_observer.c for Linux 4.19 TWA_RESUME compatibility
+    # 14. Update manager/pkg_observer.c for Linux 4.19 TWA_RESUME & fsnotify compatibility
     obs_c = os.path.join(ksu_dir, "manager", "pkg_observer.c")
     patch_file(obs_c, [
         (
@@ -658,6 +658,65 @@ static void ksu_sys_umount(const char *mnt, int flags)
             '''#include <linux/task_work.h>
 #ifndef TWA_RESUME
 #define TWA_RESUME true
+#endif'''
+        ),
+        (
+            r'''static int ksu_handle_inode_event(struct fsnotify_mark *mark, u32 mask, struct inode *inode, struct inode *dir,
+                                  const struct qstr *file_name, u32 cookie)
+{
+    if (!file_name)
+        return 0;
+    if (mask & FS_ISDIR)
+        return 0;
+    if (file_name->len == 13 && !memcmp(file_name->name, "packages.list", 13)) {
+        pr_info("packages.list detected: %d\n", mask);
+        ksu_defer_track_throne();
+    }
+    return 0;
+}
+
+static const struct fsnotify_ops ksu_ops = {
+    .handle_inode_event = ksu_handle_inode_event,
+};''',
+            r'''#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 9, 0)
+static int ksu_handle_inode_event(struct fsnotify_mark *mark, u32 mask, struct inode *inode, struct inode *dir,
+                                  const struct qstr *file_name, u32 cookie)
+{
+    if (!file_name)
+        return 0;
+    if (mask & FS_ISDIR)
+        return 0;
+    if (file_name->len == 13 && !memcmp(file_name->name, "packages.list", 13)) {
+        pr_info("packages.list detected: %d\n", mask);
+        ksu_defer_track_throne();
+    }
+    return 0;
+}
+
+static const struct fsnotify_ops ksu_ops = {
+    .handle_inode_event = ksu_handle_inode_event,
+};
+#else
+static int ksu_handle_event(struct fsnotify_group *group,
+			    struct inode *inode,
+			    u32 mask, const void *data, int data_type,
+			    const unsigned char *file_name, u32 cookie,
+			    struct fsnotify_iter_info *iter_info)
+{
+    if (!file_name)
+        return 0;
+    if (mask & FS_ISDIR)
+        return 0;
+    if (strcmp((const char *)file_name, "packages.list") == 0) {
+        pr_info("packages.list detected: %d\n", mask);
+        ksu_defer_track_throne();
+    }
+    return 0;
+}
+
+static const struct fsnotify_ops ksu_ops = {
+    .handle_event = ksu_handle_event,
+};
 #endif'''
         )
     ])
