@@ -14,7 +14,7 @@ on:
           - Gaming
         default: all
       build_ksu:
-        description: 'Integrate RKSU + SuSFS (v2.3.0)'
+        description: 'Integrate KowSU (KOWX712 Multi-Manager)'
         required: true
         type: boolean
         default: true
@@ -37,7 +37,7 @@ jobs:
 
           ROOT_LABEL="🛡️ Architecture: Pure Clean Base (No Root)"
           if [ "${{ inputs.build_ksu }}" = "true" ]; then
-            ROOT_LABEL="⚡ Root: RKSU + SuSFS (v2.3.0 Native VFS)"
+            ROOT_LABEL="⚡ Root: KowSU (KOWX712 Multi-Manager v3.x)"
           fi
 
           for chat in "${TARGETS[@]}"; do
@@ -110,7 +110,7 @@ jobs:
         run: |
           ROOT_DESC="🛡️ <b>Root:</b> Pure Clean Base (No Root)"
           if [ "${{ inputs.build_ksu }}" = "true" ]; then
-            ROOT_DESC="⚡ <b>Root:</b> Inbuilt RKSU + SuSFS (v2.3.0 Native VFS)"
+            ROOT_DESC="⚡ <b>Root:</b> Inbuilt KowSU (KOWX712 Multi-Manager v3.x)"
           fi
 
           MSG="🔥 <b>EXTREME++ Official Release #${{ github.run_number }}</b>%0A%0A"

@@ -92,71 +92,33 @@ if ! grep -q "selinux,baseband_guard" security/Kconfig; then
 fi
 
 # ------------------------------------------
-# 3. KernelSU (RKSU / ReSukiSU Multi-Manager Non-GKI 4.19 with SuSFS v2.3.0) Setup
+# 3. KowSU (KOWX712/KernelSU Multi-Manager Non-GKI 4.19) Setup
 # ------------------------------------------
 if [ "$ENABLE_KSU" -eq 1 ]; then
-    echo "[*] Injecting ReSukiSU / RKSU Multi-Manager (Non-GKI 4.19 with SuSFS v2.3.0) Source..."
-    # Pin to tested stable release tag v4.2.0-rc3 to avoid moving upstream breaking renames & IOCTL mismatches
-    curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash -s -- v4.2.0-rc3
+    echo "[*] Injecting KowSU (KOWX712/KernelSU) Multi-Manager Source..."
+    # Fetch official KowSU setup script and checkout master
+    curl -LSs "https://raw.githubusercontent.com/KOWX712/KernelSU/master/kernel/setup.sh" | bash -s master
 
-    # Force KSU_SUSFS as default choice in drivers/kernelsu/Kconfig (Prevents Non-GKI TP hook fallback)
-    if [ -f "drivers/kernelsu/Kconfig" ]; then
-        sed -i 's/default KSU_TRACEPOINT_HOOK/default KSU_SUSFS/' drivers/kernelsu/Kconfig
-        echo "[+] Default hook set to KSU_SUSFS in drivers/kernelsu/Kconfig"
+    # Apply Universal Multi-Manager Crowning & App-Profile Zero-Failure Patch
+    if [ -f "apply-kowsu-fixes.py" ]; then
+        python3 apply-kowsu-fixes.py
+    elif [ -f "patches/apply-kowsu-fixes.py" ]; then
+        python3 patches/apply-kowsu-fixes.py
     fi
 
-    # Multi-Manager Support & Universal Fallback Key Injection
-    # Guarantees that RKSU, Official KernelSU, ReSukiSU, SukiSU-Ultra, and BakaSU Manager apps
-    # are 100% recognized as manager without "Failed to update App Profile" permission errors.
-    python3 -c '
-import os
-
-candidates = [
-    "drivers/kernelsu/kernel/manager/apk_sign.c",
-    "drivers/kernelsu/manager/apk_sign.c",
-    "drivers/kernelsu/apk_sign.c",
-]
-apk_sign_path = next((p for p in candidates if os.path.exists(p)), None)
-if apk_sign_path:
-    with open(apk_sign_path, "r") as f:
-        content = f.read()
-
-    hook_target = "return check_v2_signature(path, signature_index);"
-    hook_replacement = """// Bulletproof Fallback: check known manager package names
-    if (check_v2_signature(path, signature_index))
-        return true;
-    char pkg_buf[128];
-    if (get_pkg_from_apk_path(pkg_buf, path) == 0) {
-        if (!strcmp(pkg_buf, "me.weishu.kernelsu") ||
-            !strcmp(pkg_buf, "org.resukisu.resukisu") ||
-            !strcmp(pkg_buf, "org.bakasu.bakasu") ||
-            !strcmp(pkg_buf, "com.sukisu.ultra") ||
-            !strcmp(pkg_buf, "com.resukisu")) {
-            pr_info("PROJECT EXTREME+: Manager recognized by known package name: %s\\n", pkg_buf);
-            *signature_index = 0;
-            return true;
-        }
-    }
-    return false;"""
-    if hook_target in content and "pkg_buf" not in content:
-        content = content.replace(hook_target, hook_replacement)
-        with open(apk_sign_path, "w") as f:
-            f.write(content)
-        print("✅ Patched " + apk_sign_path + " with universal manager package verification")
-    else:
-        print("ℹ️ " + apk_sign_path + " already patched or target signature pattern handled")
-' 2>/dev/null || true
-
-    # Inject defconfig base symbols
+    # Inject defconfig base symbols for KowSU
     echo "CONFIG_KSU=y" >> "arch/arm64/configs/${DEFCONFIG}"
-    echo "CONFIG_KSU_SUSFS=y" >> "arch/arm64/configs/${DEFCONFIG}"
-    echo "CONFIG_KSU_MULTI_MANAGER_SUPPORT=y" >> "arch/arm64/configs/${DEFCONFIG}"
+    echo "CONFIG_KPROBES=y" >> "arch/arm64/configs/${DEFCONFIG}"
+    echo "CONFIG_HAVE_KPROBES=y" >> "arch/arm64/configs/${DEFCONFIG}"
+    echo "CONFIG_KRETPROBES=y" >> "arch/arm64/configs/${DEFCONFIG}"
+    echo "CONFIG_HAVE_SYSCALL_TRACEPOINTS=y" >> "arch/arm64/configs/${DEFCONFIG}"
     echo "CONFIG_THREAD_INFO_IN_TASK=y" >> "arch/arm64/configs/${DEFCONFIG}"
-    echo "[+] RKSU / ReSukiSU Multi-Manager Non-GKI setup finished."
+    echo "[+] KowSU (KOWX712/KernelSU) Multi-Manager setup finished."
 else
     echo "[*] Ensuring Pure Clean Kernel Base (Zero embedded root hooks)..."
     sed -i '/CONFIG_KSU/d' "arch/arm64/configs/${DEFCONFIG}" 2>/dev/null || true
 fi
+
 
 
 # ------------------------------------------
@@ -381,34 +343,22 @@ scripts/config --file "${OUT_DIR}/.config" \
     -d DEBUG_KMEMLEAK \
     -d DEBUG_PREEMPT
 
-# 🚀 Root Configuration: RKSU / ReSukiSU + SuSFS v2.3.0 vs Pure Clean Base
+# 🚀 Root Configuration: KowSU Multi-Manager vs Pure Clean Base
 if [ "$ENABLE_KSU" -eq 1 ]; then
-    echo "[*] Injecting Full RKSU / ReSukiSU + SuSFS v2.3.0 Configuration into .config..."
+    echo "[*] Injecting Full KowSU Multi-Manager Configuration into .config..."
     scripts/config --file "${OUT_DIR}/.config" \
         -e KSU \
-        -e KSU_SUSFS \
-        -d KSU_TRACEPOINT_HOOK \
-        -d KSU_MANUAL_HOOK \
-        -e KSU_MULTI_MANAGER_SUPPORT \
+        -e KPROBES \
+        -e HAVE_KPROBES \
+        -e KRETPROBES \
+        -e HAVE_SYSCALL_TRACEPOINTS \
         -e THREAD_INFO_IN_TASK \
-        -e KSU_SUSFS_SUS_PATH \
-        -e KSU_SUSFS_SUS_MOUNT \
-        -e KSU_SUSFS_SUS_KSTAT \
-        -e KSU_SUSFS_SPOOF_UNAME \
-        -e KSU_SUSFS_ENABLE_LOG \
-        -e KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS \
-        -e KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG \
-        -e KSU_SUSFS_OPEN_REDIRECT \
-        -e KSU_SUSFS_SUS_MAP \
         -d KSU_DISABLE_MANAGER \
         -d KSU_DISABLE_POLICY
 else
     echo "[*] Disabling embedded KSU for Pure Clean Kernel..."
     scripts/config --file "${OUT_DIR}/.config" \
-        -d KSU \
-        -d KSU_SUSFS \
-        -d KSU_TRACEPOINT_HOOK \
-        -d KSU_MANUAL_HOOK
+        -d KSU
     sed -i '/CONFIG_KSU/d' "${OUT_DIR}/.config" 2>/dev/null || true
 fi
 

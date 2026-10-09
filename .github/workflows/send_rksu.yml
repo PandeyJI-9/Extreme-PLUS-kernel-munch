@@ -1,4 +1,4 @@
-name: 📲 Send RKSU Manager (PandeyJI-9)
+name: 📲 Send Root Manager (PandeyJI-9)
 
 on:
   workflow_dispatch: # Manual trigger button
@@ -15,9 +15,10 @@ jobs:
         run: |
           echo "[*] Contacting GitHub API for Manager APK..."
           REPOS=(
+            "KOWX712/KernelSU"
+            "ReSukiSU/ReSukiSU"
             "rsuntk/KernelSU"
             "tiann/KernelSU"
-            "ReSukiSU/ReSukiSU"
           )
           APK_URL=""
           VERSION_TAG=""
@@ -56,13 +57,13 @@ jobs:
 
       - name: "🚀 Send APK to Telegram"
         run: |
-          CAPTION="🔥 <b>EXTREME++ RKSU Manager | Maintainer: PandeyJI-9</b>
+          CAPTION="🔥 <b>EXTREME++ Root Manager | Maintainer: PandeyJI-9</b>
           
           📦 <b>Version:</b> <code>${{ env.VERSION_TAG }}</code>
-          ⚙️ <b>Type:</b> RKSU (Rissu KernelSU 4.19 + SuSFS v2.3.0)
+          ⚙️ <b>Type:</b> KowSU / Universal Multi-Manager (Zero-Failure App Profile)
           📱 <b>Device:</b> POCO F4 (munch)
           
-          ⬇️ <i>Install this specific manager to control your root access. This is perfectly synced with your EXTREME++ kernel for zero detection!</i>"
+          ⬇️ <i>Install this manager to control your root access. Seamlessly synced with EXTREME++ KowSU engine with 100% root grant support!</i>"
           
           echo "[*] Uploading APK to Telegram..."
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendDocument" \

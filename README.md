@@ -9,7 +9,7 @@
 [![Device](https://img.shields.io/badge/POCO_F4-munch%20%2F%20munch--in-ff6f00?style=for-the-badge&logo=xiaomi&logoColor=white)](https://github.com/PandeyJI-9/Extreme-PLUS-kernel-munch)
 [![SoC](https://img.shields.io/badge/Snapdragon_870-SM8250--AC%20(Kona%20v2.1)-red?style=for-the-badge&logo=qualcomm&logoColor=white)](https://www.qualcomm.com/products/application/smartphones/snapdragon-8-series-mobile-platforms/snapdragon-870-5g-mobile-platform)
 [![Compatibility](https://img.shields.io/badge/HyperOS-1.0%20%7C%202.0%20%7C%203.0%20%7C%204.0-success?style=for-the-badge&logo=android&logoColor=white)](https://github.com/PandeyJI-9/Extreme-PLUS-kernel-munch)
-[![Root](https://img.shields.io/badge/Root-ReSukiSU%20%2B%20SuSFS-9c27b0?style=for-the-badge&logo=android&logoColor=white)](https://github.com/ReSukiSU/ReSukiSU)
+[![Root](https://img.shields.io/badge/Root-KowSU%20Multi--Manager-9c27b0?style=for-the-badge&logo=android&logoColor=white)](https://github.com/KOWX712/KernelSU)
 [![Telegram](https://img.shields.io/badge/Community-Telegram_Support-29b6f6?style=for-the-badge&logo=telegram&logoColor=white)](https://t.me/Extremeplus_Support)
 
 <br>
@@ -105,10 +105,11 @@ EXTREME++ Kernel is built with **OS-independent C-driver locks** that guarantee 
 
 ---
 
-### 🛡️ 4. Root & Complete Stealth (ReSukiSU + SuSFS)
-* **Non-GKI 4.19 Architecture:** Fully tailored for Snapdragon 870 legacy 4.19 kernel structure.
-* **Integrated SuSFS v1.5.5:** Completely hides root, mounts, KProbes, and hooks.
-* **Integrity Bypass:** Seamlessly passes Google Play Integrity (Device + Basic), runs Banking Apps (Google Pay, PhonePe, PayTM, Banking), and games with anti-cheat engines without detection.
+### 🛡️ 4. Root & Complete Stealth (KowSU Multi-Manager)
+* **KowSU Architecture (KOWX712):** High-performance Non-GKI 4.19 KernelSU implementation with native stealth (`selinux_hide` and `kernel_umount`).
+* **Universal Multi-Manager Recognition:** Simultaneously recognizes and crowns KowSU SuperManager, ReSukiSU Manager, Official KernelSU Manager, SukiSU Ultra, and BakaSU with zero permission barriers.
+* **Zero-Failure App Profile Engine:** Completely eliminates the `"Failed to update App Profile"` error by relaxing supercall permission checks and supporting legacy and modern profile versions.
+* **Integrity Bypass:** Seamlessly passes Google Play Integrity (Device + Basic), runs Banking Apps (Google Pay, PhonePe, Paytm), and games without detection.
 
 ---
 
@@ -186,7 +187,7 @@ Need assistance, benchmark discussions, or want to share feedback?
 
 * **[Ayush Pandey JI (@pandey_ji_8)](https://t.me/pandey_ji_8)** — Lead Developer & Architect of EXTREME++ Kernel.
 * **[FakeDreamer](https://github.com)** — GPU 10-step RPMh voltage UV logic & inspiration.
-* **[rsuntk / ReSukiSU](https://github.com/ReSukiSU)** — Next-generation Non-GKI 4.19 KernelSU implementation.
+* **[KOWX712 / KernelSU](https://github.com/KOWX712/KernelSU)** & **[ReSukiSU](https://github.com/ReSukiSU)** — Next-generation Non-GKI 4.19 KowSU root engine & managers.
 * **[AstideLabs](https://github.com/AstideLabs)** — Upstream SM8250 Linux 4.19 kernel base & AnyKernel3 tree.
 * **[osm0sis](https://github.com/osm0sis)** — AnyKernel3 backend flasher script.
 
