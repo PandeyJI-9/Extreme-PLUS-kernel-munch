@@ -610,7 +610,35 @@ static void ksu_sys_umount(const char *mnt, int flags)
         )
     ])
 
-    # 13. Update Kbuild compiler flags for Linux 4.19 compatibility
+    # 13. Update infra/seccomp_cache.c for Linux 4.19 SECCOMP_ARCH_NATIVE_NR compatibility
+    seccomp_c = os.path.join(ksu_dir, "infra", "seccomp_cache.c")
+    patch_file(seccomp_c, [
+        (
+            '#include "infra/seccomp_cache.h"',
+            '''#include "infra/seccomp_cache.h"
+#include <asm/unistd.h>
+
+#ifndef SECCOMP_ARCH_NATIVE_NR
+#ifdef NR_syscalls
+#define SECCOMP_ARCH_NATIVE_NR NR_syscalls
+#elif defined(__NR_syscalls)
+#define SECCOMP_ARCH_NATIVE_NR __NR_syscalls
+#else
+#define SECCOMP_ARCH_NATIVE_NR 512
+#endif
+#endif
+
+#ifndef SECCOMP_ARCH_COMPAT_NR
+#ifdef __NR_compat_syscalls
+#define SECCOMP_ARCH_COMPAT_NR __NR_compat_syscalls
+#else
+#define SECCOMP_ARCH_COMPAT_NR 512
+#endif
+#endif'''
+        )
+    ])
+
+    # 14. Update Kbuild compiler flags for Linux 4.19 compatibility
     kbuild_file = os.path.join(ksu_dir, "Kbuild")
     if os.path.exists(kbuild_file):
         with open(kbuild_file, "r", encoding="utf-8") as f:
