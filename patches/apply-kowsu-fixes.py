@@ -48,7 +48,10 @@ def main():
     print("[*] Applying KowSU Multi-Manager & Universal App-Profile Fixes...")
 
     # Find drivers/kernelsu directory (could be drivers/kernelsu, KernelSU/kernel, or kernel)
-    base_dirs = ["drivers/kernelsu", "KernelSU/kernel", "kernel", "."]
+    base_dirs = []
+    if len(sys.argv) > 1:
+        base_dirs.append(sys.argv[1])
+    base_dirs.extend(["drivers/kernelsu", "KernelSU/kernel", "kernel", "."])
     ksu_dir = None
     for b in base_dirs:
         if os.path.exists(os.path.join(b, "manager", "throne_tracker.c")):
@@ -513,9 +516,17 @@ static loff_t ksu_wrapper_remap_file_range(struct file *file_in, loff_t pos_in, 
         )
     ])
 
-    # 10. Update infra/su_mount_ns.c for Linux 4.19 path_mount compatibility
+    # 10. Update infra/su_mount_ns.c for Linux 4.19 path_mount & mount.h compatibility
     mount_c = os.path.join(ksu_dir, "infra", "su_mount_ns.c")
     patch_file(mount_c, [
+        (
+            "#include <uapi/linux/mount.h>",
+            '''#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 2, 0)
+#include <uapi/linux/mount.h>
+#else
+#include <linux/mount.h>
+#endif'''
+        ),
         (
             '''extern int path_mount(const char *dev_name, struct path *path, const char *type_page, unsigned long flags,
                       void *data_page);''',
@@ -523,6 +534,7 @@ static loff_t ksu_wrapper_remap_file_range(struct file *file_in, loff_t pos_in, 
 extern int path_mount(const char *dev_name, struct path *path, const char *type_page, unsigned long flags,
                       void *data_page);
 #else
+#include <linux/uaccess.h>
 extern long do_mount(const char *dev_name, const char __user *dir_name,
 		     const char *type_page, unsigned long flags,
 		     void *data_page);
@@ -638,7 +650,31 @@ static void ksu_sys_umount(const char *mnt, int flags)
         )
     ])
 
-    # 14. Update Kbuild compiler flags for Linux 4.19 compatibility
+    # 14. Update manager/pkg_observer.c for Linux 4.19 TWA_RESUME compatibility
+    obs_c = os.path.join(ksu_dir, "manager", "pkg_observer.c")
+    patch_file(obs_c, [
+        (
+            "#include <linux/task_work.h>",
+            '''#include <linux/task_work.h>
+#ifndef TWA_RESUME
+#define TWA_RESUME true
+#endif'''
+        )
+    ])
+
+    # 15. Update supercall/supercall.c for Linux 4.19 TWA_RESUME compatibility
+    sc_c = os.path.join(ksu_dir, "supercall", "supercall.c")
+    patch_file(sc_c, [
+        (
+            "#include <linux/task_work.h>",
+            '''#include <linux/task_work.h>
+#ifndef TWA_RESUME
+#define TWA_RESUME true
+#endif'''
+        )
+    ])
+
+    # 16. Update Kbuild compiler flags for Linux 4.19 compatibility
     kbuild_file = os.path.join(ksu_dir, "Kbuild")
     if os.path.exists(kbuild_file):
         with open(kbuild_file, "r", encoding="utf-8") as f:
