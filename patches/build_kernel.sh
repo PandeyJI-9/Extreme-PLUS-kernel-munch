@@ -658,7 +658,7 @@ for VARIANT in "${VARIANTS_TO_BUILD[@]}"; do
             ZIP_BASE="EXTREME++Battery"
             ;;
         Bal-Gaming)
-            FREQ="2745600"
+            FREQ="2841600"
             LOCALVER="-Extreme++Bal-Gaming-by-PandeyJi"
             TITLE="Extreme++Bal-Gaming by PandeyJi | POCO F4 (munch)"
             ZIP_BASE="EXTREME++Bal-Gaming"

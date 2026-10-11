@@ -32,7 +32,7 @@ def patch(path):
     
     old_power = 'dynamic-power-coefficient = <598>;'
     new_power = (
-        '/* EXTREME++ EAS: Lower energy cost due to 2.74GHz clamp */\n'
+        '/* EXTREME++ EAS: Lower energy cost due to 2.84GHz clamp */\n'
         '\t\t\tdynamic-power-coefficient = <510>;'
     )
     

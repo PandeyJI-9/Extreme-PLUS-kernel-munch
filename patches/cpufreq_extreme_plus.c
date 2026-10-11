@@ -76,8 +76,6 @@ struct extreme_plus_cpu {
 
 	unsigned long util;
 	unsigned long prev_util;
-	s32 heat_accumulator;
-	u64 last_heat_calc_ns;
 	unsigned int flags;
 
 	unsigned long		bw_dl;
@@ -322,9 +320,9 @@ static void extreme_plus_deferred_update(struct extreme_plus_policy *sg_policy, 
 #define EXTREME_GOLD_ACTIVE_FLOOR    1612800
 #define EXTREME_PRIME_ACTIVE_FLOOR   1516800
 
-#define EXTREME_PRIME_CRUISE_CEIL    2745600
+#define EXTREME_PRIME_CRUISE_CEIL    2841600
 #define EXTREME_PREDICTIVE_SLOPE_PCT 25
-#define EXTREME_TURBO_SATURATION_PCT 90
+#define EXTREME_TURBO_SATURATION_PCT 85
 
 static bool extreme_plus_cluster_has_active_tasks(struct cpufreq_policy *policy)
 {
@@ -351,8 +349,9 @@ static unsigned int extreme_plus_apply_active_floor(struct cpufreq_policy *polic
 	 *    YouTube dynamic refresh rate mode changes (120Hz <-> 60Hz), triggering
 	 *    visible screen brightness flickering. 614.4 MHz draws virtually identical
 	 *    idle power (~600mV rail) but eliminates mode-switch latency completely.
-	 * 2. Active Task Floor: When runnable tasks are queued, maintain responsive floors
-	 *    to eliminate UI scroll stutter and 3D render loop frame drops.
+	 * 2. Active Task Floor: When runnable tasks are queued on any sibling core in
+	 *    the cluster, maintain responsive floors to eliminate UI scroll stutter
+	 *    and 3D render loop frame drops.
 	 */
 	if (cpu < 4) {
 		if (freq < EXTREME_LITTLE_IDLE_FLOOR)
@@ -376,65 +375,27 @@ static unsigned int get_next_freq(struct extreme_plus_policy *sg_policy,
 	unsigned int freq = arch_scale_freq_invariant() ?
 				policy->cpuinfo.max_freq : policy->cur;
 
-	freq = map_util_freq(util, freq, max);
-	freq = extreme_plus_apply_active_floor(policy, freq);
-	trace_sugov_next_freq(policy->cpu, util, max, freq);
-
-	if (freq == sg_policy->cached_raw_freq && !sg_policy->need_freq_update)
-		return sg_policy->next_freq;
-
-	sg_policy->need_freq_update = false;
-	sg_policy->prev_cached_raw_freq = sg_policy->cached_raw_freq;
-	sg_policy->cached_raw_freq = freq;
-	return cpufreq_driver_resolve_freq(policy, freq);
+	return map_util_freq(util, freq, max);
 }
 
 /*
- * EXTREME+ Autonomous Neural-Adaptive Core Engine
- * 1. Proactive Thermal Budget Guard (Leaky-Bucket Energy Credits):
- *    Tracks continuous burst duty cycle and smoothly caps turbo before mi_thermald trips!
- * 2. Predictive Acceleration Slope Sensing:
- *    Detects incoming frame spikes (slope >= 25%) and pre-ramps frequencies before frames drop!
- * 3. All-Core Coordinated Multi-Cluster Synergy:
- *    Silver (0-3), Gold (4-6), and Prime (7) operate as a synchronized, self-regulating unit.
+ * EXTREME+ Autonomous Neural-Adaptive Core Engine (SMP Safe & Hardware Calibrated)
+ * 1. Predictive Acceleration Slope Sensing:
+ *    Detects incoming frame spikes (slope >= 25%) and pre-ramps frequencies before frames drop.
+ * 2. Strict SMP Concurrency Isolation (Zero Cross-CPU Mutex/Data-Race):
+ *    Each core evaluates its own policy and cluster capacity independently.
+ * 3. Sustained Frame-Pacing Architecture (Zero 250ms Sawtooth Micro-Stutter):
+ *    No artificial software leaky-bucket oscillation. Prime core cruises at 2.84 GHz sweet
+ *    spot and ramps cleanly to 3.19 GHz Apex Turbo when demanded, held steadily by rate limits.
+ * 4. Guaranteed Hardware OPP Driver Resolution:
+ *    Every calculated frequency is passed through cpufreq_driver_resolve_freq(policy, freq)
+ *    to ensure 100% OPP alignment and keep cached_raw_freq in exact synchronization.
  */
-static void extreme_plus_update_thermal_budget(struct extreme_plus_cpu *sg_cpu, u64 time, unsigned int cur_freq)
-{
-	s64 delta_ns;
-	s32 delta_ms;
-
-	if (sg_cpu->last_heat_calc_ns == 0) {
-		sg_cpu->last_heat_calc_ns = time;
-		return;
-	}
-
-	delta_ns = time - sg_cpu->last_heat_calc_ns;
-	if (delta_ns <= 0)
-		return;
-
-	delta_ms = (s32)(delta_ns / 1000000L);
-	if (delta_ms <= 0)
-		return;
-
-	sg_cpu->last_heat_calc_ns = time;
-
-	/* If running in Turbo (> 2.74 GHz), charge heat accumulator */
-	if (cur_freq > EXTREME_PRIME_CRUISE_CEIL) {
-		sg_cpu->heat_accumulator += delta_ms * 3;
-		if (sg_cpu->heat_accumulator > 1000)
-			sg_cpu->heat_accumulator = 1000;
-	} else {
-		/* Dissipate heat during cruising / idle */
-		sg_cpu->heat_accumulator -= delta_ms * 2;
-		if (sg_cpu->heat_accumulator < 0)
-			sg_cpu->heat_accumulator = 0;
-	}
-}
-
 static unsigned int extreme_plus_autonomous_engine(struct extreme_plus_cpu *sg_cpu,
 						  struct extreme_plus_policy *sg_policy,
 						  unsigned long util, unsigned long max, u64 time)
 {
+	struct cpufreq_policy *policy = sg_policy->policy;
 	unsigned int cpu = sg_cpu->cpu;
 	struct rq *rq = cpu_rq(cpu);
 	unsigned int raw_f = get_next_freq(sg_policy, util, max);
@@ -442,49 +403,52 @@ static unsigned int extreme_plus_autonomous_engine(struct extreme_plus_cpu *sg_c
 	bool is_burst_slope = (slope >= (long)mult_frac(max, EXTREME_PREDICTIVE_SLOPE_PCT, 100));
 	bool is_saturated = (util >= mult_frac(max, EXTREME_TURBO_SATURATION_PCT, 100));
 	bool is_render_active = sg_cpu->walt_load.rtgb_active || (rq && rq->nr_running > 1);
+	unsigned int target_f;
 
 	sg_cpu->prev_util = util;
-	extreme_plus_update_thermal_budget(sg_cpu, time, sg_policy->policy->cur);
 
-	/* ── Cluster 2: Prime Core 7 (The Apex Predator) ── */
+	/* ── Cluster 2: Prime Core 7 (Kryo 585 Prime) ── */
 	if (cpu == 7) {
-		/* Emergency conditions: Predictive Slope OR Saturation OR Heavy Render backlog */
+		/* Burst conditions: Predictive Slope OR Saturation OR Heavy Render backlog */
 		if (is_burst_slope || is_saturated || is_render_active) {
-			/* Check proactive thermal headroom before allowing 3.19 GHz burst */
-			if (sg_cpu->heat_accumulator < 750) {
-				/* Prime Gold cores proactively to share upcoming frame load */
-				struct extreme_plus_cpu *gold_lead = &per_cpu(extreme_plus_cpu, 4);
-				gold_lead->iowait_boost_pending = true;
-				if (!gold_lead->iowait_boost)
-					gold_lead->iowait_boost = gold_lead->min << 1;
-				return sg_policy->policy->cpuinfo.max_freq; /* Gear 2: Full 3.19 GHz Apex Turbo */
-			}
-			/* Heat accumulator is high: smoothly cap to cruising gear to PREVENT mi_thermald crash */
-			return EXTREME_PRIME_CRUISE_CEIL;
+			target_f = policy->cpuinfo.max_freq; /* Gear 2: Full 3.19 GHz Apex Turbo */
+		} else {
+			/* Normal Gear 1: Chilled Cruising Ceiling (<= 2.84 GHz) */
+			if (raw_f > EXTREME_PRIME_CRUISE_CEIL)
+				target_f = EXTREME_PRIME_CRUISE_CEIL;
+			/* Smooth Deceleration Glide: When descending from Gear 2, bridge through Gear 1 first */
+			else if (sg_policy->cached_raw_freq > EXTREME_PRIME_CRUISE_CEIL && raw_f < 2419200)
+				target_f = EXTREME_PRIME_CRUISE_CEIL;
+			else
+				target_f = raw_f;
 		}
-
-		/* Normal Gear 1: Chilled Cruising Ceiling (≤ 2.74 GHz) */
-		if (raw_f > EXTREME_PRIME_CRUISE_CEIL)
-			return EXTREME_PRIME_CRUISE_CEIL;
-
-		/* Smooth Deceleration Glide: When descending from Gear 2, bridge through Gear 1 first */
-		if (sg_policy->cached_raw_freq > EXTREME_PRIME_CRUISE_CEIL && raw_f < 2419200)
-			return EXTREME_PRIME_CRUISE_CEIL;
-
-		return raw_f;
 	}
-
-	/* ── Cluster 1: Gold Cores 4-6 (The Workhorses) ── */
-	if (cpu >= 4 && cpu < 7) {
+	/* ── Cluster 1: Gold Cores 4-6 (Kryo 585 Gold) ── */
+	else if (cpu >= 4 && cpu < 7) {
 		/* On predictive slope or heavy active render, jump directly to Peak Gold (2.42 GHz) */
 		if (is_burst_slope && util >= mult_frac(max, 70, 100))
-			return sg_policy->policy->cpuinfo.max_freq;
-
-		return raw_f;
+			target_f = policy->cpuinfo.max_freq;
+		else
+			target_f = raw_f;
+	}
+	/* ── Cluster 0: Silver Cores 0-3 (Kryo 585 Silver) ── */
+	else {
+		target_f = raw_f;
 	}
 
-	/* ── Cluster 0: Silver Cores 0-3 (The Efficiency Fleet) ── */
-	return raw_f;
+	/* Apply Anti-Flicker & Active Task Floors */
+	target_f = extreme_plus_apply_active_floor(policy, target_f);
+	trace_sugov_next_freq(policy->cpu, util, max, target_f);
+
+	if (target_f == sg_policy->cached_raw_freq && !sg_policy->need_freq_update)
+		return sg_policy->next_freq;
+
+	sg_policy->need_freq_update = false;
+	sg_policy->prev_cached_raw_freq = sg_policy->cached_raw_freq;
+	sg_policy->cached_raw_freq = target_f;
+
+	/* Ensure 100% valid OPP resolution and hardware sync */
+	return cpufreq_driver_resolve_freq(policy, target_f);
 }
 
 extern long
@@ -814,6 +778,26 @@ static inline void ignore_dl_rate_limit(struct extreme_plus_cpu *sg_cpu, struct 
 		WRITE_ONCE(sg_policy->limits_changed, true);
 }
 
+static inline unsigned int extreme_plus_default_hispeed(struct cpufreq_policy *policy)
+{
+	if (policy->cpu < 4)
+		return 1056000;
+	else if (policy->cpu < 7)
+		return 1804800;
+	else
+		return 2169600;
+}
+
+static inline unsigned int extreme_plus_default_rtg_boost(struct cpufreq_policy *policy)
+{
+	if (policy->cpu < 4)
+		return DEFAULT_CPU0_RTG_BOOST_FREQ;
+	else if (policy->cpu < 7)
+		return DEFAULT_CPU4_RTG_BOOST_FREQ;
+	else
+		return DEFAULT_CPU7_RTG_BOOST_FREQ;
+}
+
 static inline unsigned long target_util(struct extreme_plus_policy *sg_policy,
 				  unsigned int freq)
 {
@@ -829,7 +813,7 @@ static void extreme_plus_update_single(struct update_util_data *hook, u64 time,
 {
 	struct extreme_plus_cpu *sg_cpu = container_of(hook, struct extreme_plus_cpu, update_util);
 	struct extreme_plus_policy *sg_policy = sg_cpu->sg_policy;
-	unsigned long util, max, hs_util, boost_util;
+	unsigned long util, max;
 	unsigned int next_f;
 	bool busy;
 
@@ -853,14 +837,19 @@ static void extreme_plus_update_single(struct update_util_data *hook, u64 time,
 	sg_cpu->flags = flags;
 
 	if (sg_policy->max != max) {
-		sg_policy->max = max;
-		hs_util = target_util(sg_policy,
-				       sg_policy->tunables->hispeed_freq);
-		sg_policy->hispeed_util = hs_util;
+		unsigned int hs_freq, boost_freq;
 
-		boost_util = target_util(sg_policy,
-				    sg_policy->tunables->rtg_boost_freq);
-		sg_policy->rtg_boost_util = boost_util;
+		sg_policy->max = max;
+
+		hs_freq = sg_policy->tunables->hispeed_freq;
+		if (!hs_freq || (!have_governor_per_policy() && sg_cpu->cpu >= 4))
+			hs_freq = extreme_plus_default_hispeed(sg_policy->policy);
+		sg_policy->hispeed_util = target_util(sg_policy, hs_freq);
+
+		boost_freq = sg_policy->tunables->rtg_boost_freq;
+		if (!boost_freq || (!have_governor_per_policy() && sg_cpu->cpu >= 4))
+			boost_freq = extreme_plus_default_rtg_boost(sg_policy->policy);
+		sg_policy->rtg_boost_util = target_util(sg_policy, boost_freq);
 	}
 
 	util = extreme_plus_iowait_apply(sg_cpu, time, util, max);
@@ -941,10 +930,9 @@ static unsigned int extreme_plus_next_freq_shared(struct extreme_plus_cpu *sg_cp
 			util = j_util;
 			max = j_max;
 		}
-
-		extreme_plus_walt_adjust(j_sg_cpu, &util, &max);
 	}
 
+	extreme_plus_walt_adjust(sg_cpu, &util, &max);
 	return extreme_plus_autonomous_engine(sg_cpu, sg_policy, util, max, time);
 }
 
@@ -964,14 +952,19 @@ extreme_plus_update_shared(struct update_util_data *hook, u64 time, unsigned int
 	raw_spin_lock(&sg_policy->update_lock);
 
 	if (sg_policy->max != sg_cpu->max) {
-		sg_policy->max = sg_cpu->max;
-		hs_util = target_util(sg_policy,
-					sg_policy->tunables->hispeed_freq);
-		sg_policy->hispeed_util = hs_util;
+		unsigned int hs_freq, boost_freq;
 
-		boost_util = target_util(sg_policy,
-				    sg_policy->tunables->rtg_boost_freq);
-		sg_policy->rtg_boost_util = boost_util;
+		sg_policy->max = sg_cpu->max;
+
+		hs_freq = sg_policy->tunables->hispeed_freq;
+		if (!hs_freq || (!have_governor_per_policy() && sg_cpu->cpu >= 4))
+			hs_freq = extreme_plus_default_hispeed(sg_policy->policy);
+		sg_policy->hispeed_util = target_util(sg_policy, hs_freq);
+
+		boost_freq = sg_policy->tunables->rtg_boost_freq;
+		if (!boost_freq || (!have_governor_per_policy() && sg_cpu->cpu >= 4))
+			boost_freq = extreme_plus_default_rtg_boost(sg_policy->policy);
+		sg_policy->rtg_boost_util = target_util(sg_policy, boost_freq);
 	}
 
 	extreme_plus_iowait_boost(sg_cpu, time, flags);
@@ -1415,6 +1408,11 @@ static int extreme_plus_init(struct cpufreq_policy *policy)
 		sg_policy->tunables = global_tunables;
 
 		gov_attr_set_get(&global_tunables->attr_set, &sg_policy->tunables_hook);
+
+		/* Multi-cluster Heterogeneous Calibration: Initialize per-cluster targets */
+		util = target_util(sg_policy, extreme_plus_default_rtg_boost(policy));
+		sg_policy->rtg_boost_util = util;
+		sg_policy->hispeed_util = target_util(sg_policy, extreme_plus_default_hispeed(policy));
 		goto out;
 	}
 
