@@ -943,7 +943,6 @@ extreme_plus_update_shared(struct update_util_data *hook, u64 time, unsigned int
 {
 	struct extreme_plus_cpu *sg_cpu = container_of(hook, struct extreme_plus_cpu, update_util);
 	struct extreme_plus_policy *sg_policy = sg_cpu->sg_policy;
-	unsigned long hs_util, boost_util;
 	unsigned int next_f;
 
 	if (!sg_policy->tunables->pl && flags & SCHED_CPUFREQ_PL)
