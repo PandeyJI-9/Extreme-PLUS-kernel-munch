@@ -322,7 +322,7 @@ static void extreme_plus_deferred_update(struct extreme_plus_policy *sg_policy, 
 
 #define EXTREME_PRIME_CRUISE_CEIL    2841600
 #define EXTREME_PREDICTIVE_SLOPE_PCT 25
-#define EXTREME_TURBO_SATURATION_PCT 85
+#define EXTREME_TURBO_SATURATION_PCT 90
 
 static bool extreme_plus_cluster_has_active_tasks(struct cpufreq_policy *policy)
 {
@@ -409,14 +409,16 @@ static unsigned int extreme_plus_autonomous_engine(struct extreme_plus_cpu *sg_c
 
 	/* ── Cluster 2: Prime Core 7 (Kryo 585 Prime) ── */
 	if (cpu == 7) {
-		/* Burst conditions: Predictive Slope OR Saturation OR Heavy Render backlog */
-		if (is_burst_slope || is_saturated || is_render_active) {
-			target_f = policy->cpuinfo.max_freq; /* Gear 2: Full 3.19 GHz Apex Turbo */
+		/* Gear 2 (Apex Turbo 3.19 GHz): Only on genuine frame spike (slope >= 25%) or heavy saturation (>= 90%) */
+		if (is_burst_slope || is_saturated) {
+			target_f = policy->cpuinfo.max_freq;
+		} else if (is_render_active) {
+			/* Gear 1 (Cruising Gear 2.84 GHz): Lock rock-solid 90 FPS stably without overheating */
+			target_f = EXTREME_PRIME_CRUISE_CEIL;
 		} else {
-			/* Normal Gear 1: Chilled Cruising Ceiling (<= 2.84 GHz) */
+			/* Normal UI / Idle: follow calculated demand, gliding smoothly through cruising ceiling */
 			if (raw_f > EXTREME_PRIME_CRUISE_CEIL)
 				target_f = EXTREME_PRIME_CRUISE_CEIL;
-			/* Smooth Deceleration Glide: When descending from Gear 2, bridge through Gear 1 first */
 			else if (sg_policy->cached_raw_freq > EXTREME_PRIME_CRUISE_CEIL && raw_f < 2419200)
 				target_f = EXTREME_PRIME_CRUISE_CEIL;
 			else
