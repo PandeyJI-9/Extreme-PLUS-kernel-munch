@@ -315,7 +315,7 @@ static void extreme_plus_deferred_update(struct extreme_plus_policy *sg_policy, 
  * next_freq (as calculated above) is returned, subject to policy min/max and
  * cpufreq driver limitations.
  */
-#define EXTREME_LITTLE_IDLE_FLOOR    614400
+#define EXTREME_LITTLE_IDLE_FLOOR    576000
 #define EXTREME_LITTLE_ACTIVE_FLOOR  1056000
 #define EXTREME_GOLD_ACTIVE_FLOOR    1612800
 #define EXTREME_PRIME_ACTIVE_FLOOR   1516800
@@ -327,6 +327,9 @@ static void extreme_plus_deferred_update(struct extreme_plus_policy *sg_policy, 
 static bool extreme_plus_cluster_has_active_tasks(struct cpufreq_policy *policy)
 {
 	unsigned int c;
+
+	if (!policy || !policy->cpus)
+		return false;
 
 	for_each_cpu(c, policy->cpus) {
 		struct rq *rq = cpu_rq(c);
@@ -343,11 +346,11 @@ static unsigned int extreme_plus_apply_active_floor(struct cpufreq_policy *polic
 
 	/*
 	 * Anti-Flicker & Active Task Floor:
-	 * 1. Idle Floor (614.4 MHz): Little cores (0-3) must never collapse to 300 MHz
+	 * 1. Idle Floor (576 MHz): Little cores (0-3) must never collapse to 300 MHz
 	 *    between video frames. On Samsung E4 AMOLED panels (POCO F4), dropping to
 	 *    300 MHz causes DSI command FIFO and VSYNC interrupt handling delays during
 	 *    YouTube dynamic refresh rate mode changes (120Hz <-> 60Hz), triggering
-	 *    visible screen brightness flickering. 614.4 MHz draws virtually identical
+	 *    visible screen brightness flickering. 576 MHz draws virtually identical
 	 *    idle power (~600mV rail) but eliminates mode-switch latency completely.
 	 * 2. Active Task Floor: When runnable tasks are queued on any sibling core in
 	 *    the cluster, maintain responsive floors to eliminate UI scroll stutter
@@ -403,14 +406,15 @@ static unsigned int extreme_plus_autonomous_engine(struct extreme_plus_cpu *sg_c
 	bool is_burst_slope = (slope >= (long)mult_frac(max, EXTREME_PREDICTIVE_SLOPE_PCT, 100));
 	bool is_saturated = (util >= mult_frac(max, EXTREME_TURBO_SATURATION_PCT, 100));
 	bool is_render_active = sg_cpu->walt_load.rtgb_active || (rq && rq->nr_running > 1);
+	bool boot_settled = (ktime_get_boot_ns() >= 60ULL * NSEC_PER_SEC);
 	unsigned int target_f;
 
 	sg_cpu->prev_util = util;
 
 	/* ── Cluster 2: Prime Core 7 (Kryo 585 Prime) ── */
 	if (cpu == 7) {
-		/* Gear 2 (Apex Turbo 3.19 GHz): Only on genuine frame spike (slope >= 25%) or heavy saturation (>= 90%) */
-		if (is_burst_slope || is_saturated) {
+		/* Gear 2 (Apex Turbo 3.19 GHz): Only post-boot on genuine frame spike (slope >= 25%) or heavy saturation (>= 90%) */
+		if (boot_settled && (is_burst_slope || is_saturated)) {
 			target_f = policy->cpuinfo.max_freq;
 		} else if (is_render_active) {
 			/* Gear 1 (Cruising Gear 2.84 GHz): Lock rock-solid 90 FPS stably without overheating */
@@ -440,6 +444,7 @@ static unsigned int extreme_plus_autonomous_engine(struct extreme_plus_cpu *sg_c
 
 	/* Apply Anti-Flicker & Active Task Floors */
 	target_f = extreme_plus_apply_active_floor(policy, target_f);
+	target_f = clamp_val(target_f, policy->cpuinfo.min_freq, policy->cpuinfo.max_freq);
 	trace_sugov_next_freq(policy->cpu, util, max, target_f);
 
 	if (target_f == sg_policy->cached_raw_freq && !sg_policy->need_freq_update)

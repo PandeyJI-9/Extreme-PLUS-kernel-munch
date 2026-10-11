@@ -58,8 +58,8 @@ on boot
     write /sys/devices/system/cpu/cpufreq/policy7/schedutil/up_rate_limit_us 500
     write /sys/devices/system/cpu/cpufreq/policy7/schedutil/down_rate_limit_us 20000
 
-    # Anti-Flicker: Little cluster floor at 614.4MHz prevents DSI mode-switch flicker during YouTube 120Hz<->60Hz switching
-    write /sys/devices/system/cpu/cpufreq/policy0/scaling_min_freq 614400
+    # Anti-Flicker: Little cluster floor at 576MHz prevents DSI mode-switch flicker during YouTube 120Hz<->60Hz switching
+    write /sys/devices/system/cpu/cpufreq/policy0/scaling_min_freq 576000
     write /sys/devices/system/cpu/cpufreq/policy4/scaling_min_freq 710400
     write /sys/devices/system/cpu/cpufreq/policy7/scaling_min_freq 844800
 

@@ -67,8 +67,9 @@ CONFIG_DEVFREQ_GOV_QCOM_GPUBW_MON=y
 CONFIG_QCOM_ADRENO_DEFAULT_GOVERNOR="msm-adreno-tz"
 CONFIG_QCOM_KGSL=y
 CONFIG_CPU_FREQ_GOV_EXTREME_PLUS=y
-CONFIG_CPU_FREQ_DEFAULT_GOV_EXTREME_PLUS=y
-CONFIG_CPU_FREQ_DEFAULT_GOV="extreme+"
+CONFIG_CPU_FREQ_GOV_SCHEDUTIL=y
+CONFIG_CPU_FREQ_DEFAULT_GOV_SCHEDUTIL=y
+CONFIG_CPU_FREQ_DEFAULT_GOV="schedutil"
 CONFIG_TCP_CONG_BBR=y
 CONFIG_DEFAULT_BBR=y
 CONFIG_DEFAULT_TCP_CONG="bbr"
@@ -297,12 +298,19 @@ scripts/config --file "${OUT_DIR}/.config" \
     -d ZRAM_DEF_COMP_LZ4 \
     --set-str ZRAM_DEF_COMP "zstd"
 
-# 🚀 Custom EXTREME+ Governor (iPhone-Grade Frame Pacing & Anti-Choke Default)
+# 🚀 Ultra-Fast & Safe Boot (Zero-Latency Schedutil Boot, Auto-Switch to EXTREME+ Post-Boot)
 scripts/config --file "${OUT_DIR}/.config" \
+    -e CPU_FREQ_GOV_SCHEDUTIL \
+    --set-val SCHEDUTIL_UP_RATE_LIMIT 0 \
     -e CPU_FREQ_GOV_EXTREME_PLUS \
-    -e CPU_FREQ_DEFAULT_GOV_EXTREME_PLUS \
-    -d CPU_FREQ_DEFAULT_GOV_SCHEDUTIL \
-    --set-str CPU_FREQ_DEFAULT_GOV "extreme+"
+    -d CPU_FREQ_DEFAULT_GOV_EXTREME_PLUS \
+    -e CPU_FREQ_DEFAULT_GOV_SCHEDUTIL \
+    --set-str CPU_FREQ_DEFAULT_GOV "schedutil"
+
+if [ -f "kernel/sched/cpufreq_schedutil.c" ]; then
+    sed -i 's/tunables->up_rate_limit_us = CONFIG_SCHEDUTIL_UP_RATE_LIMIT;/tunables->up_rate_limit_us = 0;/' kernel/sched/cpufreq_schedutil.c
+    echo "[+] Schedutil up_rate_limit_us set to 0 in kernel/sched/cpufreq_schedutil.c for lightning boot"
+fi
 
 # Native source patches for VM & dcache tunables
 if [ -f "fs/dcache.c" ]; then
@@ -456,6 +464,11 @@ cat > anykernel/00-extreme-performance.sh << 'EOF'
 # ═══════════════════════════════════════════════════════════════
 
 (
+# Accelerate Cold Boot: Stream system APKs & ODEX files at maximum UFS 3.1 bus bandwidth (2048 KB)
+for queue in /sys/block/*/queue; do
+    [ -d "$queue" ] && echo 2048 > "$queue/read_ahead_kb" 2>/dev/null || true
+done
+
 # Wait for Android framework to fully complete boot in background without blocking init
 while [ "$(getprop sys.boot_completed)" != "1" ]; do
     sleep 5
@@ -545,8 +558,8 @@ for p in /sys/devices/system/cpu/cpufreq/policy*; do
     done
 done
 
-# Anti-Flicker: Little cluster floor at 614.4MHz prevents DSI mode-switch flicker during YouTube 120Hz<->60Hz switching
-echo 614400 > /sys/devices/system/cpu/cpufreq/policy0/scaling_min_freq 2>/dev/null || true
+# Anti-Flicker: Little cluster floor at 576MHz prevents DSI mode-switch flicker during YouTube 120Hz<->60Hz switching
+echo 576000 > /sys/devices/system/cpu/cpufreq/policy0/scaling_min_freq 2>/dev/null || true
 echo 710400 > /sys/devices/system/cpu/cpufreq/policy4/scaling_min_freq 2>/dev/null || true
 echo 844800 > /sys/devices/system/cpu/cpufreq/policy7/scaling_min_freq 2>/dev/null || true
 

@@ -24,8 +24,8 @@ for p in /sys/devices/system/cpu/cpufreq/policy*; do
     done
 done
 
-# Anti-Flicker: Little cluster floor at 614.4MHz prevents DSI mode-switch flicker during YouTube 120Hz<->60Hz switching
-echo 614400 > /sys/devices/system/cpu/cpufreq/policy0/scaling_min_freq 2>/dev/null || true
+# Anti-Flicker: Little cluster floor at 576MHz prevents DSI mode-switch flicker during YouTube 120Hz<->60Hz switching
+echo 576000 > /sys/devices/system/cpu/cpufreq/policy0/scaling_min_freq 2>/dev/null || true
 echo 710400 > /sys/devices/system/cpu/cpufreq/policy4/scaling_min_freq 2>/dev/null || true
 echo 844800 > /sys/devices/system/cpu/cpufreq/policy7/scaling_min_freq 2>/dev/null || true
 
