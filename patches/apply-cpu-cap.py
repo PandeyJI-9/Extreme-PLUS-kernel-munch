@@ -17,8 +17,8 @@ def parse_target_freq(arg):
     s = str(arg).strip().lower()
     if s in ("battery", "bat", "2.5", "2.5ghz", "2.4", "2.4ghz", "2419200"):
         return 2419200
-    elif s in ("bal-gaming", "bal_gaming", "bal", "balanced", "2.8", "2.8ghz", "2841600"):
-        return 2841600
+    elif s in ("bal-gaming", "bal_gaming", "bal", "balanced", "2.7", "2.7ghz", "2745600", "2.8", "2.8ghz", "2841600"):
+        return 2745600
     elif s in ("gaming", "game", "perf", "performance", "3.2", "3.2ghz", "3.19", "3.19ghz", "3187200", "stock"):
         return 3187200
     try:
@@ -29,7 +29,7 @@ def parse_target_freq(arg):
         pass
     return None
 
-def patch_driver(path="drivers/cpufreq/qcom-cpufreq-hw.c", cap_freq=2841600):
+def patch_driver(path="drivers/cpufreq/qcom-cpufreq-hw.c", cap_freq=2745600):
     if not os.path.exists(path):
         print(f"⚠️ [CPU Cap] Driver file not found at: {path}")
         return False
@@ -97,7 +97,7 @@ def patch_driver(path="drivers/cpufreq/qcom-cpufreq-hw.c", cap_freq=2841600):
         print("⚠️ [CPU Cap] Target pattern not found in stock qcom-cpufreq-hw.c")
         return False
 
-def patch_dts(path="arch/arm64/boot/dts/vendor/qcom/kona.dtsi", cap_freq=2841600):
+def patch_dts(path="arch/arm64/boot/dts/vendor/qcom/kona.dtsi", cap_freq=2745600):
     if not os.path.exists(path):
         return True
 
@@ -133,7 +133,7 @@ def patch_dts(path="arch/arm64/boot/dts/vendor/qcom/kona.dtsi", cap_freq=2841600
     return True
 
 if __name__ == "__main__":
-    target_freq = 2841600 # Default to 2.84 GHz balanced
+    target_freq = 2745600 # Default to 2.74 GHz balanced (maximum energy efficiency sweet spot)
     dts_path = "arch/arm64/boot/dts/vendor/qcom/kona.dtsi"
     driver_path = "drivers/cpufreq/qcom-cpufreq-hw.c"
 

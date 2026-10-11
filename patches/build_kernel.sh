@@ -61,14 +61,14 @@ CONFIG_ZSTD_COMPRESS=y
 CONFIG_ZSTD_DECOMPRESS=y
 CONFIG_ZRAM_DEF_COMP_ZSTD=y
 CONFIG_ZRAM_DEF_COMP="zstd"
-CONFIG_SCHEDUTIL_UP_RATE_LIMIT=0
 CONFIG_PM_DEVFREQ=y
 CONFIG_DEVFREQ_GOV_QCOM_ADRENO_TZ=y
 CONFIG_DEVFREQ_GOV_QCOM_GPUBW_MON=y
 CONFIG_QCOM_ADRENO_DEFAULT_GOVERNOR="msm-adreno-tz"
 CONFIG_QCOM_KGSL=y
 CONFIG_CPU_FREQ_GOV_EXTREME_PLUS=y
-CONFIG_CPU_FREQ_DEFAULT_GOV_SCHEDUTIL=y
+CONFIG_CPU_FREQ_DEFAULT_GOV_EXTREME_PLUS=y
+CONFIG_CPU_FREQ_DEFAULT_GOV="extreme+"
 CONFIG_TCP_CONG_BBR=y
 CONFIG_DEFAULT_BBR=y
 CONFIG_DEFAULT_TCP_CONG="bbr"
@@ -297,34 +297,17 @@ scripts/config --file "${OUT_DIR}/.config" \
     -d ZRAM_DEF_COMP_LZ4 \
     --set-str ZRAM_DEF_COMP "zstd"
 
-# 🚀 Instant Touch Reaction (Schedutil Governor zero-latency ramp-up)
-scripts/config --file "${OUT_DIR}/.config" \
-    -e CPU_FREQ_GOV_SCHEDUTIL \
-    --set-val SCHEDUTIL_UP_RATE_LIMIT 0
-
-# 🚀 Custom EXTREME+ Governor (Zero Latency & Anti-Choke)
+# 🚀 Custom EXTREME+ Governor (iPhone-Grade Frame Pacing & Anti-Choke Default)
 scripts/config --file "${OUT_DIR}/.config" \
     -e CPU_FREQ_GOV_EXTREME_PLUS \
-    -d CPU_FREQ_DEFAULT_GOV_EXTREME_PLUS \
-    -e CPU_FREQ_DEFAULT_GOV_SCHEDUTIL \
-    --set-str CPU_FREQ_DEFAULT_GOV "schedutil"
+    -e CPU_FREQ_DEFAULT_GOV_EXTREME_PLUS \
+    -d CPU_FREQ_DEFAULT_GOV_SCHEDUTIL \
+    --set-str CPU_FREQ_DEFAULT_GOV "extreme+"
 
-# Native source patches for VM & Schedutil tunables
-if [ -f "kernel/sched/cpufreq_schedutil.c" ]; then
-    sed -i 's/tunables->up_rate_limit_us = CONFIG_SCHEDUTIL_UP_RATE_LIMIT;/tunables->up_rate_limit_us = 0;/' kernel/sched/cpufreq_schedutil.c
-    echo "[+] Schedutil up_rate_limit_us set to 0 in kernel/sched/cpufreq_schedutil.c"
-fi
-if [ -f "drivers/cpufreq/cpufreq_schedutil.c" ]; then
-    sed -i 's/tunables->up_rate_limit_us = CONFIG_SCHEDUTIL_UP_RATE_LIMIT;/tunables->up_rate_limit_us = 0;/' drivers/cpufreq/cpufreq_schedutil.c
-    echo "[+] Schedutil up_rate_limit_us set to 0 in drivers/cpufreq/cpufreq_schedutil.c"
-fi
-if [ -f "mm/vmscan.c" ]; then
-    sed -i 's/int vm_swappiness = 60;/int vm_swappiness = 100;/' mm/vmscan.c
-    echo "[+] Optimized default vm_swappiness to 100 in mm/vmscan.c"
-fi
+# Native source patches for VM & dcache tunables
 if [ -f "fs/dcache.c" ]; then
-    sed -i 's/int sysctl_vfs_cache_pressure __read_mostly = [0-9]*;/int sysctl_vfs_cache_pressure __read_mostly = 100;/' fs/dcache.c
-    echo "[+] Optimized sysctl_vfs_cache_pressure to 100 in fs/dcache.c"
+    sed -i 's/int sysctl_vfs_cache_pressure __read_mostly = [0-9]*;/int sysctl_vfs_cache_pressure __read_mostly = 50;/' fs/dcache.c
+    echo "[+] Optimized sysctl_vfs_cache_pressure to 50 in fs/dcache.c for instant app launch"
 fi
 
 # 🚀 Full Xiaomi HyperOS / MIUI Kernel Subsystems
@@ -521,75 +504,141 @@ for rp in resetprop /data/adb/ksu/bin/ksud /data/adb/ksud; do
     fi
 done
 
-# ── 1. Dynamic Task Weighting (Schedtune Boost) & WALT Core Spillover ──
-# Dynamic Task Weighting: Boost perceived load for top-app on render burst, zero locking
-echo 18 > /dev/stune/top-app/schedtune.boost 2>/dev/null
-echo 1 > /dev/stune/top-app/schedtune.prefer_idle 2>/dev/null
-echo 15 > /dev/cpuctl/top-app/cpu.uclamp.min 2>/dev/null
-echo 1 > /dev/cpuctl/top-app/cpu.uclamp.latency_sensitive 2>/dev/null
+# ── 1. iOS-Style QoS CPU Pinning & Core Isolation ──
+# Confine background sync/telemetry/logging strictly to Little cores (0-3)
+# Keeps Gold (4-6) & Prime (7) L1/L2 caches unpolluted for games & active UI apps
+echo 0-3 > /dev/cpuset/background/cpus 2>/dev/null || true
+echo 0-3 > /dev/cpuset/system-background/cpus 2>/dev/null || true
+echo 0-3 > /dev/cpuset/restricted/cpus 2>/dev/null || true
+echo 0-6 > /dev/cpuset/foreground/cpus 2>/dev/null || true
+echo 0-7 > /dev/cpuset/top-app/cpus 2>/dev/null || true
 
-# Aggressive Core Spillover (Silver -> Gold at 65%, Gold -> Prime at 85%)
-# 15% hysteresis gap prevents migration ping-pong / jitter
-echo "65 85" > /proc/sys/kernel/sched_upmigrate 2>/dev/null
-echo "50 70" > /proc/sys/kernel/sched_downmigrate 2>/dev/null
-echo 70 > /proc/sys/kernel/sched_group_upmigrate 2>/dev/null
-echo 55 > /proc/sys/kernel/sched_group_downmigrate 2>/dev/null
+# ── 2. Dynamic Task Weighting (Schedtune) & WALT Core Migration ──
+# Dynamic Task Weighting: Boost perceived load for top-app on render burst
+# IMPORTANT: prefer_idle = 0 preserves L1/L2 cache locality, fixing WhatsApp and UI scroll stutter!
+echo 15 > /dev/stune/top-app/schedtune.boost 2>/dev/null || true
+echo 0 > /dev/stune/top-app/schedtune.prefer_idle 2>/dev/null || true
+echo 0 > /dev/stune/foreground/schedtune.prefer_idle 2>/dev/null || true
+echo 0 > /dev/stune/background/schedtune.prefer_idle 2>/dev/null || true
+echo 15 > /dev/cpuctl/top-app/cpu.uclamp.min 2>/dev/null || true
+echo 1 > /dev/cpuctl/top-app/cpu.uclamp.latency_sensitive 2>/dev/null || true
 
-# ── 3. Smart Multitasking & ZRAM ZSTD Tuning (No App Kills) ──
-echo 100 > /proc/sys/vm/swappiness 2>/dev/null
-echo 100 > /proc/sys/vm/vfs_cache_pressure 2>/dev/null
-echo 20 > /proc/sys/vm/dirty_ratio 2>/dev/null
-echo 10 > /proc/sys/vm/dirty_background_ratio 2>/dev/null
-echo 50 > /proc/sys/vm/watermark_scale_factor 2>/dev/null
-echo 0 > /proc/sys/vm/page-cluster 2>/dev/null
-echo 750 > /proc/sys/vm/extfrag_threshold 2>/dev/null
+# Smooth Core Spillover (Silver -> Gold at 70%, Gold -> Prime at 85%)
+# 15% hysteresis gap completely prevents migration ping-pong / jitter
+echo "70 85" > /proc/sys/kernel/sched_upmigrate 2>/dev/null || true
+echo "55 70" > /proc/sys/kernel/sched_downmigrate 2>/dev/null || true
+echo 75 > /proc/sys/kernel/sched_group_upmigrate 2>/dev/null || true
+echo 60 > /proc/sys/kernel/sched_group_downmigrate 2>/dev/null || true
 
-# ── 4. Network & TCP BBR Congestion Control (Low Ping & Fast Bullet Registration) ──
-echo "bbr" > /proc/sys/net/ipv4/tcp_congestion_control 2>/dev/null
-echo 1 > /proc/sys/net/ipv4/tcp_low_latency 2>/dev/null
-echo 1 > /proc/sys/net/ipv4/tcp_tw_reuse 2>/dev/null
-echo 1 > /proc/sys/net/ipv4/tcp_sack 2>/dev/null
-echo 1 > /proc/sys/net/ipv4/tcp_dsack 2>/dev/null
-echo 1 > /proc/sys/net/ipv4/tcp_window_scaling 2>/dev/null
-echo 3 > /proc/sys/net/ipv4/tcp_fastopen 2>/dev/null
-echo "fq" > /proc/sys/net/core/default_qdisc 2>/dev/null
+# ── 3. Enforce EXTREME+ Governor & iPhone-Grade Frame Pacing Tunables ──
+for p in /sys/devices/system/cpu/cpufreq/policy*; do
+    if [ -f "$p/scaling_available_governors" ] && grep -q "extreme+" "$p/scaling_available_governors"; then
+        echo "extreme+" > "$p/scaling_governor" 2>/dev/null || true
+    fi
+    for gov in extreme+ schedutil; do
+        if [ -d "$p/$gov" ]; then
+            echo 500 > "$p/$gov/up_rate_limit_us" 2>/dev/null || true
+            echo 20000 > "$p/$gov/down_rate_limit_us" 2>/dev/null || true
+            echo 65 > "$p/$gov/hispeed_load" 2>/dev/null || true
+            echo 1 > "$p/$gov/pl" 2>/dev/null || true
+        fi
+    done
+done
 
-# ── 5. Joyose & Xiaomi Game Throttling Neutering (Pure Clean FPS) ──
+# Anti-Flicker: Little cluster floor at 614.4MHz prevents DSI mode-switch flicker during YouTube 120Hz<->60Hz switching
+echo 614400 > /sys/devices/system/cpu/cpufreq/policy0/scaling_min_freq 2>/dev/null || true
+echo 710400 > /sys/devices/system/cpu/cpufreq/policy4/scaling_min_freq 2>/dev/null || true
+echo 844800 > /sys/devices/system/cpu/cpufreq/policy7/scaling_min_freq 2>/dev/null || true
+
+# Power Efficient Workqueues (Sleep & Deep Sleep Battery Optimization)
+echo Y > /sys/module/workqueue/parameters/power_efficient 2>/dev/null || true
+
+# ── 4. EXTREME++ 6GB RAM & Zero-Kill LMK Suite (Acts like 10GB Virtual RAM) ──
+# Dynamic VM Watermarks & Extra Free Page Buffer: Eliminates Direct Reclaim Freezes
+echo 60 > /proc/sys/vm/swappiness 2>/dev/null || true
+echo 50 > /proc/sys/vm/vfs_cache_pressure 2>/dev/null || true
+echo 15 > /proc/sys/vm/dirty_ratio 2>/dev/null || true
+echo 5 > /proc/sys/vm/dirty_background_ratio 2>/dev/null || true
+echo 16 > /proc/sys/vm/watermark_scale_factor 2>/dev/null || true
+echo 40960 > /proc/sys/vm/extra_free_kbytes 2>/dev/null || true
+echo 0 > /proc/sys/vm/page-cluster 2>/dev/null || true
+echo 750 > /proc/sys/vm/extfrag_threshold 2>/dev/null || true
+echo 20 > /proc/sys/vm/compaction_proactiveness 2>/dev/null || true
+echo 1 > /proc/sys/vm/compact_unevictable_allowed 2>/dev/null || true
+
+# Android LMKD & PSI Anti-Kill Logic (Protects Multitasking & Minimizing BGMI)
+setprop ro.lmk.kill_heaviest_task false 2>/dev/null || true
+setprop ro.lmk.kill_timeout_ms 150 2>/dev/null || true
+setprop ro.lmk.psi_partial_stall_ms 70 2>/dev/null || true
+setprop ro.lmk.psi_complete_stall_ms 700 2>/dev/null || true
+setprop ro.lmk.swap_util_max 90 2>/dev/null || true
+setprop ro.lmk.thrashing_limit 30 2>/dev/null || true
+setprop ro.lmk.downgrade_pressure 100 2>/dev/null || true
+
+# Storage I/O Optimization (UFS 3.1 512KB Burst Read-Ahead for Instant Cold App Launches)
+for queue in /sys/block/*/queue; do
+    if [ -d "$queue" ]; then
+        echo 0 > "$queue/iostats" 2>/dev/null || true
+        echo 512 > "$queue/read_ahead_kb" 2>/dev/null || true
+        echo 0 > "$queue/add_random" 2>/dev/null || true
+        echo 2 > "$queue/nomerges" 2>/dev/null || true
+        echo 0 > "$queue/rotational" 2>/dev/null || true
+    fi
+done
+
+# ── 5. Network & TCP BBR Congestion Control (Low Ping & Fast Bullet Registration) ──
+echo "bbr" > /proc/sys/net/ipv4/tcp_congestion_control 2>/dev/null || true
+echo 1 > /proc/sys/net/ipv4/tcp_low_latency 2>/dev/null || true
+echo 1 > /proc/sys/net/ipv4/tcp_tw_reuse 2>/dev/null || true
+echo 1 > /proc/sys/net/ipv4/tcp_sack 2>/dev/null || true
+echo 1 > /proc/sys/net/ipv4/tcp_dsack 2>/dev/null || true
+echo 1 > /proc/sys/net/ipv4/tcp_window_scaling 2>/dev/null || true
+echo 3 > /proc/sys/net/ipv4/tcp_fastopen 2>/dev/null || true
+echo "fq" > /proc/sys/net/core/default_qdisc 2>/dev/null || true
+
+# ── 6. Joyose & Xiaomi Game Throttling Neutering (Pure Clean FPS) ──
 # Keep mi_thermald & thermal-engine running for stock 67W Mi Turbo authentication & battery health.
 # Only neutralize Joyose cloud game throttling.
 setprop persist.sys.joyose.thermal.disabled 1 2>/dev/null || true
 
-# ── 6. Storage I/O Optimization (UFS 3.1 Zero-Stutter Gaming) ──
-for queue in /sys/block/*/queue; do
-    if [ -d "$queue" ]; then
-        echo 0 > "$queue/iostats" 2>/dev/null
-        echo 128 > "$queue/read_ahead_kb" 2>/dev/null
-        echo 0 > "$queue/add_random" 2>/dev/null
-        echo 2 > "$queue/nomerges" 2>/dev/null
-    fi
-done
-
 # ── 7. Sysfs Permissive GPU Power Nodes & Adreno Governor Lock ──
 # Ensure root tools (FKM) have full read/write access to GPU control nodes
-chmod 666 /sys/class/kgsl/kgsl-3d0/devfreq/governor 2>/dev/null
-chmod 666 /sys/class/kgsl/kgsl-3d0/force_bus_on 2>/dev/null
-chmod 666 /sys/class/kgsl/kgsl-3d0/force_clk_on 2>/dev/null
-chmod 666 /sys/class/kgsl/kgsl-3d0/gpu_min_clock 2>/dev/null
-chmod 666 /sys/class/kgsl/kgsl-3d0/gpu_max_clock 2>/dev/null
-chmod 444 /sys/class/kgsl/kgsl-3d0/gpubusy 2>/dev/null
-chmod 444 /sys/class/kgsl/kgsl-3d0/gpu_busy_percentage 2>/dev/null
+chmod 666 /sys/class/kgsl/kgsl-3d0/devfreq/governor 2>/dev/null || true
+chmod 666 /sys/class/kgsl/kgsl-3d0/force_bus_on 2>/dev/null || true
+chmod 666 /sys/class/kgsl/kgsl-3d0/force_clk_on 2>/dev/null || true
+chmod 666 /sys/class/kgsl/kgsl-3d0/gpu_min_clock 2>/dev/null || true
+chmod 666 /sys/class/kgsl/kgsl-3d0/gpu_max_clock 2>/dev/null || true
+chmod 444 /sys/class/kgsl/kgsl-3d0/gpubusy 2>/dev/null || true
+chmod 444 /sys/class/kgsl/kgsl-3d0/gpu_busy_percentage 2>/dev/null || true
 
 # ── 8. CPU Freq Governor Permissions ──
-chmod 666 /sys/devices/system/cpu/cpufreq/policy*/scaling_governor 2>/dev/null
-chmod 666 /sys/devices/system/cpu/cpufreq/policy*/scaling_min_freq 2>/dev/null
-chmod 666 /sys/devices/system/cpu/cpufreq/policy*/scaling_max_freq 2>/dev/null
+chmod 666 /sys/devices/system/cpu/cpufreq/policy*/scaling_governor 2>/dev/null || true
+chmod 666 /sys/devices/system/cpu/cpufreq/policy*/scaling_min_freq 2>/dev/null || true
+chmod 666 /sys/devices/system/cpu/cpufreq/policy*/scaling_max_freq 2>/dev/null || true
 
 # ── 9. Xiaomi Battery Fast Charge Unlock ──
 for f in /sys/class/qcom-battery/quick_charge_type /sys/class/power_supply/battery/fastcharge_mode; do
-    [ -f "$f" ] && echo 1 > "$f" 2>/dev/null
+    [ -f "$f" ] && echo 1 > "$f" 2>/dev/null || true
 done
 
-echo "PROJECT EXTREME++: Joyose neutralized, 67W Mi Turbo authentication preserved, GPU devfreq unlocked!" > /dev/kmsg 2>/dev/null || true
+# ── 10. Intelligent LMK OOM Shield Daemon (Auto-Protects WhatsApp & Launcher) ──
+(
+while true; do
+    sleep 45
+    for pkg in com.whatsapp org.telegram.messenger com.miui.home com.android.systemui; do
+        for pid in $(pidof "$pkg" 2>/dev/null); do
+            if [ -f "/proc/$pid/oom_score_adj" ]; then
+                current_adj=$(cat "/proc/$pid/oom_score_adj" 2>/dev/null || echo 1000)
+                if [ "$current_adj" -gt 600 ]; then
+                    echo 600 > "/proc/$pid/oom_score_adj" 2>/dev/null || true
+                fi
+            fi
+        done
+    done
+done
+) &
+
+echo "PROJECT EXTREME++: Joyose neutralized, EXTREME+ governor active, LMK Zero-Kill active, 67W Mi Turbo preserved!" > /dev/kmsg 2>/dev/null || true
 
 ) &
 EOF
@@ -609,7 +658,7 @@ for VARIANT in "${VARIANTS_TO_BUILD[@]}"; do
             ZIP_BASE="EXTREME++Battery"
             ;;
         Bal-Gaming)
-            FREQ="2841600"
+            FREQ="2745600"
             LOCALVER="-Extreme++Bal-Gaming-by-PandeyJi"
             TITLE="Extreme++Bal-Gaming by PandeyJi | POCO F4 (munch)"
             ZIP_BASE="EXTREME++Bal-Gaming"

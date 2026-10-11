@@ -32,14 +32,14 @@ def patch(path):
     
     old_power = 'dynamic-power-coefficient = <598>;'
     new_power = (
-        '/* EXTREME++ EAS: Lower energy cost due to 2.84GHz cap */\n'
-        '\t\t\tdynamic-power-coefficient = <530>;'
+        '/* EXTREME++ EAS: Lower energy cost due to 2.74GHz clamp */\n'
+        '\t\t\tdynamic-power-coefficient = <510>;'
     )
     
     if old_power in text[cpu7_idx:cpu7_idx+1000]:
         text = text[:cpu7_idx] + text[cpu7_idx:].replace(old_power, new_power, 1)
         open(path, 'w').write(text)
-        print("✅ CPU7 EAS dynamic-power-coefficient reduced: 598 → 530")
+        print("✅ CPU7 EAS dynamic-power-coefficient reduced: 598 → 510")
         return True
     else:
         print("⚠️ Could not find exact dynamic-power-coefficient for CPU7. Skipping.")

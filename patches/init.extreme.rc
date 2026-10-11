@@ -14,9 +14,9 @@ on early-init
 on init
     # ── 1. Dynamic Task Weighting (Schedtune Baseline) ──
     # Increase perceived load for top-app (games/active app) without locking frequencies
-    # Perceived load margin gives instant boost on render spike and instant decay on idle
-    write /dev/stune/top-app/schedtune.boost 18
-    write /dev/stune/top-app/schedtune.prefer_idle 1
+    # IMPORTANT: prefer_idle 0 preserves L1/L2 cache locality, eliminating UI & WhatsApp stutter!
+    write /dev/stune/top-app/schedtune.boost 15
+    write /dev/stune/top-app/schedtune.prefer_idle 0
     write /dev/stune/foreground/schedtune.boost 5
     write /dev/stune/foreground/schedtune.prefer_idle 0
     write /dev/stune/background/schedtune.boost 0
@@ -28,32 +28,53 @@ on init
     write /dev/cpuctl/foreground/cpu.uclamp.min 0
 
 on boot
-    # ── 2. Aggressive WALT Migration (Zero Silver Choke) ──
-    # Silver -> Gold: Spill at 65% (prevents Little core saturation)
-    # Gold -> Prime: Spill at 85% (reserves Prime for heavy burst, keeps it cool)
-    # 15% hysteresis gap prevents migration ping-pong / jitter
-    write /proc/sys/kernel/sched_upmigrate "65 85"
-    write /proc/sys/kernel/sched_downmigrate "50 70"
-    write /proc/sys/kernel/sched_group_upmigrate 70
-    write /proc/sys/kernel/sched_group_downmigrate 55
+    # ── 2. iOS-Style QoS CPU Pinning & Core Isolation ──
+    # Confine background sync/telemetry strictly to Little cores (0-3)
+    # Keeps Gold (4-6) & Prime (7) L1/L2 caches unpolluted for games & active UI apps
+    write /dev/cpuset/background/cpus 0-3
+    write /dev/cpuset/system-background/cpus 0-3
+    write /dev/cpuset/restricted/cpus 0-3
+    write /dev/cpuset/foreground/cpus 0-6
+    write /dev/cpuset/top-app/cpus 0-7
 
-    # Zero latency ramp-up and 60ms decay window for schedutil
-    write /sys/devices/system/cpu/cpufreq/policy0/schedutil/up_rate_limit_us 0
-    write /sys/devices/system/cpu/cpufreq/policy0/schedutil/down_rate_limit_us 60000
-    write /sys/devices/system/cpu/cpufreq/policy4/schedutil/up_rate_limit_us 0
-    write /sys/devices/system/cpu/cpufreq/policy4/schedutil/down_rate_limit_us 60000
-    write /sys/devices/system/cpu/cpufreq/policy7/schedutil/up_rate_limit_us 0
-    write /sys/devices/system/cpu/cpufreq/policy7/schedutil/down_rate_limit_us 60000
+    # ── 3. Smooth WALT Migration (Zero Silver Choke) ──
+    write /proc/sys/kernel/sched_upmigrate "70 85"
+    write /proc/sys/kernel/sched_downmigrate "55 70"
+    write /proc/sys/kernel/sched_group_upmigrate 75
+    write /proc/sys/kernel/sched_group_downmigrate 60
+
+    # iPhone-Grade Frame Pacing: 500us ramp-up and 20ms hold window
+    write /sys/devices/system/cpu/cpufreq/policy0/extreme+/up_rate_limit_us 500
+    write /sys/devices/system/cpu/cpufreq/policy0/extreme+/down_rate_limit_us 20000
+    write /sys/devices/system/cpu/cpufreq/policy4/extreme+/up_rate_limit_us 500
+    write /sys/devices/system/cpu/cpufreq/policy4/extreme+/down_rate_limit_us 20000
+    write /sys/devices/system/cpu/cpufreq/policy7/extreme+/up_rate_limit_us 500
+    write /sys/devices/system/cpu/cpufreq/policy7/extreme+/down_rate_limit_us 20000
+
+    write /sys/devices/system/cpu/cpufreq/policy0/schedutil/up_rate_limit_us 500
+    write /sys/devices/system/cpu/cpufreq/policy0/schedutil/down_rate_limit_us 20000
+    write /sys/devices/system/cpu/cpufreq/policy4/schedutil/up_rate_limit_us 500
+    write /sys/devices/system/cpu/cpufreq/policy4/schedutil/down_rate_limit_us 20000
+    write /sys/devices/system/cpu/cpufreq/policy7/schedutil/up_rate_limit_us 500
+    write /sys/devices/system/cpu/cpufreq/policy7/schedutil/down_rate_limit_us 20000
+
+    # Anti-Flicker: Little cluster floor at 614.4MHz prevents DSI mode-switch flicker during YouTube 120Hz<->60Hz switching
+    write /sys/devices/system/cpu/cpufreq/policy0/scaling_min_freq 614400
+    write /sys/devices/system/cpu/cpufreq/policy4/scaling_min_freq 710400
+    write /sys/devices/system/cpu/cpufreq/policy7/scaling_min_freq 844800
+
+    # Power Efficient Workqueues (Sleep & Battery Optimization)
+    write /sys/module/workqueue/parameters/power_efficient Y
 
 on property:sys.boot_completed=1
-    # ── 3. Post-Boot Final Enforcement (Survives ROM Resets) ──
-    write /proc/sys/kernel/sched_upmigrate "65 85"
-    write /proc/sys/kernel/sched_downmigrate "50 70"
-    write /proc/sys/kernel/sched_group_upmigrate 70
-    write /proc/sys/kernel/sched_group_downmigrate 55
+    # ── 4. Post-Boot Final Enforcement (Survives ROM Resets) ──
+    write /proc/sys/kernel/sched_upmigrate "70 85"
+    write /proc/sys/kernel/sched_downmigrate "55 70"
+    write /proc/sys/kernel/sched_group_upmigrate 75
+    write /proc/sys/kernel/sched_group_downmigrate 60
 
-    write /dev/stune/top-app/schedtune.boost 18
-    write /dev/stune/top-app/schedtune.prefer_idle 1
+    write /dev/stune/top-app/schedtune.boost 15
+    write /dev/stune/top-app/schedtune.prefer_idle 0
 
     # Network: TCP BBR Congestion Control & Low Latency
     write /proc/sys/net/ipv4/tcp_congestion_control bbr
@@ -61,12 +82,11 @@ on property:sys.boot_completed=1
     write /proc/sys/net/ipv4/tcp_tw_reuse 1
     write /proc/sys/net/ipv4/tcp_fastopen 3
 
-    # VM & ZRAM optimization (ZSTD zero-stutter)
-    write /proc/sys/vm/swappiness 100
-    write /proc/sys/vm/vfs_cache_pressure 100
-    write /proc/sys/vm/dirty_ratio 20
-    write /proc/sys/vm/dirty_background_ratio 10
+    # VM & ZRAM optimization (Instant App Opening & Smooth Multitasking on 6GB RAM)
+    write /proc/sys/vm/swappiness 60
+    write /proc/sys/vm/vfs_cache_pressure 50
+    write /proc/sys/vm/dirty_ratio 15
+    write /proc/sys/vm/dirty_background_ratio 5
+    write /proc/sys/vm/watermark_scale_factor 16
+    write /proc/sys/vm/extra_free_kbytes 40960
     write /proc/sys/vm/page-cluster 0
-
-    # Ensure sconfig is set to 10 safely
-    write /sys/class/thermal/thermal_message/sconfig 10
