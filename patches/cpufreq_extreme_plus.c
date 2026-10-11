@@ -328,7 +328,7 @@ static bool extreme_plus_cluster_has_active_tasks(struct cpufreq_policy *policy)
 {
 	unsigned int c;
 
-	if (!policy || !policy->cpus)
+	if (!policy)
 		return false;
 
 	for_each_cpu(c, policy->cpus) {
@@ -406,7 +406,7 @@ static unsigned int extreme_plus_autonomous_engine(struct extreme_plus_cpu *sg_c
 	bool is_burst_slope = (slope >= (long)mult_frac(max, EXTREME_PREDICTIVE_SLOPE_PCT, 100));
 	bool is_saturated = (util >= mult_frac(max, EXTREME_TURBO_SATURATION_PCT, 100));
 	bool is_render_active = sg_cpu->walt_load.rtgb_active || (rq && rq->nr_running > 1);
-	bool boot_settled = (ktime_get_boot_ns() >= 60ULL * NSEC_PER_SEC);
+	bool boot_settled = (time >= 60ULL * NSEC_PER_SEC);
 	unsigned int target_f;
 
 	sg_cpu->prev_util = util;
