@@ -47,10 +47,6 @@ GPU_OPP_TABLE = """\tgpu_opp_table: gpu-opp-table {
 \t\t\topp-hz = /bits/ 64 <441600000>;
 \t\t\topp-microvolt = <RPMH_REGULATOR_LEVEL_LOW_SVS>;
 \t\t};
-\t\topp-441000000 {
-\t\t\topp-hz = /bits/ 64 <441000000>;
-\t\t\topp-microvolt = <RPMH_REGULATOR_LEVEL_LOW_SVS>;
-\t\t};
 \t\topp-400000000 {
 \t\t\topp-hz = /bits/ 64 <400000000>;
 \t\t\topp-microvolt = <RPMH_REGULATOR_LEVEL_LOW_SVS>;

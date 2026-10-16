@@ -148,6 +148,10 @@ if __name__ == "__main__":
                 target_freq = freq
 
     print(f"🚀 [CPU Cap] Configuring Prime Core clamp at {target_freq} kHz...")
-    patch_dts(dts_path, target_freq)
-    patch_driver(driver_path, target_freq)
+    ok_dts = patch_dts(dts_path, target_freq)
+    ok_driver = patch_driver(driver_path, target_freq)
+    if not ok_driver:
+        print("❌ [CPU Cap] ERROR: CPU Cap driver patching failed! Halting.")
+        sys.exit(1)
+    print("✅ [CPU Cap] CPU Clamping verified successfully.")
     sys.exit(0)

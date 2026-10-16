@@ -248,6 +248,11 @@ if [ -f "apply-bootloader-spoof.py" ]; then
     python3 apply-bootloader-spoof.py . || true
 fi
 
+if [ -f "apply-eas-tuning.py" ]; then
+    echo "[*] Applying EAS Energy Model & Capacity Margin Tuning..."
+    python3 apply-eas-tuning.py arch/arm64/boot/dts/vendor/qcom/kona.dtsi || echo "⚠️ EAS tuning failed, continuing..."
+fi
+
 # ------------------------------------------
 # 7. Compile Environment Setup
 # ------------------------------------------
@@ -614,20 +619,28 @@ echo "fq" > /proc/sys/net/core/default_qdisc 2>/dev/null || true
 # Only neutralize Joyose cloud game throttling.
 setprop persist.sys.joyose.thermal.disabled 1 2>/dev/null || true
 
-# ── 7. Sysfs Permissive GPU Power Nodes & Adreno Governor Lock ──
-# Ensure root tools (FKM) have full read/write access to GPU control nodes
-chmod 666 /sys/class/kgsl/kgsl-3d0/devfreq/governor 2>/dev/null || true
-chmod 666 /sys/class/kgsl/kgsl-3d0/force_bus_on 2>/dev/null || true
-chmod 666 /sys/class/kgsl/kgsl-3d0/force_clk_on 2>/dev/null || true
-chmod 666 /sys/class/kgsl/kgsl-3d0/gpu_min_clock 2>/dev/null || true
-chmod 666 /sys/class/kgsl/kgsl-3d0/gpu_max_clock 2>/dev/null || true
+# ── 7. Safe GPU Power Nodes & Adreno Governor Permissions ──
+# Keep root/system-writable while protecting against unprivileged third-party app manipulation
+chown root:system /sys/class/kgsl/kgsl-3d0/devfreq/governor 2>/dev/null || true
+chmod 664 /sys/class/kgsl/kgsl-3d0/devfreq/governor 2>/dev/null || true
+chown root:system /sys/class/kgsl/kgsl-3d0/force_bus_on 2>/dev/null || true
+chmod 664 /sys/class/kgsl/kgsl-3d0/force_bus_on 2>/dev/null || true
+chown root:system /sys/class/kgsl/kgsl-3d0/force_clk_on 2>/dev/null || true
+chmod 664 /sys/class/kgsl/kgsl-3d0/force_clk_on 2>/dev/null || true
+chown root:system /sys/class/kgsl/kgsl-3d0/gpu_min_clock 2>/dev/null || true
+chmod 664 /sys/class/kgsl/kgsl-3d0/gpu_min_clock 2>/dev/null || true
+chown root:system /sys/class/kgsl/kgsl-3d0/gpu_max_clock 2>/dev/null || true
+chmod 664 /sys/class/kgsl/kgsl-3d0/gpu_max_clock 2>/dev/null || true
 chmod 444 /sys/class/kgsl/kgsl-3d0/gpubusy 2>/dev/null || true
 chmod 444 /sys/class/kgsl/kgsl-3d0/gpu_busy_percentage 2>/dev/null || true
 
 # ── 8. CPU Freq Governor Permissions ──
-chmod 666 /sys/devices/system/cpu/cpufreq/policy*/scaling_governor 2>/dev/null || true
-chmod 666 /sys/devices/system/cpu/cpufreq/policy*/scaling_min_freq 2>/dev/null || true
-chmod 666 /sys/devices/system/cpu/cpufreq/policy*/scaling_max_freq 2>/dev/null || true
+chown root:system /sys/devices/system/cpu/cpufreq/policy*/scaling_governor 2>/dev/null || true
+chmod 664 /sys/devices/system/cpu/cpufreq/policy*/scaling_governor 2>/dev/null || true
+chown root:system /sys/devices/system/cpu/cpufreq/policy*/scaling_min_freq 2>/dev/null || true
+chmod 664 /sys/devices/system/cpu/cpufreq/policy*/scaling_min_freq 2>/dev/null || true
+chown root:system /sys/devices/system/cpu/cpufreq/policy*/scaling_max_freq 2>/dev/null || true
+chmod 664 /sys/devices/system/cpu/cpufreq/policy*/scaling_max_freq 2>/dev/null || true
 
 # ── 9. Xiaomi Battery Fast Charge Unlock ──
 for f in /sys/class/qcom-battery/quick_charge_type /sys/class/power_supply/battery/fastcharge_mode; do

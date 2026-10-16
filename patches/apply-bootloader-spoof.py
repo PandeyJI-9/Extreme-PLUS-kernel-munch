@@ -60,7 +60,7 @@ if os.path.exists(cmdline_file):
 \t\t\t\tmemcpy(p + 30, "green ", 6);
 \t\t\t}
 \t\t\twhile ((p = strstr(spoofed, "androidboot.vbmeta.device_state=unlocked")) != NULL) {
-\t\t\t\tmemcpy(p + 31, "locked  ", 8);
+\t\t\t\tmemcpy(p + 32, "locked  ", 8);
 \t\t\t}
 \t\t\twhile ((p = strstr(spoofed, "androidboot.flash.locked=0")) != NULL) {
 \t\t\t\tp[25] = '1';
