@@ -258,11 +258,6 @@ if [ -f "apply-vmscan-critical.py" ]; then
     python3 apply-vmscan-critical.py mm/vmscan.c || echo "⚠️ vmscan patch skipped"
 fi
 
-if [ -f "apply-display-fps.py" ]; then
-    echo "[*] Neutralizing Xiaomi Display Smart-FPS Throttling (Locks genuine 120Hz)..."
-    python3 apply-display-fps.py . || echo "⚠️ display FPS patch skipped"
-fi
-
 # ------------------------------------------
 # 7. Compile Environment Setup
 # ------------------------------------------

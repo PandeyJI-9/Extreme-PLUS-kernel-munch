@@ -41,12 +41,8 @@ echo "━━━ [6/8] Patching Safe PD/PPS Fast Charging & Thermal DTS Stepping 
 (cd "${KERNEL_SRC}" && python3 "${SCRIPT_DIR}/apply-fastcharge-bypass.py") || echo "⚠️ Fast charging script issue, continuing build..."
 echo ""
 
-echo "━━━ [7/8] Patching Critical Tasks Direct Reclaim Anti-Stutter (E404 fix) ━━━"
+echo "━━━ [7/7] Patching Critical Tasks Direct Reclaim Anti-Stutter (E404 fix) ━━━"
 python3 "${SCRIPT_DIR}/apply-vmscan-critical.py" "${KERNEL_SRC}/mm/vmscan.c" || echo "⚠️ vmscan script issue, continuing build..."
-echo ""
-
-echo "━━━ [8/8] Neutralizing Display Smart-FPS Throttling (Locks genuine 120Hz) ━━━"
-python3 "${SCRIPT_DIR}/apply-display-fps.py" "${KERNEL_SRC}" || echo "⚠️ display FPS script issue, continuing build..."
 echo ""
 
 echo "✅ ALL PATCHES APPLIED SUCCESSFULLY!"
