@@ -38,10 +38,10 @@ on boot
     write /dev/cpuset/top-app/cpus 0-7
 
     # ── 3. Smooth WALT Migration (Zero Silver Choke) ──
-    write /proc/sys/kernel/sched_upmigrate "70 85"
-    write /proc/sys/kernel/sched_downmigrate "55 70"
-    write /proc/sys/kernel/sched_group_upmigrate 75
-    write /proc/sys/kernel/sched_group_downmigrate 60
+    write /proc/sys/kernel/sched_upmigrate "65 80"
+    write /proc/sys/kernel/sched_downmigrate "50 65"
+    write /proc/sys/kernel/sched_group_upmigrate 70
+    write /proc/sys/kernel/sched_group_downmigrate 55
 
     # iPhone-Grade Frame Pacing: 500us ramp-up and 20ms hold window
     write /sys/devices/system/cpu/cpufreq/policy0/extreme+/up_rate_limit_us 500
@@ -68,10 +68,10 @@ on boot
 
 on property:sys.boot_completed=1
     # ── 4. Post-Boot Final Enforcement (Survives ROM Resets) ──
-    write /proc/sys/kernel/sched_upmigrate "70 85"
-    write /proc/sys/kernel/sched_downmigrate "55 70"
-    write /proc/sys/kernel/sched_group_upmigrate 75
-    write /proc/sys/kernel/sched_group_downmigrate 60
+    write /proc/sys/kernel/sched_upmigrate "65 80"
+    write /proc/sys/kernel/sched_downmigrate "50 65"
+    write /proc/sys/kernel/sched_group_upmigrate 70
+    write /proc/sys/kernel/sched_group_downmigrate 55
 
     write /dev/stune/top-app/schedtune.boost 15
     write /dev/stune/top-app/schedtune.prefer_idle 0

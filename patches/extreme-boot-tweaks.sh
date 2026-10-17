@@ -39,8 +39,10 @@ echo 2169600 > /sys/devices/system/cpu/cpufreq/policy7/extreme+/hispeed_freq 2>/
 
 # ── 3. Smooth WALT Migration (Zero Silver Choke, Zero Ping-Pong) ──
 if [ -f /proc/sys/kernel/sched_upmigrate ]; then
-    echo "70 85" > /proc/sys/kernel/sched_upmigrate
-    echo "55 70" > /proc/sys/kernel/sched_downmigrate
+    echo "65 80" > /proc/sys/kernel/sched_upmigrate
+    echo "50 65" > /proc/sys/kernel/sched_downmigrate
+    echo 70 > /proc/sys/kernel/sched_group_upmigrate 2>/dev/null || true
+    echo 55 > /proc/sys/kernel/sched_group_downmigrate 2>/dev/null || true
 fi
 
 echo "EXTREME++: iPhone-grade frame pacing & governor active." > /dev/kmsg

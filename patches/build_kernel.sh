@@ -253,6 +253,16 @@ if [ -f "apply-eas-tuning.py" ]; then
     python3 apply-eas-tuning.py arch/arm64/boot/dts/vendor/qcom/kona.dtsi || echo "⚠️ EAS tuning failed, continuing..."
 fi
 
+if [ -f "apply-vmscan-critical.py" ]; then
+    echo "[*] Applying Critical Task Direct Reclaim Anti-Stutter Patch (E404 fix)..."
+    python3 apply-vmscan-critical.py mm/vmscan.c || echo "⚠️ vmscan patch skipped"
+fi
+
+if [ -f "apply-display-fps.py" ]; then
+    echo "[*] Neutralizing Xiaomi Display Smart-FPS Throttling (Locks genuine 120Hz)..."
+    python3 apply-display-fps.py . || echo "⚠️ display FPS patch skipped"
+fi
+
 # ------------------------------------------
 # 7. Compile Environment Setup
 # ------------------------------------------
@@ -541,12 +551,12 @@ echo 0 > /dev/stune/background/schedtune.prefer_idle 2>/dev/null || true
 echo 15 > /dev/cpuctl/top-app/cpu.uclamp.min 2>/dev/null || true
 echo 1 > /dev/cpuctl/top-app/cpu.uclamp.latency_sensitive 2>/dev/null || true
 
-# Smooth Core Spillover (Silver -> Gold at 70%, Gold -> Prime at 85%)
+# Smooth Core Spillover (Silver -> Gold at 65%, Gold -> Prime at 80%)
 # 15% hysteresis gap completely prevents migration ping-pong / jitter
-echo "70 85" > /proc/sys/kernel/sched_upmigrate 2>/dev/null || true
-echo "55 70" > /proc/sys/kernel/sched_downmigrate 2>/dev/null || true
-echo 75 > /proc/sys/kernel/sched_group_upmigrate 2>/dev/null || true
-echo 60 > /proc/sys/kernel/sched_group_downmigrate 2>/dev/null || true
+echo "65 80" > /proc/sys/kernel/sched_upmigrate 2>/dev/null || true
+echo "50 65" > /proc/sys/kernel/sched_downmigrate 2>/dev/null || true
+echo 70 > /proc/sys/kernel/sched_group_upmigrate 2>/dev/null || true
+echo 55 > /proc/sys/kernel/sched_group_downmigrate 2>/dev/null || true
 
 # ── 3. Enforce EXTREME+ Governor & iPhone-Grade Frame Pacing Tunables ──
 for p in /sys/devices/system/cpu/cpufreq/policy*; do

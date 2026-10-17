@@ -41,6 +41,7 @@ struct extreme_plus_policy {
 	unsigned long hispeed_util;
 	unsigned long rtg_boost_util;
 	unsigned long max;
+	unsigned long prev_util;
 
 	raw_spinlock_t		update_lock;	/* For shared policies */
 	u64			last_freq_update_time;
@@ -317,9 +318,10 @@ static void extreme_plus_deferred_update(struct extreme_plus_policy *sg_policy, 
  */
 #define EXTREME_LITTLE_IDLE_FLOOR    576000
 #define EXTREME_LITTLE_ACTIVE_FLOOR  1056000
-#define EXTREME_GOLD_ACTIVE_FLOOR    1612800
+#define EXTREME_GOLD_ACTIVE_FLOOR    1804800
 #define EXTREME_PRIME_ACTIVE_FLOOR   1516800
 
+#define EXTREME_GOLD_CRUISE_CEIL     2246400
 #define EXTREME_PRIME_CRUISE_CEIL    2841600
 #define EXTREME_PREDICTIVE_SLOPE_PCT 25
 #define EXTREME_TURBO_SATURATION_PCT 90
@@ -400,42 +402,61 @@ static unsigned int extreme_plus_autonomous_engine(struct extreme_plus_cpu *sg_c
 {
 	struct cpufreq_policy *policy = sg_policy->policy;
 	unsigned int cpu = sg_cpu->cpu;
-	struct rq *rq = cpu_rq(cpu);
 	unsigned int raw_f = get_next_freq(sg_policy, util, max);
-	long slope = (long)util - (long)sg_cpu->prev_util;
+	long slope = (long)util - (long)sg_policy->prev_util;
 	bool is_burst_slope = (slope >= (long)mult_frac(max, EXTREME_PREDICTIVE_SLOPE_PCT, 100));
 	bool is_saturated = (util >= mult_frac(max, EXTREME_TURBO_SATURATION_PCT, 100));
-	bool is_render_active = sg_cpu->walt_load.rtgb_active || (rq && rq->nr_running > 1);
+	bool is_render_active = false;
 	bool boot_settled = (time >= 60ULL * NSEC_PER_SEC);
 	unsigned int target_f;
+	unsigned int c;
 
+	sg_policy->prev_util = util;
 	sg_cpu->prev_util = util;
+
+	/* Cluster-wide Render & Multitask Evaluation */
+	for_each_cpu(c, policy->cpus) {
+		struct extreme_plus_cpu *c_cpu = &per_cpu(extreme_plus_cpu, c);
+		struct rq *c_rq = cpu_rq(c);
+		if (c_cpu->walt_load.rtgb_active || (c_rq && c_rq->nr_running > 1)) {
+			is_render_active = true;
+			break;
+		}
+	}
 
 	/* ── Cluster 2: Prime Core 7 (Kryo 585 Prime) ── */
 	if (cpu == 7) {
 		/* Gear 2 (Apex Turbo 3.19 GHz): Only post-boot on genuine frame spike (slope >= 25%) or heavy saturation (>= 90%) */
 		if (boot_settled && (is_burst_slope || is_saturated)) {
 			target_f = policy->cpuinfo.max_freq;
-		} else if (is_render_active) {
-			/* Gear 1 (Cruising Gear 2.84 GHz): Lock rock-solid 90 FPS stably without overheating */
-			target_f = EXTREME_PRIME_CRUISE_CEIL;
+		} else if (is_render_active || util >= sg_policy->hispeed_util) {
+			/* Gear 1 (Cruising Gear 2.84 GHz): Lock rock-solid 120 FPS stably without overheating */
+			target_f = min(policy->cpuinfo.max_freq, (unsigned int)EXTREME_PRIME_CRUISE_CEIL);
 		} else {
 			/* Normal UI / Idle: follow calculated demand, gliding smoothly through cruising ceiling */
 			if (raw_f > EXTREME_PRIME_CRUISE_CEIL)
-				target_f = EXTREME_PRIME_CRUISE_CEIL;
+				target_f = min(policy->cpuinfo.max_freq, (unsigned int)EXTREME_PRIME_CRUISE_CEIL);
 			else if (sg_policy->cached_raw_freq > EXTREME_PRIME_CRUISE_CEIL && raw_f < 2419200)
-				target_f = EXTREME_PRIME_CRUISE_CEIL;
+				target_f = min(policy->cpuinfo.max_freq, (unsigned int)EXTREME_PRIME_CRUISE_CEIL);
 			else
 				target_f = raw_f;
 		}
 	}
 	/* ── Cluster 1: Gold Cores 4-6 (Kryo 585 Gold) ── */
 	else if (cpu >= 4 && cpu < 7) {
-		/* On predictive slope or heavy active render, jump directly to Peak Gold (2.42 GHz) */
-		if (is_burst_slope && util >= mult_frac(max, 70, 100))
+		/* Gear 2 (Apex Gold Turbo 2.42 GHz): On burst slope or heavy saturation (>= 90%) */
+		if (is_burst_slope || is_saturated) {
 			target_f = policy->cpuinfo.max_freq;
-		else
-			target_f = raw_f;
+		} else if (is_render_active || util >= sg_policy->hispeed_util) {
+			/* Gear 1 (120 FPS Sustained Gaming Cruise 2.25 GHz): Complete all worker threads in < 6ms */
+			target_f = min(policy->cpuinfo.max_freq, (unsigned int)EXTREME_GOLD_CRUISE_CEIL);
+		} else {
+			/* Normal UI / Idle: follow calculated demand cleanly */
+			if (raw_f > EXTREME_GOLD_CRUISE_CEIL)
+				target_f = min(policy->cpuinfo.max_freq, (unsigned int)EXTREME_GOLD_CRUISE_CEIL);
+			else
+				target_f = raw_f;
+		}
 	}
 	/* ── Cluster 0: Silver Cores 0-3 (Kryo 585 Silver) ── */
 	else {
@@ -932,6 +953,7 @@ static unsigned int extreme_plus_next_freq_shared(struct extreme_plus_cpu *sg_cp
 		j_util = j_sg_cpu->util;
 		j_max = j_sg_cpu->max;
 		j_util = extreme_plus_iowait_apply(j_sg_cpu, time, j_util, j_max);
+		extreme_plus_walt_adjust(j_sg_cpu, &j_util, &j_max);
 
 		if (j_util * max >= j_max * util) {
 			util = j_util;
@@ -939,7 +961,6 @@ static unsigned int extreme_plus_next_freq_shared(struct extreme_plus_cpu *sg_cp
 		}
 	}
 
-	extreme_plus_walt_adjust(sg_cpu, &util, &max);
 	return extreme_plus_autonomous_engine(sg_cpu, sg_policy, util, max, time);
 }
 
