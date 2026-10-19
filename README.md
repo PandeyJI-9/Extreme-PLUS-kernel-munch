@@ -137,12 +137,12 @@ We completely discarded Xiaomi’s crude stock 3-frequency layout and integrated
 
 ---
 
-## 🛡️ Anti-Stutter & Memory Optimization (The E404 Port)
+## 🛡️ Anti-Stutter & Memory Optimization (Zero-Jank Architecture)
 
 ### 1. Direct Reclaim Bypass for Critical Tasks (Immunity Engine)
 In stock Linux 4.19, whenever memory compaction runs under heavy load, `throttle_direct_reclaim()` puts calling processes to sleep for **100 milliseconds** (`HZ / 10`).
 - If SurfaceFlinger or the Audio Server is put to sleep for 100ms, the screen freezes for **12 frames**, causing severe micro-stutters.
-- We integrated the Google Android Common Kernel & E404 anti-stutter fix directly into the kernel virtual memory subsystem:
+- We integrated the Google Android Common Kernel anti-stutter fix directly into the kernel virtual memory subsystem:
   ```c
   /* Skip reclaim throttle on critical processes */
   static inline bool task_is_critical(struct task_struct *task)
@@ -281,7 +281,6 @@ Have questions, want to share benchmark logs, or talk performance tuning?
 
 * **Ayush Pandey JI ([@pandey_ji_8](https://t.me/pandey_ji_8))** — Lead Architect & Maintainer of EXTREME++ Kernel.
 * **FakeDreamer ([re-noroi](https://github.com/re-noroi))** — Adreno 650 GPU RPMh voltage stepping and undervolt tables.
-* **kvsnr113 / E404 Kernel** — Direct reclaim critical task bypass logic inspiration.
 * **ReSukiSU & KOWX712** — Non-GKI 4.19 Multi-Manager Root & SuSFS v2.3.0 implementation.
 * **AstideLabs** — Clean SM8250 Linux 4.19 kernel foundation.
 * **osm0sis** — AnyKernel3 backend flasher script.

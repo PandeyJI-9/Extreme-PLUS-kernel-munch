@@ -254,7 +254,7 @@ if [ -f "apply-eas-tuning.py" ]; then
 fi
 
 if [ -f "apply-vmscan-critical.py" ]; then
-    echo "[*] Applying Critical Task Direct Reclaim Anti-Stutter Patch (E404 fix)..."
+    echo "[*] Applying Critical Task Direct Reclaim Anti-Stutter Patch (Google ACK fix)..."
     python3 apply-vmscan-critical.py mm/vmscan.c || echo "⚠️ vmscan patch skipped"
 fi
 

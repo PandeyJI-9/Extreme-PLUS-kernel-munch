@@ -3,7 +3,7 @@
 # PROJECT EXTREME++ | Maintainer: PandeyJI-9
 # Device: POCO F4 (munch) | Target: HyperOS ONLY
 # mm/vmscan: Skip Direct Reclaim Throttle for Critical Tasks (SurfaceFlinger)
-# Reference: Android Common Kernel commit 0e36eb2f & 3c20b9e9 (E404 Kernel Anti-Stutter Fix)
+# Reference: Android Common Kernel commit 0e36eb2f & 3c20b9e9 (Google ACK Anti-Stutter Fix)
 # ==============================================================================
 import os
 import sys

@@ -41,7 +41,7 @@ echo "━━━ [6/8] Patching Safe PD/PPS Fast Charging & Thermal DTS Stepping 
 (cd "${KERNEL_SRC}" && python3 "${SCRIPT_DIR}/apply-fastcharge-bypass.py") || echo "⚠️ Fast charging script issue, continuing build..."
 echo ""
 
-echo "━━━ [7/7] Patching Critical Tasks Direct Reclaim Anti-Stutter (E404 fix) ━━━"
+echo "━━━ [7/7] Patching Critical Tasks Direct Reclaim Anti-Stutter (Google ACK fix) ━━━"
 python3 "${SCRIPT_DIR}/apply-vmscan-critical.py" "${KERNEL_SRC}/mm/vmscan.c" || echo "⚠️ vmscan script issue, continuing build..."
 echo ""
 
