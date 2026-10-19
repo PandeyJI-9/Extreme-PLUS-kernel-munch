@@ -22,7 +22,7 @@
 
 ## 📖 The Architecture Philosophy
 
-Most mobile custom kernels take the lazy route: they overclock blindly, remove thermal limits, and let the device burn out until hardware safety trips throttle the SoC into a stuttering mess. 
+Most mobile custom kernels take the easy route: they overclock blindly, remove thermal limits, and let the device burn out until hardware safety trips throttle the SoC into a stuttering mess. 
 
 **PROJECT EXTREME++ is engineered differently.** Built from the ground up for the **POCO F4 / Redmi K40S (`munch` / `munch-in`)** powered by the **Snapdragon 870 5G (`SM8250-AC / Kona v2.1`)**, this kernel addresses the true hardware bottlenecks:
 
@@ -34,7 +34,7 @@ Most mobile custom kernels take the lazy route: they overclock blindly, remove t
 
 ## 🧠 Custom EXTREME+ Governor Deep-Dive
 
-At the heart of EXTREME++ is [`patches/cpufreq_extreme_plus.c`](patches/cpufreq_extreme_plus.c) (`CONFIG_CPU_FREQ_GOV_EXTREME_PLUS=y`), a custom-built, zero-latency autonomous CPUFreq governor designed specifically for high-refresh-rate gaming and instantaneous UI response.
+At the heart of EXTREME++ is the custom **EXTREME+ Governor** (`CONFIG_CPU_FREQ_GOV_EXTREME_PLUS=y`), a zero-latency autonomous CPUFreq governor designed specifically for high-refresh-rate gaming and instantaneous UI response.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -67,7 +67,7 @@ Traditional governors oscillate wildly between idle and max clock, creating a ja
 ### 2. Elimination of Shared-Policy Sibling Core Blindness
 In Snapdragon 870, Gold Cores (4, 5, 6) share a single clock domain (`policy4`).
 - **The Stock Flaw:** In unoptimized governors, when Core 4 evaluates frequency, it is blind to heavy render loads running on Core 5 or 6. Render Thread Group (RTG) boosts get dropped.
-- **The EXTREME+ Fix:** Every call to `extreme_plus_next_freq_shared()` iterates through `for_each_cpu(j, policy->cpus)` and evaluates Qualcomm WALT RTGB parameters for *every sibling core*. If any core is handling a render burst, the **entire cluster scales instantly**.
+- **The EXTREME+ Fix:** The governor iterates through the cluster and evaluates Qualcomm WALT RTGB parameters for *every sibling core*. If any core is handling a render burst, the **entire cluster scales instantly**.
 
 ### 3. Samsung E4 AMOLED Anti-Flicker Hardware Floor
 Samsung E4 AMOLED panels on the POCO F4 experience subtle brightness shifts during 120Hz ↔ 60Hz dynamic refresh rate switches when CPU Little cores drop to 300 MHz due to DSI command FIFO latency.
@@ -103,7 +103,7 @@ Every gamer and daily user has different thermal and battery priorities. EXTREME
    - 100% factory peak boost on Prime Core 7 (`3187200 kHz`).
    - Unlocked for competitive BGMI, PUBG Mobile 120 FPS, COD Mobile, and Genshin Impact.
 2. **Bal-Gaming (2.84 GHz Sweet-Spot) — *Recommended*:**
-   - Silicon-level hardware clamp to `2841600 kHz` via native C patch in `drivers/cpufreq/qcom-cpufreq-hw.c` and `kona.dtsi`.
+   - Silicon-level hardware clamp to `2841600 kHz` directly calibrated into Qualcomm hardware frequency domains.
    - Delivers **95% of peak gaming performance** while reducing SoC power draw by **30%**. Eliminates chassis heat completely.
 3. **Battery (2.42 GHz Marathon):**
    - Prime Core capped to `2419200 kHz` (matching Gold Core peak).
@@ -113,7 +113,7 @@ Every gamer and daily user has different thermal and battery priorities. EXTREME
 
 ## 🎮 Adreno 650 GPU Mastery (100% Native FakeDreamer)
 
-We completely discarded Xiaomi’s crude stock 3-frequency layout and injected the legendary **FakeDreamer Adreno 650 Undervolted OPP Table** ([`patches/kona-v2-gpu.dtsi`](patches/kona-v2-gpu.dtsi)):
+We completely discarded Xiaomi’s crude stock 3-frequency layout and integrated the legendary **FakeDreamer Adreno 650 Undervolted OPP Table**:
 
 ```text
 ╔═══════════════════════════════════════════════════════════════════════════════════╗
@@ -133,16 +133,16 @@ We completely discarded Xiaomi’s crude stock 3-frequency layout and injected t
 ```
 
 - **Busmon Tier 11 Bandwidth Lock:** Hardcoded `qcom,bus-min-ddr7 = <11>` and `qcom,bus-freq-ddr8 = <11>` to guarantee maximum DDR memory bus throughput during gaming.
-- **Joyose GPU Power Lock Override:** Permissions on `/sys/class/kgsl/kgsl-3d0/` nodes are hardened to `root:system` (`664`) so cloud game throttling services cannot downgrade your GPU to 305 MHz!
+- **Joyose GPU Power Lock Override:** Permissions on GPU sysfs power nodes are hardened to `root:system` (`664`) so cloud game throttling services cannot downgrade your GPU to 305 MHz!
 
 ---
 
 ## 🛡️ Anti-Stutter & Memory Optimization (The E404 Port)
 
-### 1. Direct Reclaim Bypass for Critical Tasks ([`patches/apply-vmscan-critical.py`](patches/apply-vmscan-critical.py))
+### 1. Direct Reclaim Bypass for Critical Tasks (Immunity Engine)
 In stock Linux 4.19, whenever memory compaction runs under heavy load, `throttle_direct_reclaim()` puts calling processes to sleep for **100 milliseconds** (`HZ / 10`).
 - If SurfaceFlinger or the Audio Server is put to sleep for 100ms, the screen freezes for **12 frames**, causing severe micro-stutters.
-- We ported the Google Android Common Kernel & E404 fix into `mm/vmscan.c`:
+- We integrated the Google Android Common Kernel & E404 anti-stutter fix directly into the kernel virtual memory subsystem:
   ```c
   /* Skip reclaim throttle on critical processes */
   static inline bool task_is_critical(struct task_struct *task)
@@ -163,7 +163,7 @@ In stock Linux 4.19, whenever memory compaction runs under heavy load, `throttle
 
 ## ⚡ WALT Scheduler & iOS-Grade Core Pinning
 
-Configured natively via [`patches/init.extreme.rc`](patches/init.extreme.rc) and post-boot service:
+Configured natively at the core initialization level:
 
 - **120 FPS Core Migration Thresholds:**
   - `sched_upmigrate`: `"65 80"` (Silver → Gold at 65%, Gold → Prime at 80%)
@@ -180,14 +180,14 @@ Configured natively via [`patches/init.extreme.rc`](patches/init.extreme.rc) and
 
 ## 🔌 Safe 67W Mi Turbo & PD/PPS Fast Charging
 
-- **Safe PD / PPS 3.0 Charging ([`patches/apply-fastcharge-bypass.py`](patches/apply-fastcharge-bypass.py)):** Lowers minimum adapter requirement to 8.5V / 1.5A, unlocking fast charging on third-party GaN and Power Delivery chargers.
+- **Safe PD / PPS 3.0 Fast Charging:** Lowers minimum adapter requirement to 8.5V / 1.5A, unlocking fast charging on third-party GaN and Power Delivery chargers.
 - **100% Stock 67W Mi Turbo Cryptographic Handshake:** The BMS digest authentication and `mi_thermald` cryptographic handshake are left **100% stock and untampered**. Your original 67W charger works with genuine Mi Turbo Charge animations and full battery health protections.
 
 ---
 
 ## 🕵️ Universal Bootloader Spoofing & Stealth Root
 
-### 1. PID-1 AVB Guard (`fs/proc/cmdline.c`)
+### 1. PID-1 Cryptographic AVB Guard
 - **The Challenge:** Hardcoding `locked` in early boot breaks Android `init` (PID 1) and `fs_mgr_avb`, causing bootloops on unlocked bootloaders.
 - **Our Solution:** PID 1 and `ueventd` receive the authentic kernel command line to mount partitions cleanly. All post-boot processes (Play Integrity, banking apps, key attestation) receive spoofed `verifiedbootstate=green` and `device_state=locked`.
 - **Result:** Passes **Play Integrity Basic + Device** out of the box with zero bootloop risk!
@@ -203,7 +203,7 @@ Configured natively via [`patches/init.extreme.rc`](patches/init.extreme.rc) and
 
 | OS / ROM | Supported Versions | Android Base | Status | Technical Details |
 | :--- | :--- | :---: | :---: | :--- |
-| **Xiaomi HyperOS** | **HyperOS 1.0, 2.0, 3.0, 4.0** | **Android 14, 15, 16, 17** | 🟢 **100% Verified** | Native out-of-the-box boot. C-level driver locks preserve full subsystem compatibility (MIGT, MIHW, RTMM, MILLET). |
+| **Xiaomi HyperOS** | **HyperOS 1.0, 2.0, 3.0, 4.0** | **Android 14, 15, 16, 17** | 🟢 **100% Verified** | Native out-of-the-box boot. Preserves full subsystem compatibility (MIGT, MIHW, RTMM, MILLET). |
 | **MIUI** | MIUI 13, MIUI 14 | Android 12, 13 | 🟡 **Bootable** | Compatible partition layout, but optimized primarily for HyperOS. |
 | **AOSP / Custom ROMs** | LineageOS, EvolutionX, PixelOS | Android 14+ | ⏳ **In Pipeline** | Dedicated AOSP branch coming soon to our Telegram channel. |
 
