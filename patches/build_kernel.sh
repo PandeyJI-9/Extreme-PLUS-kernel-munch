@@ -533,15 +533,15 @@ done
 echo 0-3 > /dev/cpuset/background/cpus 2>/dev/null || true
 echo 0-3 > /dev/cpuset/system-background/cpus 2>/dev/null || true
 echo 0-3 > /dev/cpuset/restricted/cpus 2>/dev/null || true
-echo 0-6 > /dev/cpuset/foreground/cpus 2>/dev/null || true
+echo 0-7 > /dev/cpuset/foreground/cpus 2>/dev/null || true
 echo 0-7 > /dev/cpuset/top-app/cpus 2>/dev/null || true
 
 # ── 2. Dynamic Task Weighting (Schedtune) & WALT Core Migration ──
 # Dynamic Task Weighting: Boost perceived load for top-app on render burst
-# IMPORTANT: prefer_idle = 0 preserves L1/L2 cache locality, fixing WhatsApp and UI scroll stutter!
+# CRITICAL FIX FOR HYPEROS 4 / ANDROID 17: prefer_idle = 1 forces immediate dispatch to idle Big/Prime cores!
 echo 15 > /dev/stune/top-app/schedtune.boost 2>/dev/null || true
-echo 0 > /dev/stune/top-app/schedtune.prefer_idle 2>/dev/null || true
-echo 0 > /dev/stune/foreground/schedtune.prefer_idle 2>/dev/null || true
+echo 1 > /dev/stune/top-app/schedtune.prefer_idle 2>/dev/null || true
+echo 1 > /dev/stune/foreground/schedtune.prefer_idle 2>/dev/null || true
 echo 0 > /dev/stune/background/schedtune.prefer_idle 2>/dev/null || true
 echo 15 > /dev/cpuctl/top-app/cpu.uclamp.min 2>/dev/null || true
 echo 1 > /dev/cpuctl/top-app/cpu.uclamp.latency_sensitive 2>/dev/null || true
@@ -578,7 +578,8 @@ echo Y > /sys/module/workqueue/parameters/power_efficient 2>/dev/null || true
 
 # ── 4. EXTREME++ 6GB RAM & Zero-Kill LMK Suite (Acts like 10GB Virtual RAM) ──
 # Dynamic VM Watermarks & Extra Free Page Buffer: Eliminates Direct Reclaim Freezes
-echo 60 > /proc/sys/vm/swappiness 2>/dev/null || true
+# HyperOS 4 / Android 17 tuned: Swappiness = 100 protects executable DEX/ODEX page cache
+echo 100 > /proc/sys/vm/swappiness 2>/dev/null || true
 echo 50 > /proc/sys/vm/vfs_cache_pressure 2>/dev/null || true
 echo 15 > /proc/sys/vm/dirty_ratio 2>/dev/null || true
 echo 5 > /proc/sys/vm/dirty_background_ratio 2>/dev/null || true
@@ -599,12 +600,13 @@ setprop ro.lmk.thrashing_limit 30 2>/dev/null || true
 setprop ro.lmk.downgrade_pressure 100 2>/dev/null || true
 
 # Storage I/O Optimization (UFS 3.1 512KB Burst Read-Ahead for Instant Cold App Launches)
+# nomerges = 0: Full hardware request merging for SQLite and smooth UI database queries
 for queue in /sys/block/*/queue; do
     if [ -d "$queue" ]; then
         echo 0 > "$queue/iostats" 2>/dev/null || true
         echo 512 > "$queue/read_ahead_kb" 2>/dev/null || true
         echo 0 > "$queue/add_random" 2>/dev/null || true
-        echo 2 > "$queue/nomerges" 2>/dev/null || true
+        echo 0 > "$queue/nomerges" 2>/dev/null || true
         echo 0 > "$queue/rotational" 2>/dev/null || true
     fi
 done

@@ -14,11 +14,11 @@ on early-init
 on init
     # ── 1. Dynamic Task Weighting (Schedtune Baseline) ──
     # Increase perceived load for top-app (games/active app) without locking frequencies
-    # IMPORTANT: prefer_idle 0 preserves L1/L2 cache locality, eliminating UI & WhatsApp stutter!
+    # CRITICAL FIX FOR HYPEROS 4 / ANDROID 17: prefer_idle = 1 forces immediate dispatch to idle Big/Prime cores!
     write /dev/stune/top-app/schedtune.boost 15
-    write /dev/stune/top-app/schedtune.prefer_idle 0
+    write /dev/stune/top-app/schedtune.prefer_idle 1
     write /dev/stune/foreground/schedtune.boost 5
-    write /dev/stune/foreground/schedtune.prefer_idle 0
+    write /dev/stune/foreground/schedtune.prefer_idle 1
     write /dev/stune/background/schedtune.boost 0
     write /dev/stune/background/schedtune.prefer_idle 0
 
@@ -34,7 +34,7 @@ on boot
     write /dev/cpuset/background/cpus 0-3
     write /dev/cpuset/system-background/cpus 0-3
     write /dev/cpuset/restricted/cpus 0-3
-    write /dev/cpuset/foreground/cpus 0-6
+    write /dev/cpuset/foreground/cpus 0-7
     write /dev/cpuset/top-app/cpus 0-7
 
     # ── 3. Smooth WALT Migration (Zero Silver Choke) ──
@@ -74,7 +74,8 @@ on property:sys.boot_completed=1
     write /proc/sys/kernel/sched_group_downmigrate 55
 
     write /dev/stune/top-app/schedtune.boost 15
-    write /dev/stune/top-app/schedtune.prefer_idle 0
+    write /dev/stune/top-app/schedtune.prefer_idle 1
+    write /dev/stune/foreground/schedtune.prefer_idle 1
 
     # Network: TCP BBR Congestion Control & Low Latency
     write /proc/sys/net/ipv4/tcp_congestion_control bbr
@@ -83,7 +84,8 @@ on property:sys.boot_completed=1
     write /proc/sys/net/ipv4/tcp_fastopen 3
 
     # VM & ZRAM optimization (Instant App Opening & Smooth Multitasking on 6GB RAM)
-    write /proc/sys/vm/swappiness 60
+    # HyperOS 4 / Android 17 tuned: Swappiness = 100 protects executable DEX/ODEX page cache
+    write /proc/sys/vm/swappiness 100
     write /proc/sys/vm/vfs_cache_pressure 50
     write /proc/sys/vm/dirty_ratio 15
     write /proc/sys/vm/dirty_background_ratio 5

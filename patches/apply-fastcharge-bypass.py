@@ -60,30 +60,15 @@ def patch_pd_policy_manager():
             f.write(content)
 
 def patch_smb5_lib():
-    paths = [
-        "drivers/power/supply/qcom/smb5-lib-munch.c",
-        "drivers/power/supply/qcom/smb5-lib.c"
-    ]
-    for path in paths:
-        if not os.path.exists(path):
-            continue
-        with open(path, "r") as f:
-            content = f.read()
-
-        # Safe Initial PD Current Limit (3.0A instead of 100mA clamp):
-        # 1. On usb_icl_votable: vote(chg->usb_icl_votable, PD_VOTER, true, 3000000)
-        old_icl = r"(vote\(chg->usb_icl_votable,\s*PD_VOTER,\s*true,\s*)USBIN_100MA(\);)"
-        content, c_icl = re.subn(old_icl, r"\g<1>3000000\2", content)
-
-        # 2. On fcc_votable when unverified: vote(chg->fcc_votable, PD_VERIFED_VOTER, true, 3000000)
-        old_fcc = r"(rc\s*=\s*vote\(chg->fcc_votable,\s*PD_VERIFED_VOTER,\s*true,\s*)PD_UNVERIFED_CURRENT(\);)"
-        content, c_fcc = re.subn(old_fcc, r"\g<1>3000000\2", content)
-
-        if c_icl > 0 or c_fcc > 0:
-            print(f"✅ [PD Fast Charge] Safe initial PD limit raised to 3.0A (3000000 uA) in {path}")
-
-        with open(path, "w") as f:
-            f.write(content)
+    """
+    CRITICAL CHARGING BOOT FIX:
+    Preserve Qualcomm stock USBIN_100MA initial clamp during early USB attach/PD negotiation.
+    Overriding USBIN_100MA with 3.0A before PD negotiation contracts are established caused
+    VBUS voltage collapse / brownout UVLO resets when booting connected to a charger
+    or booting with 1% battery!
+    Stock USBIN_100MA ensures rock-solid VBUS stability, enabling simultaneous boot + fast charging!
+    """
+    print("ℹ️ [Charging Boot Guard] smb5-lib USBIN_100MA preserved 100% stock to ensure stable boot while charging!")
 
 def patch_jeita_dtsi():
     paths = [
