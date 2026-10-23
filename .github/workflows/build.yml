@@ -89,7 +89,7 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: EXTREME++_BMW_Edition_${{ github.run_number }}
+          name: EXTREME++_BMW_Edition_BETA_${{ github.run_number }}
           path: kernel/EXTREME++*.zip
           if-no-files-found: error
 
@@ -101,12 +101,12 @@ jobs:
             ROOT_DESC="⚡ <b>Root:</b> Inbuilt Multi-Manager Root (SuSFS v2.3.0)"
           fi
 
-          MSG="🔥 <b>EXTREME++ Official Release #${{ github.run_number }}</b>%0A%0A"
+          MSG="🔥 <b>EXTREME++ BMW Edition [BETA] Release #${{ github.run_number }}</b>%0A%0A"
           MSG="${MSG}📱 <b>Device:</b> POCO F4 (munch)%0A"
-          MSG="${MSG}🏎️ <b>Edition:</b> EXTREME++ Gaming (BMW Edition)%0A"
+          MSG="${MSG}🏎️ <b>Edition:</b> EXTREME++ Gaming (BMW Edition [BETA])%0A"
           MSG="${MSG}⚡ <b>Target ROM:</b> HyperOS / MIUI Android 13–17%0A"
           MSG="${MSG}🛠️ <b>Toolchain:</b> ZyC-Clang 16.0.6 + LLD%0A"
-          MSG="${MSG}👑 <b>Author:</b> Extreme++gaming (BMW Edition)%0A"
+          MSG="${MSG}👑 <b>Author:</b> Extreme++ by @pandey_ji_8%0A"
           MSG="${MSG}${ROOT_DESC}%0A%0A"
           MSG="${MSG}✨ <b>Dynamic In-Kernel Profiles (Switchable via EKM):</b>%0A"
           MSG="${MSG}• 🚀 <b>Gaming [Default]:</b> Full 3.19GHz Prime Monster + 670MHz GPU (120 FPS)%0A"

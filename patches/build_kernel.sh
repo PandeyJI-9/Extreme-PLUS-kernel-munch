@@ -722,8 +722,8 @@ chmod 755 anykernel/00-extreme-props.sh
 # ------------------------------------------
 DATE_TAG="$(date +'%d%b%Y_%H%M')"
 LOCALVER="-Extreme++Gaming-BMW-Edition"
-TITLE="Extreme++Gaming BMW Edition | POCO F4 (munch)"
-ZIP_BASE="EXTREME++Gaming_BMW_Edition"
+TITLE="Extreme++Gaming BMW Edition [BETA] | POCO F4 (munch)"
+ZIP_BASE="EXTREME++Gaming_BMW_Edition_BETA"
 
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -781,12 +781,28 @@ patch_vbmeta_flag=0;
 . tools/ak3-core.sh;
 
 ui_print " ";
-ui_print "  -> Flashing ${TITLE} (boot)...";
+ui_print " ══════════════════════════════════════════════";
+ui_print "   ______      __                              ";
+ui_print "  / ____/  __ / /_ _____ ___   ____ ___ ___    ";
+ui_print " / __/ | |/_// __// ___// _ \\ / __ '__// _ \\   ";
+ui_print "/ /___ _>  < / /_ / /   /  __// / / / /  __/   ";
+ui_print "\\____//_/|_| \\__//_/    \\___//_/ /_/ / \\___/   ";
+ui_print "                 [ + + ]                       ";
+ui_print " ══════════════════════════════════════════════";
+ui_print "  🏎️  EDITION : BMW Gaming Edition (BETA)      ";
+ui_print "  👑  AUTHOR  : Extreme++ by @pandey_ji_8      ";
+ui_print "  📱  DEVICE  : POCO F4 (munch) | HyperOS      ";
+ui_print "  ⚡  CLOCK   : 3.19 GHz Unlocked Monster Peak ";
+ui_print "  🚀  PROFILES: In-Kernel Dynamic Switcher     ";
+ui_print " ══════════════════════════════════════════════";
+ui_print " ";
+
+ui_print "  [⚡] Flashing EXTREME++ Kernel (boot)...";
 dump_boot;
 write_boot;
 
 ## vendor_boot DTB install (Leaves vendor ramdisk 100% untouched for flawless recovery)
-ui_print "  -> Flashing EXTREME++ Undervolted DTB (vendor_boot)...";
+ui_print "  [🏎️] Flashing Undervolted DTB (vendor_boot)...";
 block=vendor_boot;
 is_slot_device=1;
 ramdisk_compression=auto;
@@ -803,16 +819,22 @@ mount /data 2>/dev/null
 if [ -d /data/adb ]; then
     mkdir -p /data/adb/post-fs-data.d
     mkdir -p /data/adb/service.d
-    ui_print "  -> Installing EXTREME++ Bootloader Lock Guard (post-fs-data)...";
+    ui_print "  [🛡️] Installing Bootloader Guard & Dynamic Profiles...";
     cp -f 00-extreme-props.sh /data/adb/post-fs-data.d/00-extreme-props.sh 2>/dev/null || cp -f \$home/00-extreme-props.sh /data/adb/post-fs-data.d/00-extreme-props.sh 2>/dev/null
     chmod 755 /data/adb/post-fs-data.d/00-extreme-props.sh
     chown root:root /data/adb/post-fs-data.d/00-extreme-props.sh 2>/dev/null
 
-    ui_print "  -> Installing EXTREME++ Joyose & Performance Service...";
     cp -f 00-extreme-performance.sh /data/adb/service.d/00-extreme-performance.sh 2>/dev/null || cp -f \$home/00-extreme-performance.sh /data/adb/service.d/00-extreme-performance.sh 2>/dev/null
     chmod 755 /data/adb/service.d/00-extreme-performance.sh
     chown root:root /data/adb/service.d/00-extreme-performance.sh 2>/dev/null
 fi
+
+ui_print " ";
+ui_print " ══════════════════════════════════════════════";
+ui_print "  🎉 Extreme++ Kernel By @pandey_ji_8 Flashed! ";
+ui_print "  🏎️ BMW Edition [BETA] is Ready to Rock!      ";
+ui_print " ══════════════════════════════════════════════";
+ui_print " ";
 EOF
 
 # 6. Package into flashable ZIP
