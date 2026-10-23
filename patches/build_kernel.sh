@@ -47,10 +47,10 @@ find . -type f \( -name "dtbo.img" -o -name "Image" -o -name "Image.gz" \) -dele
 # ------------------------------------------
 # 1. Custom Kernel Name Configuration
 # ------------------------------------------
-echo "[*] Setting Custom Kernel Name to -EXTREME++GAMING_Hyperos..."
+echo "[*] Setting Custom Kernel Name to -Extreme++Gaming-BMW-Edition..."
 rm -f localversion*
-sed -i 's/^CONFIG_LOCALVERSION=.*/CONFIG_LOCALVERSION="-EXTREME++GAMING_Hyperos"/' "arch/arm64/configs/${DEFCONFIG}"
-grep -q "CONFIG_LOCALVERSION=" "arch/arm64/configs/${DEFCONFIG}" || echo 'CONFIG_LOCALVERSION="-EXTREME++GAMING_Hyperos"' >> "arch/arm64/configs/${DEFCONFIG}"
+sed -i 's/^CONFIG_LOCALVERSION=.*/CONFIG_LOCALVERSION="-Extreme++Gaming-BMW-Edition"/' "arch/arm64/configs/${DEFCONFIG}"
+grep -q "CONFIG_LOCALVERSION=" "arch/arm64/configs/${DEFCONFIG}" || echo 'CONFIG_LOCALVERSION="-Extreme++Gaming-BMW-Edition"' >> "arch/arm64/configs/${DEFCONFIG}"
 sed -i 's/^EXTRAVERSION =.*/EXTRAVERSION =/' Makefile
 
 # ZRAM ZSTD, EXTREME+ Governor & GPU Devfreq defconfig tunables
@@ -296,7 +296,7 @@ scripts/config --file "${OUT_DIR}/.config" \
     --set-str QCOM_ADRENO_DEFAULT_GOVERNOR "msm-adreno-tz"
 
 scripts/config --file "${OUT_DIR}/.config" -e BBG
-scripts/config --file "${OUT_DIR}/.config" --set-str LOCALVERSION "-EXTREME++GAMING_Hyperos"
+scripts/config --file "${OUT_DIR}/.config" --set-str LOCALVERSION "-Extreme++Gaming-BMW-Edition"
 
 # 🚀 6GB RAM & Zero-Stutter Memory Optimizations (ZRAM ZSTD)
 scripts/config --file "${OUT_DIR}/.config" \
@@ -415,29 +415,9 @@ echo "[*] Synchronizing final kernel config with olddefconfig..."
 make -j"${TOTAL_CORES}" "${MAKE_OPTS[@]}" olddefconfig
 
 # ------------------------------------------
-# 9. Multi-Variant Architecture & AnyKernel3 Preparation
+# 9. Master DTB Table & DTBO Preparation
 # ------------------------------------------
-TARGET_VARIANT="${3:-all}"
-VARIANTS_TO_BUILD=()
-case "${TARGET_VARIANT,,}" in
-    battery|2.5ghz|2.5|2.4ghz|2.4)
-        VARIANTS_TO_BUILD=("Battery")
-        ;;
-    bal-gaming|bal_gaming|balanced|2.8ghz|2.8)
-        VARIANTS_TO_BUILD=("Bal-Gaming")
-        ;;
-    gaming|3.2ghz|3.2)
-        VARIANTS_TO_BUILD=("Gaming")
-        ;;
-    all|both|*)
-        VARIANTS_TO_BUILD=("Battery" "Bal-Gaming" "Gaming")
-        ;;
-esac
-
-echo "[*] Selected Target Variant(s): ${VARIANTS_TO_BUILD[*]}"
-
-# Step 9a: Compile Shared Multi-DTB Table & DTBO
-echo "[*] Compiling Shared Multi-DTB Table & DTBO Image..."
+echo "[*] Compiling Master Multi-DTB Table & DTBO Image..."
 make -j"${TOTAL_CORES}" "${MAKE_OPTS[@]}" dtbs dtbo.img dtb
 
 # ------------------------------------------
@@ -653,6 +633,8 @@ chown root:system /sys/devices/system/cpu/cpufreq/policy*/scaling_min_freq 2>/de
 chmod 664 /sys/devices/system/cpu/cpufreq/policy*/scaling_min_freq 2>/dev/null || true
 chown root:system /sys/devices/system/cpu/cpufreq/policy*/scaling_max_freq 2>/dev/null || true
 chmod 664 /sys/devices/system/cpu/cpufreq/policy*/scaling_max_freq 2>/dev/null || true
+chown root:system /sys/kernel/extreme_profile 2>/dev/null || true
+chmod 666 /sys/kernel/extreme_profile 2>/dev/null || true
 
 # ── 9. Xiaomi Battery Fast Charge Unlock ──
 for f in /sys/class/qcom-battery/quick_charge_type /sys/class/power_supply/battery/fastcharge_mode; do
@@ -736,64 +718,47 @@ EOF
 chmod 755 anykernel/00-extreme-props.sh
 
 # ------------------------------------------
-# 11. Multi-Variant Compilation & Packaging Engine
+# 11. Master Compilation & Packaging Engine (BMW Edition)
 # ------------------------------------------
 DATE_TAG="$(date +'%d%b%Y_%H%M')"
+LOCALVER="-Extreme++Gaming-BMW-Edition"
+TITLE="Extreme++Gaming BMW Edition | POCO F4 (munch)"
+ZIP_BASE="EXTREME++Gaming_BMW_Edition"
 
-for VARIANT in "${VARIANTS_TO_BUILD[@]}"; do
-    case "$VARIANT" in
-        Battery)
-            FREQ="2419200"
-            LOCALVER="-Extreme++Battery-by-PandeyJi"
-            TITLE="Extreme++Battery by PandeyJi | POCO F4 (munch)"
-            ZIP_BASE="EXTREME++Battery"
-            ;;
-        Bal-Gaming)
-            FREQ="2841600"
-            LOCALVER="-Extreme++Bal-Gaming-by-PandeyJi"
-            TITLE="Extreme++Bal-Gaming by PandeyJi | POCO F4 (munch)"
-            ZIP_BASE="EXTREME++Bal-Gaming"
-            ;;
-        Gaming)
-            FREQ="3187200"
-            LOCALVER="-Extreme++Gaming-by-PandeyJi"
-            TITLE="Extreme++Gaming by PandeyJi | POCO F4 (munch)"
-            ZIP_BASE="EXTREME++Gaming"
-            ;;
-    esac
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "🚀 Building EXTREME++ Master Release: ${TITLE}"
+echo "   Android Settings Kernel Display: 4.19.xxx${LOCALVER}"
+echo "   Default Frequency: 3.19 GHz (3187200 kHz) Unlocked Peak"
+echo "   Dynamic Profile Engine: /sys/kernel/extreme_profile"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-    echo ""
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "🚀 Building EXTREME++ Variant: ${VARIANT} (${FREQ} kHz)"
-    echo "   Android Settings Kernel Display: 4.19.xxx${LOCALVER}"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+# 1. Ensure 100% stock full-range driver (up to 3.19 GHz peak)
+if [ -f "apply-cpu-cap.py" ]; then
+    python3 apply-cpu-cap.py 3187200
+fi
 
-    # 1. Apply C-level hardware frequency clamp in qcom-cpufreq-hw.c & kona.dtsi
-    if [ -f "apply-cpu-cap.py" ]; then
-        python3 apply-cpu-cap.py "${FREQ}"
-    fi
+# 2. Update CONFIG_LOCALVERSION and sync config
+scripts/config --file "${OUT_DIR}/.config" --set-str LOCALVERSION "${LOCALVER}"
+rm -f "${OUT_DIR}/include/config/kernel.release"
+make "${MAKE_OPTS[@]}" olddefconfig
 
-    # 2. Update CONFIG_LOCALVERSION and sync config
-    scripts/config --file "${OUT_DIR}/.config" --set-str LOCALVERSION "${LOCALVER}"
-    rm -f "${OUT_DIR}/include/config/kernel.release"
-    make "${MAKE_OPTS[@]}" olddefconfig
+# 3. Compile Master Kernel Image
+echo "[*] Compiling Master Kernel Image (3.19 GHz Monster Peak)..."
+make -j"${TOTAL_CORES}" "${MAKE_OPTS[@]}" Image
 
-    # 3. Compile Kernel Image for this variant
-    echo "[*] Compiling Kernel Image for ${VARIANT}..."
-    make -j"${TOTAL_CORES}" "${MAKE_OPTS[@]}" Image
+if [ ! -f "${OUT_DIR}/arch/arm64/boot/Image" ]; then
+    echo "❌ [ERROR] Master Kernel Image did NOT compile!"
+    exit 1
+fi
 
-    if [ ! -f "${OUT_DIR}/arch/arm64/boot/Image" ]; then
-        echo "❌ [ERROR] Kernel Image for ${VARIANT} did NOT compile!"
-        exit 1
-    fi
+# 4. Copy newly compiled Image to anykernel
+cp "${OUT_DIR}/arch/arm64/boot/Image" anykernel/Image
 
-    # 4. Copy newly compiled Image to anykernel
-    cp "${OUT_DIR}/arch/arm64/boot/Image" anykernel/Image
-
-    # 5. Write variant-specific anykernel.sh
-    cat > anykernel/anykernel.sh << EOF
+# 5. Write anykernel.sh
+cat > anykernel/anykernel.sh << EOF
 ### AnyKernel3 Ramdisk Mod Script
-## EXTREME++ HyperOS Kernel for POCO F4 (munch) by PandeyJI-9
+## EXTREME++ HyperOS Kernel for POCO F4 (munch) - BMW Edition
 
 properties() { '
 kernel.string=${TITLE}
@@ -850,23 +815,22 @@ if [ -d /data/adb ]; then
 fi
 EOF
 
-    # 6. Package into flashable ZIP
-    if [ "$ENABLE_KSU" -eq 1 ]; then
-        ZIP_NAME="${ZIP_BASE}_${DATE_TAG}.zip"
-    else
-        ZIP_NAME="${ZIP_BASE}_NoRoot_${DATE_TAG}.zip"
-    fi
+# 6. Package into flashable ZIP
+if [ "$ENABLE_KSU" -eq 1 ]; then
+    ZIP_NAME="${ZIP_BASE}_${DATE_TAG}.zip"
+else
+    ZIP_NAME="${ZIP_BASE}_NoRoot_${DATE_TAG}.zip"
+fi
 
-    (
-        cd anykernel
-        zip -r9 "../${ZIP_NAME}" ./* -x .gitignore out/ ./*.zip > /dev/null
-    )
+(
+    cd anykernel
+    zip -r9 "../${ZIP_NAME}" ./* -x .gitignore out/ ./*.zip > /dev/null
+)
 
-    echo "[+] =========================================================="
-    echo "[+] SUCCESS! ${VARIANT} package ready: ${ZIP_NAME}"
-    echo "[+] =========================================================="
-done
+echo "[+] =========================================================="
+echo "[+] SUCCESS! Master package ready: ${ZIP_NAME}"
+echo "[+] =========================================================="
 
 echo ""
-echo "🎉 ALL REQUESTED EXTREME++ VARIANTS BUILT AND PACKAGED SUCCESSFULLY!"
+echo "🎉 EXTREME++ BMW EDITION KERNEL BUILT AND PACKAGED SUCCESSFULLY!"
 exit 0

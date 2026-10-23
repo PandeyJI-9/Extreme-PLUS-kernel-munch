@@ -18,6 +18,9 @@
 #include <linux/sched/cpufreq.h>
 #include <trace/events/power.h>
 #include <linux/sched/sysctl.h>
+#include <linux/kobject.h>
+#include <linux/sysfs.h>
+#include <linux/cpufreq.h>
 
 struct extreme_plus_tunables {
 	struct gov_attr_set	attr_set;
@@ -1646,8 +1649,88 @@ struct cpufreq_governor *cpufreq_default_governor(void)
 }
 #endif
 
+/*
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * PROJECT EXTREME++ (BMW Edition) — In-Kernel Dynamic Profile Switcher
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * Profile 0 (Gaming / Default): Prime Core (CPU 7) up to 3.19 GHz (3187200 kHz)
+ * Profile 1 (Balanced):         Prime Core (CPU 7) clamped to 2.84 GHz (2841600 kHz)
+ * Profile 2 (Battery):          Prime Core (CPU 7) clamped to 2.42 GHz (2419200 kHz)
+ * ═══════════════════════════════════════════════════════════════════════════════
+ */
+static int extreme_profile_mode = 0; /* Default 0: Gaming Monster */
+
+static void extreme_profile_apply(int mode)
+{
+	struct cpufreq_policy *policy;
+	unsigned int target_max_freq;
+
+	switch (mode) {
+	case 1: /* Balanced: 2.84 GHz */
+		target_max_freq = 2841600;
+		break;
+	case 2: /* Battery: 2.42 GHz */
+		target_max_freq = 2419200;
+		break;
+	case 0: /* Gaming: 3.19 GHz (Stock Max Unlocked) */
+	default:
+		target_max_freq = 3187200;
+		break;
+	}
+
+	policy = cpufreq_cpu_get(7);
+	if (policy) {
+		if (target_max_freq > policy->cpuinfo.max_freq)
+			target_max_freq = policy->cpuinfo.max_freq;
+		policy->user_policy.max = target_max_freq;
+		cpufreq_update_policy(7);
+		cpufreq_cpu_put(policy);
+	}
+	pr_info("EXTREME++ BMW Edition: Profile switched to %d (Prime target: %u kHz)\n",
+		mode, target_max_freq);
+}
+
+static ssize_t extreme_profile_show(struct kobject *kobj,
+				    struct kobj_attribute *attr, char *buf)
+{
+	return scnprintf(buf, PAGE_SIZE, "%d\n", extreme_profile_mode);
+}
+
+static ssize_t extreme_profile_store(struct kobject *kobj,
+				     struct kobj_attribute *attr,
+				     const char *buf, size_t count)
+{
+	int val;
+
+	if (kstrtoint(buf, 10, &val) < 0)
+		return -EINVAL;
+
+	if (val < 0 || val > 2)
+		return -EINVAL;
+
+	extreme_profile_mode = val;
+	extreme_profile_apply(val);
+
+	return count;
+}
+
+static struct kobj_attribute extreme_profile_kattr =
+	__ATTR(extreme_profile, 0664, extreme_profile_show, extreme_profile_store);
+
 static int __init extreme_plus_register(void)
 {
-	return cpufreq_register_governor(&extreme_plus_gov);
+	int ret;
+
+	ret = cpufreq_register_governor(&extreme_plus_gov);
+	if (ret)
+		return ret;
+
+	ret = sysfs_create_file(kernel_kobj, &extreme_profile_kattr.attr);
+	if (ret)
+		pr_warn("EXTREME++: Failed to create /sys/kernel/extreme_profile node\n");
+	else
+		pr_info("EXTREME++ BMW Edition: /sys/kernel/extreme_profile registered successfully!\n");
+
+	return 0;
 }
 fs_initcall(extreme_plus_register);

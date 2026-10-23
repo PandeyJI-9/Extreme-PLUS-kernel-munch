@@ -238,7 +238,7 @@ Verify your hardware optimizations via Termux or ADB shell:
 ```bash
 # 1. Verify Active Kernel and Variant String
 uname -r
-# Output: 4.19.xxx-Extreme++Gaming-by-PandeyJi (or Bal-Gaming / Battery)
+# Output: 4.19.xxx-Extreme++Gaming-BMW-Edition
 
 # 2. Verify EXTREME+ Governor is Active
 cat /sys/devices/system/cpu/cpufreq/policy0/scaling_governor

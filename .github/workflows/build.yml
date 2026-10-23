@@ -1,20 +1,10 @@
-name: "🚀 Build EXTREME++ Kernel (Tri-Variant: Battery, Bal-Gaming, Gaming)"
+name: "🚀 Build EXTREME++ Kernel (BMW Edition - Dynamic Profiles)"
 
 on:
   workflow_dispatch:
     inputs:
-      variant:
-        description: 'Target Prime Frequency Variant'
-        required: true
-        type: choice
-        options:
-          - all
-          - Battery
-          - Bal-Gaming
-          - Gaming
-        default: all
       build_ksu:
-        description: 'Integrate KowSU (KOWX712 Multi-Manager)'
+        description: 'Integrate KowSU (KOWX712 Multi-Manager & SuSFS)'
         required: true
         type: boolean
         default: true
@@ -40,17 +30,10 @@ jobs:
             ROOT_LABEL="⚡ Root: Inbuilt Multi-Manager Root (SuSFS v2.3.0)"
           fi
 
-          VAR_LABEL="${{ inputs.variant }}"
-          if [ "$VAR_LABEL" = "Gaming" ]; then
-            VAR_LABEL="Truly Gaming (3.2GHz Monster)"
-          elif [ "$VAR_LABEL" = "all" ]; then
-            VAR_LABEL="All (Battery, Bal-Gaming, Truly Gaming 3.2GHz)"
-          fi
-
           for chat in "${TARGETS[@]}"; do
             curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
               -d chat_id="$chat" \
-              -d text="🚀 <b>EXTREME++ Build Started!</b>%0A📱 Device: POCO F4 (munch)%0A${ROOT_LABEL}%0A⚡ Variant: ${VAR_LABEL}" -d parse_mode="HTML" || true
+              -d text="🚀 <b>EXTREME++ Build Started!</b>%0A📱 Device: POCO F4 (munch)%0A🏎️ Edition: EXTREME++ Gaming (BMW Edition)%0A${ROOT_LABEL}%0A⚡ Default Clock: 3.19 GHz Unlocked Peak (Dynamic Profiles)" -d parse_mode="HTML" || true
           done
 
       - name: "📦 Checkout config repo"
@@ -93,13 +76,11 @@ jobs:
       - name: "🔨 Compile EXTREME++ Kernel"
         run: |
           cd kernel
-          TARGET_VAR="${{ inputs.variant }}"
-          [ -z "$TARGET_VAR" ] && TARGET_VAR="all"
           KSU_MODE="noroot"
           if [ "${{ inputs.build_ksu }}" = "true" ]; then
             KSU_MODE="ksu"
           fi
-          ./build_kernel.sh munch "$KSU_MODE" "$TARGET_VAR"
+          ./build_kernel.sh munch "$KSU_MODE"
           
           echo "✅ Built ZIP files:"
           ls -lh EXTREME++*.zip
@@ -108,7 +89,7 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: EXTREME++_Release_${{ github.run_number }}
+          name: EXTREME++_BMW_Edition_${{ github.run_number }}
           path: kernel/EXTREME++*.zip
           if-no-files-found: error
 
@@ -122,15 +103,16 @@ jobs:
 
           MSG="🔥 <b>EXTREME++ Official Release #${{ github.run_number }}</b>%0A%0A"
           MSG="${MSG}📱 <b>Device:</b> POCO F4 (munch)%0A"
+          MSG="${MSG}🏎️ <b>Edition:</b> EXTREME++ Gaming (BMW Edition)%0A"
           MSG="${MSG}⚡ <b>Target ROM:</b> HyperOS / MIUI Android 13–17%0A"
           MSG="${MSG}🛠️ <b>Toolchain:</b> ZyC-Clang 16.0.6 + LLD%0A"
-          MSG="${MSG}👑 <b>Author:</b> Extreme++gaming by PandeyJi%0A"
+          MSG="${MSG}👑 <b>Author:</b> Extreme++gaming (BMW Edition)%0A"
           MSG="${MSG}${ROOT_DESC}%0A%0A"
-          MSG="${MSG}✨ <b>Available Variants:</b>%0A"
-          MSG="${MSG}• 🔋 <b>Battery:</b> ~2.5GHz (2419200 kHz) - Massive Battery Backup%0A"
-          MSG="${MSG}• ⚖️ <b>Bal-Gaming:</b> 2.84GHz (2841600 kHz) - iPhone-Grade Sustained 90 FPS & Zero Throttling%0A"
-          MSG="${MSG}• 🚀 <b>Gaming:</b> Truly 3.2GHz (3187200 kHz) - Pure Performance Monster%0A%0A"
-          MSG="${MSG}📦 <i>Uploading flashable ZIP packages below...</i>"
+          MSG="${MSG}✨ <b>Dynamic In-Kernel Profiles (Switchable via EKM):</b>%0A"
+          MSG="${MSG}• 🚀 <b>Gaming [Default]:</b> Full 3.19GHz Prime Monster + 670MHz GPU (120 FPS)%0A"
+          MSG="${MSG}• ⚖️ <b>Balanced:</b> 2.84GHz Prime Sweet-Spot + 587MHz GPU (90 FPS Zero Heat)%0A"
+          MSG="${MSG}• 🔋 <b>Battery:</b> 2.42GHz Prime Marathon + 510MHz GPU (All-Day Battery)%0A%0A"
+          MSG="${MSG}📦 <i>Uploading flashable ZIP package below...</i>"
 
           TARGETS=()
           [ -n "${{ secrets.TELEGRAM_CHAT_ID }}" ] && TARGETS+=("${{ secrets.TELEGRAM_CHAT_ID }}")
