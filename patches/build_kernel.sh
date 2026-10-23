@@ -490,42 +490,47 @@ sleep 15
 # ── 0. Post-Boot Bootloader Lock Property Spoofing (Zero Bootloop, 100% Locked) ──
 # Android has fully booted! AVB verification and partition mounting are 100% complete.
 # Now spoof system properties to locked/green so Play Integrity, Key Attestation & banking apps report locked!
-for rp in resetprop /data/adb/ksu/bin/ksud /data/adb/ksud; do
-    if command -v resetprop >/dev/null 2>&1; then
-        resetprop -n ro.boot.verifiedbootstate green 2>/dev/null || true
-        resetprop -n ro.boot.vbmeta.device_state locked 2>/dev/null || true
-        resetprop -n ro.boot.flash.locked 1 2>/dev/null || true
-        resetprop -n ro.boot.bootloader.locked 1 2>/dev/null || true
-        resetprop -n sys.oem_unlock_allowed 0 2>/dev/null || true
-        resetprop -n ro.secureboot.lockstate locked 2>/dev/null || true
-        resetprop -n ro.boot.warranty_bit 0 2>/dev/null || true
-        resetprop -n ro.warranty_bit 0 2>/dev/null || true
-        echo "PROJECT EXTREME+: Bootloader properties successfully spoofed to locked/green post-boot via resetprop!" > /dev/kmsg 2>/dev/null || true
-        break
-    elif [ -x /data/adb/ksu/bin/ksud ]; then
-        /data/adb/ksu/bin/ksud resetprop -n ro.boot.verifiedbootstate green 2>/dev/null || true
-        /data/adb/ksu/bin/ksud resetprop -n ro.boot.vbmeta.device_state locked 2>/dev/null || true
-        /data/adb/ksu/bin/ksud resetprop -n ro.boot.flash.locked 1 2>/dev/null || true
-        /data/adb/ksu/bin/ksud resetprop -n ro.boot.bootloader.locked 1 2>/dev/null || true
-        /data/adb/ksu/bin/ksud resetprop -n sys.oem_unlock_allowed 0 2>/dev/null || true
-        /data/adb/ksu/bin/ksud resetprop -n ro.secureboot.lockstate locked 2>/dev/null || true
-        /data/adb/ksu/bin/ksud resetprop -n ro.boot.warranty_bit 0 2>/dev/null || true
-        /data/adb/ksu/bin/ksud resetprop -n ro.warranty_bit 0 2>/dev/null || true
-        echo "PROJECT EXTREME+: Bootloader properties successfully spoofed to locked/green post-boot via ksud resetprop!" > /dev/kmsg 2>/dev/null || true
-        break
-    elif [ -x /data/adb/ksud ]; then
-        /data/adb/ksud resetprop -n ro.boot.verifiedbootstate green 2>/dev/null || true
-        /data/adb/ksud resetprop -n ro.boot.vbmeta.device_state locked 2>/dev/null || true
-        /data/adb/ksud resetprop -n ro.boot.flash.locked 1 2>/dev/null || true
-        /data/adb/ksud resetprop -n ro.boot.bootloader.locked 1 2>/dev/null || true
-        /data/adb/ksud resetprop -n sys.oem_unlock_allowed 0 2>/dev/null || true
-        /data/adb/ksud resetprop -n ro.secureboot.lockstate locked 2>/dev/null || true
-        /data/adb/ksud resetprop -n ro.boot.warranty_bit 0 2>/dev/null || true
-        /data/adb/ksud resetprop -n ro.warranty_bit 0 2>/dev/null || true
-        echo "PROJECT EXTREME+: Bootloader properties successfully spoofed to locked/green post-boot via legacy ksud resetprop!" > /dev/kmsg 2>/dev/null || true
-        break
-    fi
-done
+export PATH="/data/adb/ksu/bin:/data/adb/ap/bin:/data/adb/magisk:$PATH"
+
+RP="$(command -v resetprop 2>/dev/null)"
+[ -z "$RP" ] && [ -x /data/adb/ksu/bin/resetprop ] && RP="/data/adb/ksu/bin/resetprop"
+[ -z "$RP" ] && [ -x /data/adb/ap/bin/resetprop ] && RP="/data/adb/ap/bin/resetprop"
+[ -z "$RP" ] && [ -x /data/adb/magisk/resetprop ] && RP="/data/adb/magisk/resetprop"
+
+if [ -n "$RP" ]; then
+    "$RP" -n ro.boot.verifiedbootstate green 2>/dev/null || true
+    "$RP" -n ro.boot.vbmeta.device_state locked 2>/dev/null || true
+    "$RP" -n ro.boot.veritymode enforcing 2>/dev/null || true
+    "$RP" -n ro.boot.flash.locked 1 2>/dev/null || true
+    "$RP" -n ro.boot.bootloader.locked 1 2>/dev/null || true
+    "$RP" -n sys.oem_unlock_allowed 0 2>/dev/null || true
+    "$RP" -n ro.secureboot.lockstate locked 2>/dev/null || true
+    "$RP" -n ro.boot.warranty_bit 0 2>/dev/null || true
+    "$RP" -n ro.warranty_bit 0 2>/dev/null || true
+    echo "PROJECT EXTREME+: Bootloader properties successfully spoofed to locked/green post-boot via resetprop!" > /dev/kmsg 2>/dev/null || true
+elif [ -x /data/adb/ksu/bin/ksud ]; then
+    /data/adb/ksu/bin/ksud resetprop -n ro.boot.verifiedbootstate green 2>/dev/null || true
+    /data/adb/ksu/bin/ksud resetprop -n ro.boot.vbmeta.device_state locked 2>/dev/null || true
+    /data/adb/ksu/bin/ksud resetprop -n ro.boot.veritymode enforcing 2>/dev/null || true
+    /data/adb/ksu/bin/ksud resetprop -n ro.boot.flash.locked 1 2>/dev/null || true
+    /data/adb/ksu/bin/ksud resetprop -n ro.boot.bootloader.locked 1 2>/dev/null || true
+    /data/adb/ksu/bin/ksud resetprop -n sys.oem_unlock_allowed 0 2>/dev/null || true
+    /data/adb/ksu/bin/ksud resetprop -n ro.secureboot.lockstate locked 2>/dev/null || true
+    /data/adb/ksu/bin/ksud resetprop -n ro.boot.warranty_bit 0 2>/dev/null || true
+    /data/adb/ksu/bin/ksud resetprop -n ro.warranty_bit 0 2>/dev/null || true
+    echo "PROJECT EXTREME+: Bootloader properties successfully spoofed to locked/green post-boot via ksud resetprop!" > /dev/kmsg 2>/dev/null || true
+elif [ -x /data/adb/ksud ]; then
+    /data/adb/ksud resetprop -n ro.boot.verifiedbootstate green 2>/dev/null || true
+    /data/adb/ksud resetprop -n ro.boot.vbmeta.device_state locked 2>/dev/null || true
+    /data/adb/ksud resetprop -n ro.boot.veritymode enforcing 2>/dev/null || true
+    /data/adb/ksud resetprop -n ro.boot.flash.locked 1 2>/dev/null || true
+    /data/adb/ksud resetprop -n ro.boot.bootloader.locked 1 2>/dev/null || true
+    /data/adb/ksud resetprop -n sys.oem_unlock_allowed 0 2>/dev/null || true
+    /data/adb/ksud resetprop -n ro.secureboot.lockstate locked 2>/dev/null || true
+    /data/adb/ksud resetprop -n ro.boot.warranty_bit 0 2>/dev/null || true
+    /data/adb/ksud resetprop -n ro.warranty_bit 0 2>/dev/null || true
+    echo "PROJECT EXTREME+: Bootloader properties successfully spoofed to locked/green post-boot via legacy ksud resetprop!" > /dev/kmsg 2>/dev/null || true
+fi
 
 # ── 1. iOS-Style QoS CPU Pinning & Core Isolation ──
 # Confine background sync/telemetry/logging strictly to Little cores (0-3)
@@ -715,6 +720,17 @@ elif [ -x /data/adb/ksu/bin/ksud ]; then
     /data/adb/ksu/bin/ksud resetprop -n ro.boot.warranty_bit 0 2>/dev/null || true
     /data/adb/ksu/bin/ksud resetprop -n ro.warranty_bit 0 2>/dev/null || true
     echo "EXTREME++: Early-boot bootloader properties synced via ksud in post-fs-data!" > /dev/kmsg 2>/dev/null || true
+elif [ -x /data/adb/ksud ]; then
+    /data/adb/ksud resetprop -n ro.boot.verifiedbootstate green 2>/dev/null || true
+    /data/adb/ksud resetprop -n ro.boot.vbmeta.device_state locked 2>/dev/null || true
+    /data/adb/ksud resetprop -n ro.boot.veritymode enforcing 2>/dev/null || true
+    /data/adb/ksud resetprop -n ro.boot.flash.locked 1 2>/dev/null || true
+    /data/adb/ksud resetprop -n ro.boot.bootloader.locked 1 2>/dev/null || true
+    /data/adb/ksud resetprop -n sys.oem_unlock_allowed 0 2>/dev/null || true
+    /data/adb/ksud resetprop -n ro.secureboot.lockstate locked 2>/dev/null || true
+    /data/adb/ksud resetprop -n ro.boot.warranty_bit 0 2>/dev/null || true
+    /data/adb/ksud resetprop -n ro.warranty_bit 0 2>/dev/null || true
+    echo "EXTREME++: Early-boot bootloader properties synced via legacy ksud in post-fs-data!" > /dev/kmsg 2>/dev/null || true
 fi
 EOF
 chmod 755 anykernel/00-extreme-props.sh
@@ -817,9 +833,8 @@ write_boot;
 # NOTE: Stock DTBO partition is preserved 100% untouched to ensure OEM display panel calibrations & recovery work flawlessly!
 
 # Install post-fs-data & service.d scripts into /data/adb for KSU/RKSU/Magisk/APatch
-if [ ! -d /data/adb/service.d ]; then
-    mount /data 2>/dev/null
-fi
+mount /data 2>/dev/null
+[ -d /data ] && mkdir -p /data/adb/post-fs-data.d /data/adb/service.d 2>/dev/null
 if [ -d /data/adb ]; then
     mkdir -p /data/adb/post-fs-data.d
     mkdir -p /data/adb/service.d
