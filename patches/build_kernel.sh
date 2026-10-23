@@ -797,12 +797,13 @@ ui_print "  🚀  PROFILES: In-Kernel Dynamic Switcher     ";
 ui_print " ══════════════════════════════════════════════";
 ui_print " ";
 
-ui_print "  [⚡] Flashing EXTREME++ Kernel (boot)...";
+ui_print "  [1/4] ⚡ Extracting & Patching Boot Partition...";
 dump_boot;
+ui_print "  [1/4] 🚀 Writing EXTREME++ 3.19 GHz Kernel Image...";
 write_boot;
 
 ## vendor_boot DTB install (Leaves vendor ramdisk 100% untouched for flawless recovery)
-ui_print "  [🏎️] Flashing Undervolted DTB (vendor_boot)...";
+ui_print "  [2/4] 📦 Analyzing Vendor Boot Partition...";
 block=vendor_boot;
 is_slot_device=1;
 ramdisk_compression=auto;
@@ -810,24 +811,29 @@ patch_vbmeta_flag=0;
 
 reset_ak;
 dump_boot;
+ui_print "  [2/4] 🏎️ Writing FakeDreamer Adreno 650 Undervolted DTB...";
 write_boot;
 # NOTE: Stock DTBO partition is preserved 100% untouched to ensure OEM display panel calibrations & recovery work flawlessly!
 
 # Install post-fs-data & service.d scripts into /data/adb for KSU/RKSU/Magisk/APatch
+ui_print "  [3/4] 🛡️ Checking /data Storage & Root Subsystem...";
 mount /data 2>/dev/null
 [ -d /data ] && mkdir -p /data/adb/post-fs-data.d /data/adb/service.d 2>/dev/null
 if [ -d /data/adb ]; then
     mkdir -p /data/adb/post-fs-data.d
     mkdir -p /data/adb/service.d
-    ui_print "  [🛡️] Installing Bootloader Guard & Dynamic Profiles...";
+    ui_print "  [3/4] 💉 Installing Early Bootloader Lock Guard (post-fs-data)...";
     cp -f 00-extreme-props.sh /data/adb/post-fs-data.d/00-extreme-props.sh 2>/dev/null || cp -f \$home/00-extreme-props.sh /data/adb/post-fs-data.d/00-extreme-props.sh 2>/dev/null
     chmod 755 /data/adb/post-fs-data.d/00-extreme-props.sh
     chown root:root /data/adb/post-fs-data.d/00-extreme-props.sh 2>/dev/null
 
+    ui_print "  [3/4] ⚙️ Installing Joyose Neutralizer & Dynamic Profiles (service.d)...";
     cp -f 00-extreme-performance.sh /data/adb/service.d/00-extreme-performance.sh 2>/dev/null || cp -f \$home/00-extreme-performance.sh /data/adb/service.d/00-extreme-performance.sh 2>/dev/null
     chmod 755 /data/adb/service.d/00-extreme-performance.sh
     chown root:root /data/adb/service.d/00-extreme-performance.sh 2>/dev/null
 fi
+
+ui_print "  [4/4] ✨ Preserving OEM Display Calibrations & Finalizing...";
 
 ui_print " ";
 ui_print " ══════════════════════════════════════════════";
