@@ -41,7 +41,73 @@ if os.path.exists(cmdline_file):
         if headers:
             content = "\n".join(headers) + "\n" + content
 
-        spoof_block = """\t{
+        # 2. Clang-Safe helper function (injected OUTSIDE / ABOVE cmdline_proc_show)
+        helper_func = """/* EXTREME++: Zero-space cmdline token replacement using memmove (Clang-Safe) */
+static void spoof_cmdline_token(char *str, const char *orig, const char *rep)
+{
+\tchar *p;
+\tsize_t orig_len = strlen(orig);
+\tsize_t rep_len = strlen(rep);
+
+\twhile ((p = strstr(str, orig)) != NULL) {
+\t\tmemcpy(p, rep, rep_len);
+\t\tif (orig_len > rep_len) {
+\t\t\tmemmove(p + rep_len, p + orig_len, strlen(p + orig_len) + 1);
+\t\t}
+\t}
+}
+
+"""
+
+        # 3. Clean C89 show function with zero trailing spaces
+        spoofed_show = helper_func + """static int cmdline_proc_show(struct seq_file *m, void *v)
+{
+\tchar *spoofed;
+
+\t/* 🚨 CRITICAL SAFETY GUARD: Do not spoof PID 1 (init/AVB) or ueventd */
+\tif (current->pid == 1 || strcmp(current->comm, "init") == 0 || strcmp(current->comm, "ueventd") == 0) {
+\t\tseq_puts(m, saved_command_line);
+\t\tseq_putc(m, '\\n');
+\t\treturn 0;
+\t}
+
+\tspoofed = kstrdup(saved_command_line, GFP_KERNEL);
+\tif (spoofed) {
+\t\tspoof_cmdline_token(spoofed, "androidboot.verifiedbootstate=orange", "androidboot.verifiedbootstate=green");
+\t\tspoof_cmdline_token(spoofed, "androidboot.verifiedbootstate=yellow", "androidboot.verifiedbootstate=green");
+\t\tspoof_cmdline_token(spoofed, "androidboot.vbmeta.device_state=unlocked", "androidboot.vbmeta.device_state=locked");
+\t\tspoof_cmdline_token(spoofed, "androidboot.flash.locked=0", "androidboot.flash.locked=1");
+\t\tspoof_cmdline_token(spoofed, "androidboot.bootloader.locked=0", "androidboot.bootloader.locked=1");
+\t\tseq_puts(m, spoofed);
+\t\tkfree(spoofed);
+\t} else {
+\t\tseq_puts(m, saved_command_line);
+\t}
+\tseq_putc(m, '\\n');
+\treturn 0;
+}"""
+
+        target_pattern = """static int cmdline_proc_show(struct seq_file *m, void *v)
+{
+\tseq_puts(m, saved_command_line);
+\tseq_putc(m, '\\n');
+\treturn 0;
+}"""
+
+        fallback_pattern = "seq_puts(m, saved_command_line);"
+
+        if target_pattern in content:
+            patched_content = content.replace(target_pattern, spoofed_show, 1)
+            with open(cmdline_file, "w") as f:
+                f.write(patched_content)
+            print("✅ SUCCESS: cmdline.c successfully patched with Clang-Safe memmove engine!")
+        elif fallback_pattern in content:
+            # Fallback in case seq_putc formatting differs
+            func_sig = "static int cmdline_proc_show(struct seq_file *m, void *v)"
+            if func_sig in content:
+                content = content.replace(func_sig, helper_func + func_sig, 1)
+            
+            spoof_inner = """\t{
 \t\tchar *spoofed;
 \t\t/* 🚨 CRITICAL SAFETY GUARD: Do not spoof PID 1 (init/AVB) or ueventd */
 \t\tif (current->pid == 1 || strcmp(current->comm, "init") == 0 || strcmp(current->comm, "ueventd") == 0) {
@@ -52,35 +118,21 @@ if os.path.exists(cmdline_file):
 
 \t\tspoofed = kstrdup(saved_command_line, GFP_KERNEL);
 \t\tif (spoofed) {
-\t\t\tchar *p;
-\t\t\twhile ((p = strstr(spoofed, "androidboot.verifiedbootstate=orange")) != NULL) {
-\t\t\t\tmemcpy(p + 30, "green ", 6);
-\t\t\t}
-\t\t\twhile ((p = strstr(spoofed, "androidboot.verifiedbootstate=yellow")) != NULL) {
-\t\t\t\tmemcpy(p + 30, "green ", 6);
-\t\t\t}
-\t\t\twhile ((p = strstr(spoofed, "androidboot.vbmeta.device_state=unlocked")) != NULL) {
-\t\t\t\tmemcpy(p + 32, "locked  ", 8);
-\t\t\t}
-\t\t\twhile ((p = strstr(spoofed, "androidboot.flash.locked=0")) != NULL) {
-\t\t\t\tp[25] = '1';
-\t\t\t}
-\t\t\twhile ((p = strstr(spoofed, "androidboot.bootloader.locked=0")) != NULL) {
-\t\t\t\tp[30] = '1';
-\t\t\t}
+\t\t\tspoof_cmdline_token(spoofed, "androidboot.verifiedbootstate=orange", "androidboot.verifiedbootstate=green");
+\t\t\tspoof_cmdline_token(spoofed, "androidboot.verifiedbootstate=yellow", "androidboot.verifiedbootstate=green");
+\t\t\tspoof_cmdline_token(spoofed, "androidboot.vbmeta.device_state=unlocked", "androidboot.vbmeta.device_state=locked");
+\t\t\tspoof_cmdline_token(spoofed, "androidboot.flash.locked=0", "androidboot.flash.locked=1");
+\t\t\tspoof_cmdline_token(spoofed, "androidboot.bootloader.locked=0", "androidboot.bootloader.locked=1");
 \t\t\tseq_puts(m, spoofed);
 \t\t\tkfree(spoofed);
 \t\t} else {
 \t\t\tseq_puts(m, saved_command_line);
 \t\t}
 \t}"""
-
-        target_needle = "seq_puts(m, saved_command_line);"
-        if target_needle in content:
-            patched_content = content.replace(target_needle, spoof_block, 1)
+            patched_content = content.replace(fallback_pattern, spoof_inner, 1)
             with open(cmdline_file, "w") as f:
                 f.write(patched_content)
-            print("✅ SUCCESS: cmdline.c successfully patched with PID-1 AVB Guard!")
+            print("✅ SUCCESS: cmdline.c patched using fallback pattern with Clang-Safe helper!")
         else:
             print("⚠️ WARNING: Target needle not found in cmdline.c.")
 else:

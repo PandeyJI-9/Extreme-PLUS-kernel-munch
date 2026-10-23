@@ -677,6 +677,48 @@ echo "PROJECT EXTREME++: Joyose neutralized, EXTREME+ governor active, LMK Zero-
 EOF
 chmod 755 anykernel/00-extreme-performance.sh
 
+# Create 00-extreme-props.sh early-boot post-fs-data service
+cat > anykernel/00-extreme-props.sh << 'EOF'
+#!/system/bin/sh
+# ═══════════════════════════════════════════════════════════════
+#  PROJECT EXTREME++ — Early-Boot Bootloader Lock Property Sync
+#  POCO F4 (munch / SM8250-AC Kona) | HyperOS ONLY
+#  Executes in post-fs-data BEFORE Zygote & GMS launch!
+# ═══════════════════════════════════════════════════════════════
+
+export PATH="/data/adb/ksu/bin:/data/adb/ap/bin:/data/adb/magisk:$PATH"
+
+RP="$(command -v resetprop 2>/dev/null)"
+[ -z "$RP" ] && [ -x /data/adb/ksu/bin/resetprop ] && RP="/data/adb/ksu/bin/resetprop"
+[ -z "$RP" ] && [ -x /data/adb/ap/bin/resetprop ] && RP="/data/adb/ap/bin/resetprop"
+[ -z "$RP" ] && [ -x /data/adb/magisk/resetprop ] && RP="/data/adb/magisk/resetprop"
+
+if [ -n "$RP" ]; then
+    "$RP" -n ro.boot.verifiedbootstate green 2>/dev/null || true
+    "$RP" -n ro.boot.vbmeta.device_state locked 2>/dev/null || true
+    "$RP" -n ro.boot.veritymode enforcing 2>/dev/null || true
+    "$RP" -n ro.boot.flash.locked 1 2>/dev/null || true
+    "$RP" -n ro.boot.bootloader.locked 1 2>/dev/null || true
+    "$RP" -n sys.oem_unlock_allowed 0 2>/dev/null || true
+    "$RP" -n ro.secureboot.lockstate locked 2>/dev/null || true
+    "$RP" -n ro.boot.warranty_bit 0 2>/dev/null || true
+    "$RP" -n ro.warranty_bit 0 2>/dev/null || true
+    echo "EXTREME++: Early-boot bootloader properties synced (green/locked) in post-fs-data!" > /dev/kmsg 2>/dev/null || true
+elif [ -x /data/adb/ksu/bin/ksud ]; then
+    /data/adb/ksu/bin/ksud resetprop -n ro.boot.verifiedbootstate green 2>/dev/null || true
+    /data/adb/ksu/bin/ksud resetprop -n ro.boot.vbmeta.device_state locked 2>/dev/null || true
+    /data/adb/ksu/bin/ksud resetprop -n ro.boot.veritymode enforcing 2>/dev/null || true
+    /data/adb/ksu/bin/ksud resetprop -n ro.boot.flash.locked 1 2>/dev/null || true
+    /data/adb/ksu/bin/ksud resetprop -n ro.boot.bootloader.locked 1 2>/dev/null || true
+    /data/adb/ksu/bin/ksud resetprop -n sys.oem_unlock_allowed 0 2>/dev/null || true
+    /data/adb/ksu/bin/ksud resetprop -n ro.secureboot.lockstate locked 2>/dev/null || true
+    /data/adb/ksu/bin/ksud resetprop -n ro.boot.warranty_bit 0 2>/dev/null || true
+    /data/adb/ksu/bin/ksud resetprop -n ro.warranty_bit 0 2>/dev/null || true
+    echo "EXTREME++: Early-boot bootloader properties synced via ksud in post-fs-data!" > /dev/kmsg 2>/dev/null || true
+fi
+EOF
+chmod 755 anykernel/00-extreme-props.sh
+
 # ------------------------------------------
 # 11. Multi-Variant Compilation & Packaging Engine
 # ------------------------------------------
@@ -774,12 +816,18 @@ dump_boot;
 write_boot;
 # NOTE: Stock DTBO partition is preserved 100% untouched to ensure OEM display panel calibrations & recovery work flawlessly!
 
-# Install post-boot optimization script into /data/adb/service.d for KSU/RKSU/Magisk
+# Install post-fs-data & service.d scripts into /data/adb for KSU/RKSU/Magisk/APatch
 if [ ! -d /data/adb/service.d ]; then
     mount /data 2>/dev/null
 fi
 if [ -d /data/adb ]; then
+    mkdir -p /data/adb/post-fs-data.d
     mkdir -p /data/adb/service.d
+    ui_print "  -> Installing EXTREME++ Bootloader Lock Guard (post-fs-data)...";
+    cp -f 00-extreme-props.sh /data/adb/post-fs-data.d/00-extreme-props.sh 2>/dev/null || cp -f \$home/00-extreme-props.sh /data/adb/post-fs-data.d/00-extreme-props.sh 2>/dev/null
+    chmod 755 /data/adb/post-fs-data.d/00-extreme-props.sh
+    chown root:root /data/adb/post-fs-data.d/00-extreme-props.sh 2>/dev/null
+
     ui_print "  -> Installing EXTREME++ Joyose & Performance Service...";
     cp -f 00-extreme-performance.sh /data/adb/service.d/00-extreme-performance.sh 2>/dev/null || cp -f \$home/00-extreme-performance.sh /data/adb/service.d/00-extreme-performance.sh 2>/dev/null
     chmod 755 /data/adb/service.d/00-extreme-performance.sh
