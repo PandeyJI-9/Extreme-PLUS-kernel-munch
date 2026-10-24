@@ -2,9 +2,10 @@
 # ==============================================================================
 # PROJECT EXTREME++ | Maintainer: PandeyJI-9
 # Device: POCO F4 (munch) | Target: HyperOS ONLY
-# Adreno 650 GPU OPP Table Patcher
+# Adreno 650 GPU Native FakeDreamer OPP Table Patcher
 # ==============================================================================
 import sys
+import os
 import re
 
 def find_block_end(text, start_idx):
@@ -35,32 +36,20 @@ GPU_OPP_TABLE = """\tgpu_opp_table: gpu-opp-table {
 \t\t\topp-hz = /bits/ 64 <587000000>;
 \t\t\topp-microvolt = <RPMH_REGULATOR_LEVEL_SVS_L1>;
 \t\t};
-\t\topp-525000000 {
-\t\t\topp-hz = /bits/ 64 <525000000>;
+\t\topp-510000000 {
+\t\t\topp-hz = /bits/ 64 <510000000>;
 \t\t\topp-microvolt = <RPMH_REGULATOR_LEVEL_SVS>;
-\t\t};
-\t\topp-490000000 {
-\t\t\topp-hz = /bits/ 64 <490000000>;
-\t\t\topp-microvolt = <RPMH_REGULATOR_LEVEL_SVS>;
-\t\t};
-\t\topp-441600000 {
-\t\t\topp-hz = /bits/ 64 <441600000>;
-\t\t\topp-microvolt = <RPMH_REGULATOR_LEVEL_LOW_SVS>;
 \t\t};
 \t\topp-400000000 {
 \t\t\topp-hz = /bits/ 64 <400000000>;
 \t\t\topp-microvolt = <RPMH_REGULATOR_LEVEL_LOW_SVS>;
 \t\t};
-\t\topp-305000000 {
-\t\t\topp-hz = /bits/ 64 <305000000>;
-\t\t\topp-microvolt = <RPMH_REGULATOR_LEVEL_MIN_SVS>;
-\t\t};
-\t\topp-250000000 {
-\t\t\topp-hz = /bits/ 64 <250000000>;
+\t\topp-330000000 {
+\t\t\topp-hz = /bits/ 64 <330000000>;
 \t\t\topp-microvolt = <RPMH_REGULATOR_LEVEL_LOW_SVS>;
 \t\t};
-\t\topp-200000000 {
-\t\t\topp-hz = /bits/ 64 <200000000>;
+\t\topp-205000000 {
+\t\t\topp-hz = /bits/ 64 <205000000>;
 \t\t\topp-microvolt = <RPMH_REGULATOR_LEVEL_MIN_SVS>;
 \t\t};
 \t\topp-150000000 {
@@ -70,15 +59,15 @@ GPU_OPP_TABLE = """\tgpu_opp_table: gpu-opp-table {
 \t};"""
 
 def patch(path):
-    try:
-        with open(path, 'r') as f:
-            text = f.read()
-    except FileNotFoundError:
-        print(f"⚠️️ ERROR: File not found -> {path}")
+    if not os.path.exists(path):
+        print(f"⚠️ Warning: File not found -> {path}")
         return True
 
-    if '670000000' in text and '150000000' in text and '441600000' in text:
-        print("✅ GPU OPP table already patched — skipping")
+    with open(path, 'r') as f:
+        text = f.read()
+
+    if '670000000' in text and '150000000' in text and '330000000' in text:
+        print("✅ GPU OPP table already patched with FakeDreamer stepping — skipping")
         return True
 
     table_v1_pattern = r'(\s*)gpu_opp_table:\s*gpu-opp-table\s*\{'

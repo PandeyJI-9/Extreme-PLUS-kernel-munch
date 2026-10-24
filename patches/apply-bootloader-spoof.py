@@ -42,12 +42,19 @@ if os.path.exists(cmdline_file):
             content = "\n".join(headers) + "\n" + content
 
         # 2. Clang-Safe helper function (injected OUTSIDE / ABOVE cmdline_proc_show)
-        helper_func = """/* EXTREME++: Zero-space cmdline token replacement using memmove (Clang-Safe) */
+        helper_func = """/* EXTREME++: Bounded, buffer-safe cmdline token replacement engine (Clang-Safe) */
 static void spoof_cmdline_token(char *str, const char *orig, const char *rep)
 {
 \tchar *p;
-\tsize_t orig_len = strlen(orig);
-\tsize_t rep_len = strlen(rep);
+\tsize_t orig_len, rep_len;
+
+\tif (!str || !orig || !rep)
+\t\treturn;
+
+\torig_len = strlen(orig);
+\trep_len = strlen(rep);
+\tif (orig_len == 0 || rep_len > orig_len)
+\t\treturn;
 
 \twhile ((p = strstr(str, orig)) != NULL) {
 \t\tmemcpy(p, rep, rep_len);
@@ -65,7 +72,7 @@ static void spoof_cmdline_token(char *str, const char *orig, const char *rep)
 \tchar *spoofed;
 
 \t/* 🚨 CRITICAL SAFETY GUARD: Do not spoof PID 1 (init/AVB) or ueventd */
-\tif (current->pid == 1 || strcmp(current->comm, "init") == 0 || strcmp(current->comm, "ueventd") == 0) {
+\tif (current->pid == 1 || (current->comm && (!strcmp(current->comm, "init") || !strcmp(current->comm, "ueventd")))) {
 \t\tseq_puts(m, saved_command_line);
 \t\tseq_putc(m, '\\n');
 \t\treturn 0;
@@ -110,7 +117,7 @@ static void spoof_cmdline_token(char *str, const char *orig, const char *rep)
             spoof_inner = """\t{
 \t\tchar *spoofed;
 \t\t/* 🚨 CRITICAL SAFETY GUARD: Do not spoof PID 1 (init/AVB) or ueventd */
-\t\tif (current->pid == 1 || strcmp(current->comm, "init") == 0 || strcmp(current->comm, "ueventd") == 0) {
+\t\tif (current->pid == 1 || (current->comm && (!strcmp(current->comm, "init") || !strcmp(current->comm, "ueventd")))) {
 \t\t\tseq_puts(m, saved_command_line);
 \t\t\tseq_putc(m, '\\n');
 \t\t\treturn 0;

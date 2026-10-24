@@ -20,7 +20,8 @@ def patch_vmscan(path="mm/vmscan.c"):
         print("ℹ️ [VMScan Anti-Stutter] mm/vmscan.c already patched with task_is_critical.")
         return True
 
-    helper_code = """/* EXTREME++: Skip reclaim throttle for critical UI/Render tasks (SurfaceFlinger & Composer) */
+    helper_code = """#include <linux/sched/rt.h>
+/* EXTREME++: Skip reclaim throttle for critical UI/Render tasks (SurfaceFlinger & Composer) */
 static inline bool task_is_critical(struct task_struct *task)
 {
 \tif (task->flags & PF_KTHREAD)

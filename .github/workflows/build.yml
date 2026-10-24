@@ -108,10 +108,10 @@ jobs:
           MSG="${MSG}🛠️ <b>Toolchain:</b> ZyC-Clang 16.0.6 + LLD%0A"
           MSG="${MSG}👑 <b>Author:</b> Extreme++ by @pandey_ji_8%0A"
           MSG="${MSG}${ROOT_DESC}%0A%0A"
-          MSG="${MSG}✨ <b>Dynamic In-Kernel Profiles (Switchable via EKM):</b>%0A"
-          MSG="${MSG}• 🚀 <b>Gaming [Default]:</b> Full 3.19GHz Prime Monster + 670MHz GPU (120 FPS)%0A"
-          MSG="${MSG}• ⚖️ <b>Balanced:</b> 2.84GHz Prime Sweet-Spot + 587MHz GPU (90 FPS Zero Heat)%0A"
-          MSG="${MSG}• 🔋 <b>Battery:</b> 2.42GHz Prime Marathon + 510MHz GPU (All-Day Battery)%0A%0A"
+          MSG="${MSG}✨ <b>Dynamic In-Kernel Profiles (/sys/kernel/extreme_profile):</b>%0A"
+          MSG="${MSG}• 🚀 <b>Gaming [0]:</b> 3.19GHz Prime Monster + 2.42GHz Gold (Peak 120 FPS)%0A"
+          MSG="${MSG}• ⚖️ <b>Balanced [1]:</b> 2.84GHz Prime Sweet-Spot + 2.25GHz Gold (Zero Heat 90 FPS)%0A"
+          MSG="${MSG}• 🔋 <b>Battery [2]:</b> 2.42GHz Prime Marathon + 1.96GHz Gold (All-Day SOT)%0A%0A"
           MSG="${MSG}📦 <i>Uploading flashable ZIP package below...</i>"
 
           TARGETS=()

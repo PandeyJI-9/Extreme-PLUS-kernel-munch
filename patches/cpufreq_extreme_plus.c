@@ -22,6 +22,14 @@
 #include <linux/sysfs.h>
 #include <linux/cpufreq.h>
 
+#ifndef task_is_booster
+#ifdef CONFIG_XIAOMI_MIUI
+extern bool task_is_booster(struct task_struct *p);
+#else
+static inline bool task_is_booster(struct task_struct *p) { return false; }
+#endif
+#endif
+
 struct extreme_plus_tunables {
 	struct gov_attr_set	attr_set;
 	unsigned int		up_rate_limit_us;
@@ -329,7 +337,7 @@ static void extreme_plus_deferred_update(struct extreme_plus_policy *sg_policy, 
 #define EXTREME_PREDICTIVE_SLOPE_PCT 25
 #define EXTREME_TURBO_SATURATION_PCT 90
 
-static bool extreme_plus_cluster_has_active_tasks(struct cpufreq_policy *policy)
+static bool extreme_plus_cluster_has_heavy_tasks(struct cpufreq_policy *policy)
 {
 	unsigned int c;
 
@@ -338,7 +346,10 @@ static bool extreme_plus_cluster_has_active_tasks(struct cpufreq_policy *policy)
 
 	for_each_cpu(c, policy->cpus) {
 		struct rq *rq = cpu_rq(c);
-		if (rq && rq->nr_running > 0)
+		struct extreme_plus_cpu *c_cpu = &per_cpu(extreme_plus_cpu, c);
+		if (rq && rq->nr_running > 1)
+			return true;
+		if (c_cpu->walt_load.rtgb_active)
 			return true;
 	}
 	return false;
@@ -347,7 +358,7 @@ static bool extreme_plus_cluster_has_active_tasks(struct cpufreq_policy *policy)
 static unsigned int extreme_plus_apply_active_floor(struct cpufreq_policy *policy, unsigned int freq)
 {
 	unsigned int cpu = policy->cpu;
-	bool has_active = extreme_plus_cluster_has_active_tasks(policy);
+	bool has_heavy = extreme_plus_cluster_has_heavy_tasks(policy);
 
 	/*
 	 * Anti-Flicker & Active Task Floor:
@@ -357,20 +368,21 @@ static unsigned int extreme_plus_apply_active_floor(struct cpufreq_policy *polic
 	 *    YouTube dynamic refresh rate mode changes (120Hz <-> 60Hz), triggering
 	 *    visible screen brightness flickering. 576 MHz draws virtually identical
 	 *    idle power (~600mV rail) but eliminates mode-switch latency completely.
-	 * 2. Active Task Floor: When runnable tasks are queued on any sibling core in
-	 *    the cluster, maintain responsive floors to eliminate UI scroll stutter
-	 *    and 3D render loop frame drops.
+	 * 2. Active Task Floor: When heavy runnable tasks (>1) are queued on sibling cores
+	 *    or render thread boost is active, maintain responsive floors to eliminate
+	 *    UI scroll stutter and 3D render loop frame drops. Under single-thread or idle,
+	 *    allow cores to gracefully scale down to policy min to conserve battery.
 	 */
 	if (cpu < 4) {
 		if (freq < EXTREME_LITTLE_IDLE_FLOOR)
 			freq = EXTREME_LITTLE_IDLE_FLOOR;
-		if (has_active && freq < EXTREME_LITTLE_ACTIVE_FLOOR)
+		if (has_heavy && freq < EXTREME_LITTLE_ACTIVE_FLOOR)
 			freq = EXTREME_LITTLE_ACTIVE_FLOOR;
 	} else if (cpu < 7) {
-		if (has_active && freq < EXTREME_GOLD_ACTIVE_FLOOR)
+		if (has_heavy && freq < EXTREME_GOLD_ACTIVE_FLOOR)
 			freq = EXTREME_GOLD_ACTIVE_FLOOR;
 	} else {
-		if (has_active && freq < EXTREME_PRIME_ACTIVE_FLOOR)
+		if (has_heavy && freq < EXTREME_PRIME_ACTIVE_FLOOR)
 			freq = EXTREME_PRIME_ACTIVE_FLOOR;
 	}
 	return freq;
@@ -393,9 +405,11 @@ static unsigned int get_next_freq(struct extreme_plus_policy *sg_policy,
  * 2. Strict SMP Concurrency Isolation (Zero Cross-CPU Mutex/Data-Race):
  *    Each core evaluates its own policy and cluster capacity independently.
  * 3. Sustained Frame-Pacing Architecture (Zero 250ms Sawtooth Micro-Stutter):
- *    No artificial software leaky-bucket oscillation. Prime core cruises at 2.84 GHz sweet
- *    spot and ramps cleanly to 3.19 GHz Apex Turbo when demanded, held steadily by rate limits.
- * 4. Guaranteed Hardware OPP Driver Resolution:
+ *    Prime core cruises at 2.84 GHz sweet spot and ramps cleanly to Apex Turbo when demanded.
+ * 4. Strict Thermal & Policy Boundary Clamping:
+ *    All target frequency requests are strictly bounded by policy->min and policy->max,
+ *    guaranteeing that thermal engine and dynamic user profile clamps are 100% honored.
+ * 5. Guaranteed Hardware OPP Driver Resolution:
  *    Every calculated frequency is passed through cpufreq_driver_resolve_freq(policy, freq)
  *    to ensure 100% OPP alignment and keep cached_raw_freq in exact synchronization.
  */
@@ -405,6 +419,8 @@ static unsigned int extreme_plus_autonomous_engine(struct extreme_plus_cpu *sg_c
 {
 	struct cpufreq_policy *policy = sg_policy->policy;
 	unsigned int cpu = sg_cpu->cpu;
+	unsigned int cur_max = READ_ONCE(policy->max);
+	unsigned int cur_min = READ_ONCE(policy->min);
 	unsigned int raw_f = get_next_freq(sg_policy, util, max);
 	long slope = (long)util - (long)sg_policy->prev_util;
 	bool is_burst_slope = (slope >= (long)mult_frac(max, EXTREME_PREDICTIVE_SLOPE_PCT, 100));
@@ -429,18 +445,18 @@ static unsigned int extreme_plus_autonomous_engine(struct extreme_plus_cpu *sg_c
 
 	/* ── Cluster 2: Prime Core 7 (Kryo 585 Prime) ── */
 	if (cpu == 7) {
-		/* Gear 2 (Apex Turbo 3.19 GHz): Only post-boot on genuine frame spike (slope >= 25%) or heavy saturation (>= 90%) */
+		/* Gear 2 (Apex Turbo): Only post-boot on genuine frame spike (slope >= 25%) or heavy saturation (>= 90%) */
 		if (boot_settled && (is_burst_slope || is_saturated)) {
-			target_f = policy->cpuinfo.max_freq;
+			target_f = cur_max;
 		} else if (is_render_active || util >= sg_policy->hispeed_util) {
 			/* Gear 1 (Cruising Gear 2.84 GHz): Lock rock-solid 120 FPS stably without overheating */
-			target_f = min(policy->cpuinfo.max_freq, (unsigned int)EXTREME_PRIME_CRUISE_CEIL);
+			target_f = min(cur_max, (unsigned int)EXTREME_PRIME_CRUISE_CEIL);
 		} else {
 			/* Normal UI / Idle: follow calculated demand, gliding smoothly through cruising ceiling */
 			if (raw_f > EXTREME_PRIME_CRUISE_CEIL)
-				target_f = min(policy->cpuinfo.max_freq, (unsigned int)EXTREME_PRIME_CRUISE_CEIL);
+				target_f = min(cur_max, (unsigned int)EXTREME_PRIME_CRUISE_CEIL);
 			else if (sg_policy->cached_raw_freq > EXTREME_PRIME_CRUISE_CEIL && raw_f < 2419200)
-				target_f = min(policy->cpuinfo.max_freq, (unsigned int)EXTREME_PRIME_CRUISE_CEIL);
+				target_f = min(cur_max, (unsigned int)EXTREME_PRIME_CRUISE_CEIL);
 			else
 				target_f = raw_f;
 		}
@@ -449,14 +465,14 @@ static unsigned int extreme_plus_autonomous_engine(struct extreme_plus_cpu *sg_c
 	else if (cpu >= 4 && cpu < 7) {
 		/* Gear 2 (Apex Gold Turbo 2.42 GHz): On burst slope or heavy saturation (>= 90%) */
 		if (is_burst_slope || is_saturated) {
-			target_f = policy->cpuinfo.max_freq;
+			target_f = cur_max;
 		} else if (is_render_active || util >= sg_policy->hispeed_util) {
 			/* Gear 1 (120 FPS Sustained Gaming Cruise 2.25 GHz): Complete all worker threads in < 6ms */
-			target_f = min(policy->cpuinfo.max_freq, (unsigned int)EXTREME_GOLD_CRUISE_CEIL);
+			target_f = min(cur_max, (unsigned int)EXTREME_GOLD_CRUISE_CEIL);
 		} else {
 			/* Normal UI / Idle: follow calculated demand cleanly */
 			if (raw_f > EXTREME_GOLD_CRUISE_CEIL)
-				target_f = min(policy->cpuinfo.max_freq, (unsigned int)EXTREME_GOLD_CRUISE_CEIL);
+				target_f = min(cur_max, (unsigned int)EXTREME_GOLD_CRUISE_CEIL);
 			else
 				target_f = raw_f;
 		}
@@ -468,7 +484,7 @@ static unsigned int extreme_plus_autonomous_engine(struct extreme_plus_cpu *sg_c
 
 	/* Apply Anti-Flicker & Active Task Floors */
 	target_f = extreme_plus_apply_active_floor(policy, target_f);
-	target_f = clamp_val(target_f, policy->cpuinfo.min_freq, policy->cpuinfo.max_freq);
+	target_f = clamp_val(target_f, cur_min, cur_max);
 	trace_sugov_next_freq(policy->cpu, util, max, target_f);
 
 	if (target_f == sg_policy->cached_raw_freq && !sg_policy->need_freq_update)
@@ -1653,41 +1669,64 @@ struct cpufreq_governor *cpufreq_default_governor(void)
  * ═══════════════════════════════════════════════════════════════════════════════
  * PROJECT EXTREME++ (BMW Edition) — In-Kernel Dynamic Profile Switcher
  * ═══════════════════════════════════════════════════════════════════════════════
- * Profile 0 (Gaming / Default): Prime Core (CPU 7) up to 3.19 GHz (3187200 kHz)
- * Profile 1 (Balanced):         Prime Core (CPU 7) clamped to 2.84 GHz (2841600 kHz)
- * Profile 2 (Battery):          Prime Core (CPU 7) clamped to 2.42 GHz (2419200 kHz)
+ * Profile 0 (Gaming / Default): Prime up to 3.19 GHz (3187200 kHz), Gold up to 2.42 GHz
+ * Profile 1 (Balanced):         Prime clamped to 2.84 GHz (2841600 kHz), Gold to 2.25 GHz
+ * Profile 2 (Battery):          Prime clamped to 2.42 GHz (2419200 kHz), Gold to 1.96 GHz
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 static int extreme_profile_mode = 0; /* Default 0: Gaming Monster */
 
 static void extreme_profile_apply(int mode)
 {
-	struct cpufreq_policy *policy;
-	unsigned int target_max_freq;
+	struct cpufreq_policy *policy_prime;
+	struct cpufreq_policy *policy_gold;
+	unsigned int prime_max_freq;
+	unsigned int gold_max_freq;
 
 	switch (mode) {
-	case 1: /* Balanced: 2.84 GHz */
-		target_max_freq = 2841600;
+	case 1: /* Balanced: 2.84 GHz Prime, 2.25 GHz Gold */
+		prime_max_freq = 2841600;
+		gold_max_freq = 2246400;
 		break;
-	case 2: /* Battery: 2.42 GHz */
-		target_max_freq = 2419200;
+	case 2: /* Battery: 2.42 GHz Prime, 1.96 GHz Gold */
+		prime_max_freq = 2419200;
+		gold_max_freq = 1958400;
 		break;
-	case 0: /* Gaming: 3.19 GHz (Stock Max Unlocked) */
+	case 0: /* Gaming: 3.19 GHz Prime, 2.42 GHz Gold (Stock Max Unlocked) */
 	default:
-		target_max_freq = 3187200;
+		prime_max_freq = 3187200;
+		gold_max_freq = 2419200;
 		break;
 	}
 
-	policy = cpufreq_cpu_get(7);
-	if (policy) {
-		if (target_max_freq > policy->cpuinfo.max_freq)
-			target_max_freq = policy->cpuinfo.max_freq;
-		policy->user_policy.max = target_max_freq;
+	/* Update Prime Core (CPU 7 / Policy 7) */
+	policy_prime = cpufreq_cpu_get(7);
+	if (policy_prime) {
+		if (prime_max_freq > policy_prime->cpuinfo.max_freq)
+			prime_max_freq = policy_prime->cpuinfo.max_freq;
+		down_write(&policy_prime->rwsem);
+		policy_prime->user_policy.max = prime_max_freq;
+		policy_prime->max = prime_max_freq;
+		up_write(&policy_prime->rwsem);
 		cpufreq_update_policy(7);
-		cpufreq_cpu_put(policy);
+		cpufreq_cpu_put(policy_prime);
 	}
-	pr_info("EXTREME++ BMW Edition: Profile switched to %d (Prime target: %u kHz)\n",
-		mode, target_max_freq);
+
+	/* Update Gold Cores (CPU 4-6 / Policy 4) */
+	policy_gold = cpufreq_cpu_get(4);
+	if (policy_gold) {
+		if (gold_max_freq > policy_gold->cpuinfo.max_freq)
+			gold_max_freq = policy_gold->cpuinfo.max_freq;
+		down_write(&policy_gold->rwsem);
+		policy_gold->user_policy.max = gold_max_freq;
+		policy_gold->max = gold_max_freq;
+		up_write(&policy_gold->rwsem);
+		cpufreq_update_policy(4);
+		cpufreq_cpu_put(policy_gold);
+	}
+
+	pr_info("EXTREME++ BMW Edition: Profile switched to %d (Prime target: %u kHz, Gold target: %u kHz)\n",
+		mode, prime_max_freq, gold_max_freq);
 }
 
 static ssize_t extreme_profile_show(struct kobject *kobj,

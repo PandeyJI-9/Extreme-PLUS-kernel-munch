@@ -238,6 +238,11 @@ echo "[*] Preserving 100% Native AstideLabs Display & Panel DTS (prevents black 
 # ------------------------------------------
 # 6. Safe PD / PPS Fast Charging & Thermal DTS Stepping
 # ------------------------------------------
+if [ -f "apply-cpu-cap.py" ]; then
+    echo "[*] Ensuring full-range 3.19 GHz Prime Core driver & DTS alignment before defconfig..."
+    python3 apply-cpu-cap.py 3187200
+fi
+
 if [ -f "apply-fastcharge-bypass.py" ]; then
     echo "[*] Applying safe PD/PPS Fast Charge & Thermal DTS Stepping patches..."
     python3 apply-fastcharge-bypass.py
@@ -308,14 +313,13 @@ scripts/config --file "${OUT_DIR}/.config" \
     -d ZRAM_DEF_COMP_LZ4 \
     --set-str ZRAM_DEF_COMP "zstd"
 
-# 🚀 Ultra-Fast & Safe Boot (Zero-Latency Schedutil Boot, Auto-Switch to EXTREME+ Post-Boot)
+# 🚀 Ultra-Fast & Safe Boot (Zero-Latency EXTREME+ Boot by default)
 scripts/config --file "${OUT_DIR}/.config" \
     -e CPU_FREQ_GOV_SCHEDUTIL \
-    --set-val SCHEDUTIL_UP_RATE_LIMIT 0 \
     -e CPU_FREQ_GOV_EXTREME_PLUS \
-    -d CPU_FREQ_DEFAULT_GOV_EXTREME_PLUS \
-    -e CPU_FREQ_DEFAULT_GOV_SCHEDUTIL \
-    --set-str CPU_FREQ_DEFAULT_GOV "schedutil"
+    -e CPU_FREQ_DEFAULT_GOV_EXTREME_PLUS \
+    -d CPU_FREQ_DEFAULT_GOV_SCHEDUTIL \
+    --set-str CPU_FREQ_DEFAULT_GOV "extreme+"
 
 if [ -f "kernel/sched/cpufreq_schedutil.c" ]; then
     sed -i 's/tunables->up_rate_limit_us = CONFIG_SCHEDUTIL_UP_RATE_LIMIT;/tunables->up_rate_limit_us = 0;/' kernel/sched/cpufreq_schedutil.c
@@ -456,7 +460,10 @@ cat > anykernel/00-extreme-performance.sh << 'EOF'
 (
 # Accelerate Cold Boot: Stream system APKs & ODEX files at maximum UFS 3.1 bus bandwidth (2048 KB)
 for queue in /sys/block/*/queue; do
-    [ -d "$queue" ] && echo 2048 > "$queue/read_ahead_kb" 2>/dev/null || true
+    case "$queue" in
+        *zram*|*loop*) continue ;;
+        *) [ -d "$queue" ] && echo 2048 > "$queue/read_ahead_kb" 2>/dev/null || true ;;
+    esac
 done
 
 # Wait for Android framework to fully complete boot in background without blocking init
@@ -634,29 +641,12 @@ chmod 664 /sys/devices/system/cpu/cpufreq/policy*/scaling_min_freq 2>/dev/null |
 chown root:system /sys/devices/system/cpu/cpufreq/policy*/scaling_max_freq 2>/dev/null || true
 chmod 664 /sys/devices/system/cpu/cpufreq/policy*/scaling_max_freq 2>/dev/null || true
 chown root:system /sys/kernel/extreme_profile 2>/dev/null || true
-chmod 666 /sys/kernel/extreme_profile 2>/dev/null || true
+chmod 664 /sys/kernel/extreme_profile 2>/dev/null || true
 
 # ── 9. Xiaomi Battery Fast Charge Unlock ──
 for f in /sys/class/qcom-battery/quick_charge_type /sys/class/power_supply/battery/fastcharge_mode; do
     [ -f "$f" ] && echo 1 > "$f" 2>/dev/null || true
 done
-
-# ── 10. Intelligent LMK OOM Shield Daemon (Auto-Protects WhatsApp & Launcher) ──
-(
-while true; do
-    sleep 45
-    for pkg in com.whatsapp org.telegram.messenger com.miui.home com.android.systemui; do
-        for pid in $(pidof "$pkg" 2>/dev/null); do
-            if [ -f "/proc/$pid/oom_score_adj" ]; then
-                current_adj=$(cat "/proc/$pid/oom_score_adj" 2>/dev/null || echo 1000)
-                if [ "$current_adj" -gt 600 ]; then
-                    echo 600 > "/proc/$pid/oom_score_adj" 2>/dev/null || true
-                fi
-            fi
-        done
-    done
-done
-) &
 
 echo "PROJECT EXTREME++: Joyose neutralized, EXTREME+ governor active, LMK Zero-Kill active, 67W Mi Turbo preserved!" > /dev/kmsg 2>/dev/null || true
 
@@ -733,17 +723,12 @@ echo "   Default Frequency: 3.19 GHz (3187200 kHz) Unlocked Peak"
 echo "   Dynamic Profile Engine: /sys/kernel/extreme_profile"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-# 1. Ensure 100% stock full-range driver (up to 3.19 GHz peak)
-if [ -f "apply-cpu-cap.py" ]; then
-    python3 apply-cpu-cap.py 3187200
-fi
-
-# 2. Update CONFIG_LOCALVERSION and sync config
+# 1. Update CONFIG_LOCALVERSION and sync config
 scripts/config --file "${OUT_DIR}/.config" --set-str LOCALVERSION "${LOCALVER}"
 rm -f "${OUT_DIR}/include/config/kernel.release"
 make "${MAKE_OPTS[@]}" olddefconfig
 
-# 3. Compile Master Kernel Image
+# 2. Compile Master Kernel Image
 echo "[*] Compiling Master Kernel Image (3.19 GHz Monster Peak)..."
 make -j"${TOTAL_CORES}" "${MAKE_OPTS[@]}" Image
 

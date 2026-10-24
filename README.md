@@ -122,13 +122,10 @@ We completely discarded Xiaomi’s crude stock 3-frequency layout and integrated
 ║   0   │  670 MHz  │  SVS_L2 (225)     │ 🔴 Apex 3D Gaming (BGMI 120 FPS, WuWa)    ║
 ║   1   │  587 MHz  │  SVS_L1 (129)     │ 🟠 Sustained 90/120 FPS, Heavy Shaders    ║
 ║   2   │  510 MHz  │  SVS (66)         │ 🟡 High-Efficiency Gaming (Cool & Stable) ║
-║   3   │  490 MHz  │  SVS (66)         │ 🟡 Fluid 120Hz Multitasking Animations    ║
-║   4   │  441 MHz  │  LOW_SVS (1)      │ 🟢 Social Feeds (Instagram, Twitter 120Hz)║
-║   5   │  400 MHz  │  LOW_SVS (1)      │ 🟢 General 2D UI & Video Compositing      ║
-║   6   │  305 MHz  │  MIN_SVS (1)      │ 🔵 Static Display & 4K/60FPS Streaming    ║
-║   7   │  250 MHz  │  LOW_SVS (1)      │ 🔵 E-book Reading & Low-Power Browsing    ║
-║   8   │  200 MHz  │  MIN_SVS (1)      │ ⚪ Background Compositing & AOD           ║
-║   9   │  150 MHz  │  MIN_SVS (1)      │ ⚪ Ultra-Low Deep Idle (Screen-Off)       ║
+║   3   │  400 MHz  │  LOW_SVS (1)      │ 🟢 Fluid 120Hz Multitasking Animations    ║
+║   4   │  330 MHz  │  LOW_SVS (1)      │ 🟢 Social Feeds & Video Compositing       ║
+║   5   │  205 MHz  │  MIN_SVS (1)      │ 🔵 Static Display & 4K/60FPS Streaming    ║
+║   6   │  150 MHz  │  MIN_SVS (1)      │ ⚪ Ultra-Low Deep Idle (Screen-Off)       ║
 ╚═══════╧═══════════╧═══════════════════╧═══════════════════════════════════════════╝
 ```
 
@@ -244,9 +241,9 @@ uname -r
 cat /sys/devices/system/cpu/cpufreq/policy0/scaling_governor
 # Output: extreme+
 
-# 3. Verify FakeDreamer 10-Step Adreno 650 GPU Table
+# 3. Verify FakeDreamer Adreno 650 Undervolted GPU Table
 cat /sys/class/kgsl/kgsl-3d0/gpu_available_frequencies
-# Output: 670000000 587000000 510000000 490000000 441600000 400000000 305000000 250000000 200000000 150000000
+# Output: 670000000 587000000 510000000 400000000 330000000 205000000 150000000
 
 # 4. Verify Tuned WALT Migration Thresholds
 cat /proc/sys/kernel/sched_upmigrate
