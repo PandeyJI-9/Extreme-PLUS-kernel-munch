@@ -421,7 +421,7 @@ static unsigned int extreme_plus_autonomous_engine(struct extreme_plus_cpu *sg_c
 	unsigned int cur_max = READ_ONCE(policy->max);
 	unsigned int cur_min = READ_ONCE(policy->min);
 	unsigned int raw_f = get_next_freq(sg_policy, util, max);
-	long slope = (long)util - (long)sg_cpu->prev_util;
+	long slope = (long)util - (long)sg_policy->prev_util;
 	bool is_burst_slope = (slope >= (long)mult_frac(max, EXTREME_PREDICTIVE_SLOPE_PCT, 100));
 	bool is_saturated = (util >= mult_frac(max, EXTREME_TURBO_SATURATION_PCT, 100));
 	bool is_render_active = false;
@@ -1710,6 +1710,8 @@ static void extreme_profile_apply(int mode)
 	if (policy_prime) {
 		if (prime_max_freq > policy_prime->cpuinfo.max_freq)
 			prime_max_freq = policy_prime->cpuinfo.max_freq;
+		if (prime_max_freq < policy_prime->min)
+			prime_max_freq = policy_prime->min;
 		down_write(&policy_prime->rwsem);
 		policy_prime->user_policy.max = prime_max_freq;
 		policy_prime->max = prime_max_freq;
@@ -1723,6 +1725,8 @@ static void extreme_profile_apply(int mode)
 	if (policy_gold) {
 		if (gold_max_freq > policy_gold->cpuinfo.max_freq)
 			gold_max_freq = policy_gold->cpuinfo.max_freq;
+		if (gold_max_freq < policy_gold->min)
+			gold_max_freq = policy_gold->min;
 		down_write(&policy_gold->rwsem);
 		policy_gold->user_policy.max = gold_max_freq;
 		policy_gold->max = gold_max_freq;

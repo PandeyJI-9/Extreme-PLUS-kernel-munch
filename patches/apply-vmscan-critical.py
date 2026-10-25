@@ -35,7 +35,7 @@ static inline bool task_is_critical(struct task_struct *task)
 
 """
 
-    target_func = "static void throttle_direct_reclaim(gfp_t gfp_mask, struct zonelist *zonelist,"
+    target_func = "static bool throttle_direct_reclaim(gfp_t gfp_mask, struct zonelist *zonelist,"
     if target_func not in content:
         print("⚠️ [VMScan Anti-Stutter] throttle_direct_reclaim signature not found in mm/vmscan.c")
         return False
@@ -50,7 +50,7 @@ static inline bool task_is_critical(struct task_struct *task)
         print("⚠️ [VMScan Anti-Stutter] Could not locate opening brace for throttle_direct_reclaim")
         return False
 
-    skip_check = "\n\tif (task_is_critical(current))\n\t\treturn;\n"
+    skip_check = "\n\tif (task_is_critical(current))\n\t\treturn false;\n"
     content = content[:brace_idx + 1] + skip_check + content[brace_idx + 1:]
 
     with open(path, "w") as f:
