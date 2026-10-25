@@ -68,8 +68,8 @@ CONFIG_QCOM_ADRENO_DEFAULT_GOVERNOR="msm-adreno-tz"
 CONFIG_QCOM_KGSL=y
 CONFIG_CPU_FREQ_GOV_EXTREME_PLUS=y
 CONFIG_CPU_FREQ_GOV_SCHEDUTIL=y
-CONFIG_CPU_FREQ_DEFAULT_GOV_SCHEDUTIL=y
-CONFIG_CPU_FREQ_DEFAULT_GOV="schedutil"
+CONFIG_CPU_FREQ_DEFAULT_GOV_EXTREME_PLUS=y
+CONFIG_CPU_FREQ_DEFAULT_GOV="extreme+"
 CONFIG_TCP_CONG_BBR=y
 CONFIG_DEFAULT_BBR=y
 CONFIG_DEFAULT_TCP_CONG="bbr"
@@ -552,7 +552,7 @@ for p in /sys/devices/system/cpu/cpufreq/policy*; do
     fi
     for gov in extreme+ schedutil; do
         if [ -d "$p/$gov" ]; then
-            echo 500 > "$p/$gov/up_rate_limit_us" 2>/dev/null || true
+            echo 0 > "$p/$gov/up_rate_limit_us" 2>/dev/null || true
             echo 20000 > "$p/$gov/down_rate_limit_us" 2>/dev/null || true
             echo 65 > "$p/$gov/hispeed_load" 2>/dev/null || true
             echo 1 > "$p/$gov/pl" 2>/dev/null || true
