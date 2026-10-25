@@ -93,13 +93,15 @@ jobs:
           OUT_ZIP_DIR="$GITHUB_WORKSPACE/raw_images"
           mkdir -p "$IMG_DIR" "$OUT_ZIP_DIR"
 
-          # 1. Main Kernel Binary (Image)
+          # 1. Main Kernel Binary (Image & kernel.img)
           if [ -f "$GITHUB_WORKSPACE/kernel/out/arch/arm64/boot/Image" ]; then
             cp -f "$GITHUB_WORKSPACE/kernel/out/arch/arm64/boot/Image" "$IMG_DIR/Image"
-            echo "  [+] Included Image from kernel/out/arch/arm64/boot/Image ($(du -h "$IMG_DIR/Image" | cut -f1))"
+            cp -f "$GITHUB_WORKSPACE/kernel/out/arch/arm64/boot/Image" "$IMG_DIR/kernel.img"
+            echo "  [+] Included Image & kernel.img from kernel/out/arch/arm64/boot/Image ($(du -h "$IMG_DIR/Image" | cut -f1))"
           elif [ -f "$GITHUB_WORKSPACE/kernel/anykernel/Image" ]; then
             cp -f "$GITHUB_WORKSPACE/kernel/anykernel/Image" "$IMG_DIR/Image"
-            echo "  [+] Included Image from kernel/anykernel/Image ($(du -h "$IMG_DIR/Image" | cut -f1))"
+            cp -f "$GITHUB_WORKSPACE/kernel/anykernel/Image" "$IMG_DIR/kernel.img"
+            echo "  [+] Included Image & kernel.img from kernel/anykernel/Image ($(du -h "$IMG_DIR/Image" | cut -f1))"
           fi
 
           # 2. DTBO Image (if built)
