@@ -72,7 +72,7 @@ static void spoof_cmdline_token(char *str, const char *orig, const char *rep)
 \tchar *spoofed;
 
 \t/* 🚨 CRITICAL SAFETY GUARD: Do not spoof PID 1 (init/AVB) or ueventd */
-\tif (current->pid == 1 || (current->comm && (!strcmp(current->comm, "init") || !strcmp(current->comm, "ueventd")))) {
+\tif (current->pid == 1 || !strcmp(current->comm, "init") || !strcmp(current->comm, "ueventd")) {
 \t\tseq_puts(m, saved_command_line);
 \t\tseq_putc(m, '\\n');
 \t\treturn 0;
@@ -117,7 +117,7 @@ static void spoof_cmdline_token(char *str, const char *orig, const char *rep)
             spoof_inner = """\t{
 \t\tchar *spoofed;
 \t\t/* 🚨 CRITICAL SAFETY GUARD: Do not spoof PID 1 (init/AVB) or ueventd */
-\t\tif (current->pid == 1 || (current->comm && (!strcmp(current->comm, "init") || !strcmp(current->comm, "ueventd")))) {
+\t\tif (current->pid == 1 || !strcmp(current->comm, "init") || !strcmp(current->comm, "ueventd")) {
 \t\t\tseq_puts(m, saved_command_line);
 \t\t\tseq_putc(m, '\\n');
 \t\t\treturn 0;

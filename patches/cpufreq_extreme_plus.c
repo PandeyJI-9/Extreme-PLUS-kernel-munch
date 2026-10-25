@@ -22,13 +22,6 @@
 #include <linux/sysfs.h>
 #include <linux/cpufreq.h>
 
-#ifndef task_is_booster
-#ifdef CONFIG_XIAOMI_MIUI
-extern bool task_is_booster(struct task_struct *p);
-#else
-static inline bool task_is_booster(struct task_struct *p) { return false; }
-#endif
-#endif
 
 struct extreme_plus_tunables {
 	struct gov_attr_set	attr_set;
