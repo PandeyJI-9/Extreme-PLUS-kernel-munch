@@ -85,13 +85,65 @@ jobs:
           echo "✅ Built ZIP files:"
           ls -lh EXTREME++*.zip
 
+      - name: "📦 Package Raw Kernel Images (.img / dtb)"
+        if: success()
+        run: |
+          echo "[*] Packaging raw kernel images (.img / dtb) for developer testing..."
+          IMG_DIR="$GITHUB_WORKSPACE/raw_kernel_images_staging"
+          OUT_ZIP_DIR="$GITHUB_WORKSPACE/raw_images"
+          mkdir -p "$IMG_DIR" "$OUT_ZIP_DIR"
+
+          # 1. Main Kernel Binary (Image)
+          if [ -f "$GITHUB_WORKSPACE/kernel/out/arch/arm64/boot/Image" ]; then
+            cp -f "$GITHUB_WORKSPACE/kernel/out/arch/arm64/boot/Image" "$IMG_DIR/Image"
+            echo "  [+] Included Image from kernel/out/arch/arm64/boot/Image ($(du -h "$IMG_DIR/Image" | cut -f1))"
+          elif [ -f "$GITHUB_WORKSPACE/kernel/anykernel/Image" ]; then
+            cp -f "$GITHUB_WORKSPACE/kernel/anykernel/Image" "$IMG_DIR/Image"
+            echo "  [+] Included Image from kernel/anykernel/Image ($(du -h "$IMG_DIR/Image" | cut -f1))"
+          fi
+
+          # 2. DTBO Image (if built)
+          if [ -f "$GITHUB_WORKSPACE/kernel/out/arch/arm64/boot/dtbo.img" ]; then
+            cp -f "$GITHUB_WORKSPACE/kernel/out/arch/arm64/boot/dtbo.img" "$IMG_DIR/dtbo.img"
+            echo "  [+] Included dtbo.img from kernel/out/arch/arm64/boot/dtbo.img"
+          fi
+
+          # 3. DTB Blob / Table
+          if [ -f "$GITHUB_WORKSPACE/kernel/out/arch/arm64/boot/dtb" ]; then
+            cp -f "$GITHUB_WORKSPACE/kernel/out/arch/arm64/boot/dtb" "$IMG_DIR/dtb"
+            echo "  [+] Included dtb from kernel/out/arch/arm64/boot/dtb"
+          elif [ -f "$GITHUB_WORKSPACE/kernel/out/arch/arm64/boot/dtb.img" ]; then
+            cp -f "$GITHUB_WORKSPACE/kernel/out/arch/arm64/boot/dtb.img" "$IMG_DIR/dtb.img"
+            echo "  [+] Included dtb.img from kernel/out/arch/arm64/boot/dtb.img"
+          elif [ -f "$GITHUB_WORKSPACE/kernel/anykernel/dtb" ]; then
+            cp -f "$GITHUB_WORKSPACE/kernel/anykernel/dtb" "$IMG_DIR/dtb"
+            echo "  [+] Included dtb from kernel/anykernel/dtb"
+          fi
+
+          # 4. Any other *.img files
+          find "$GITHUB_WORKSPACE/kernel/out/arch/arm64/boot" -maxdepth 1 -name "*.img" -exec cp -f {} "$IMG_DIR/" \; 2>/dev/null || true
+
+          # 5. Compress into a clean, lossless ZIP package (zip -9 lossless deflate)
+          RAW_ZIP_NAME="EXTREME++_Raw_Images_Build_${{ github.run_number }}.zip"
+          (
+            cd "$IMG_DIR"
+            zip -9 -r "$OUT_ZIP_DIR/$RAW_ZIP_NAME" ./*
+          )
+          rm -rf "$IMG_DIR"
+
+          echo "✅ Created Raw Images ZIP: $OUT_ZIP_DIR/$RAW_ZIP_NAME ($(du -h "$OUT_ZIP_DIR/$RAW_ZIP_NAME" | cut -f1))"
+          echo "RAW_IMAGES_ZIP_PATH=$OUT_ZIP_DIR/$RAW_ZIP_NAME" >> $GITHUB_ENV
+          echo "RAW_IMAGES_ZIP_NAME=$RAW_ZIP_NAME" >> $GITHUB_ENV
+
       - name: "📦 Upload Build Artifacts"
         if: success()
         uses: actions/upload-artifact@v4
         with:
           name: EXTREME++_BMW_Edition_BETA_${{ github.run_number }}
-          path: kernel/EXTREME++*.zip
-          if-no-files-found: error
+          path: |
+            kernel/EXTREME++*.zip
+            raw_images/*.zip
+          if-no-files-found: warn
 
       - name: "📢 Telegram: Official Release Broadcast"
         if: success()
@@ -134,6 +186,36 @@ jobs:
                 -F caption="📦 $(basename "$z")" || true
             done
           done
+
+      - name: "🔒 Telegram: Send Raw Images to Developer DM (Private)"
+        if: success()
+        run: |
+          DM_ID="${{ secrets.TELEGRAM_DM_ID }}"
+          if [ -z "$DM_ID" ]; then
+            echo "ℹ️ TELEGRAM_DM_ID secret is not set. Skipping private DM upload."
+            exit 0
+          fi
+
+          ZIP_PATH="${{ env.RAW_IMAGES_ZIP_PATH }}"
+          if [ ! -f "$ZIP_PATH" ]; then
+            echo "⚠️ Raw images ZIP ($ZIP_PATH) not found, skipping DM upload."
+            exit 0
+          fi
+
+          DM_CAPTION="🛠️ <b>EXTREME++ Kernel Raw Images (.img) Developer Pack</b>%0A%0A"
+          DM_CAPTION="${DM_CAPTION}📱 <b>Device:</b> POCO F4 (munch)%0A"
+          DM_CAPTION="${DM_CAPTION}🏎️ <b>Edition:</b> BMW Edition (Build #${{ github.run_number }})%0A"
+          DM_CAPTION="${DM_CAPTION}📦 <b>Archive:</b> <code>${{ env.RAW_IMAGES_ZIP_NAME }}</code>%0A"
+          DM_CAPTION="${DM_CAPTION}📁 <b>Contents:</b> Raw <code>Image</code>, <code>dtb</code>, <code>dtbo.img</code>%0A%0A"
+          DM_CAPTION="${DM_CAPTION}🔒 <i>Privately delivered to your DM for testing and fastboot unpacking (NOT sent to group).</i>"
+
+          echo "[*] Sending raw images ZIP exclusively to Telegram DM ($DM_ID)..."
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendDocument" \
+            -F chat_id="$DM_ID" \
+            -F document=@"$ZIP_PATH" \
+            -F caption="$DM_CAPTION" \
+            -F parse_mode="HTML" || true
+          echo "✅ Raw kernel images package successfully dispatched to private DM!"
 
       - name: "📢 Telegram: Build Failed"
         if: failure()
