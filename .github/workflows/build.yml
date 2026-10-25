@@ -108,15 +108,18 @@ jobs:
             echo "  [+] Included dtbo.img from kernel/out/arch/arm64/boot/dtbo.img"
           fi
 
-          # 3. DTB Blob / Table
+          # 3. DTB Blob / Table (used inside vendor_boot)
           if [ -f "$GITHUB_WORKSPACE/kernel/out/arch/arm64/boot/dtb" ]; then
             cp -f "$GITHUB_WORKSPACE/kernel/out/arch/arm64/boot/dtb" "$IMG_DIR/dtb"
-            echo "  [+] Included dtb from kernel/out/arch/arm64/boot/dtb"
+            cp -f "$GITHUB_WORKSPACE/kernel/out/arch/arm64/boot/dtb" "$IMG_DIR/dtb.img"
+            echo "  [+] Included dtb & dtb.img from kernel/out/arch/arm64/boot/dtb"
           elif [ -f "$GITHUB_WORKSPACE/kernel/out/arch/arm64/boot/dtb.img" ]; then
             cp -f "$GITHUB_WORKSPACE/kernel/out/arch/arm64/boot/dtb.img" "$IMG_DIR/dtb.img"
+            cp -f "$GITHUB_WORKSPACE/kernel/out/arch/arm64/boot/dtb.img" "$IMG_DIR/dtb"
             echo "  [+] Included dtb.img from kernel/out/arch/arm64/boot/dtb.img"
           elif [ -f "$GITHUB_WORKSPACE/kernel/anykernel/dtb" ]; then
             cp -f "$GITHUB_WORKSPACE/kernel/anykernel/dtb" "$IMG_DIR/dtb"
+            cp -f "$GITHUB_WORKSPACE/kernel/anykernel/dtb" "$IMG_DIR/dtb.img"
             echo "  [+] Included dtb from kernel/anykernel/dtb"
           fi
 
