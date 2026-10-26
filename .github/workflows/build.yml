@@ -8,6 +8,15 @@ on:
         required: true
         type: boolean
         default: true
+      target_os:
+        description: 'Target OS: both | hyperos | aosp'
+        required: true
+        type: choice
+        default: 'both'
+        options:
+          - 'both'
+          - 'hyperos'
+          - 'aosp'
 
 jobs:
   build:
@@ -30,10 +39,17 @@ jobs:
             ROOT_LABEL="⚡ Root: Inbuilt Multi-Manager Root (SuSFS v2.3.0)"
           fi
 
+          TARGET_LABEL="Dual Target: HyperOS 4 + AOSP (A16 & A17)"
+          if [ "${{ inputs.target_os }}" = "hyperos" ]; then
+            TARGET_LABEL="Xiaomi HyperOS / HyperOS 4 ONLY"
+          elif [ "${{ inputs.target_os }}" = "aosp" ]; then
+            TARGET_LABEL="AOSP ONLY (Android 13–17 / A16 & A17 Tested)"
+          fi
+
           for chat in "${TARGETS[@]}"; do
             curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
               -d chat_id="$chat" \
-              -d text="🚀 <b>EXTREME++ Build Started!</b>%0A📱 Device: POCO F4 (munch)%0A🏎️ Edition: EXTREME++ Gaming (BMW Edition)%0A${ROOT_LABEL}%0A⚡ Default Clock: 3.19 GHz Unlocked Peak (Dynamic Profiles)" -d parse_mode="HTML" || true
+              -d text="🚀 <b>EXTREME++ Build Started!</b>%0A📱 Device: POCO F4 (munch)%0A🏎️ Edition: EXTREME++ Gaming (BMW Edition)%0A🎯 Target: ${TARGET_LABEL}%0A${ROOT_LABEL}%0A⚡ Default Clock: 3.19 GHz Unlocked Peak (Dynamic Profiles)" -d parse_mode="HTML" || true
           done
 
       - name: "📦 Checkout config repo"
@@ -80,65 +96,65 @@ jobs:
           if [ "${{ inputs.build_ksu }}" = "true" ]; then
             KSU_MODE="ksu"
           fi
-          ./build_kernel.sh munch "$KSU_MODE"
+          ./build_kernel.sh munch "$KSU_MODE" "${{ inputs.target_os }}"
           
           echo "✅ Built ZIP files:"
           ls -lh EXTREME++*.zip
 
-      - name: "📦 Package Raw Kernel Images (.img / dtb)"
+      - name: "📦 Package Raw Kernel Images for HyperOS 4 (.img / dtb)"
         if: success()
         run: |
-          echo "[*] Packaging raw kernel images (.img / dtb) for developer testing..."
+          echo "[*] Checking for HyperOS raw images (.img / dtb) for HyperOS 4 developer testing..."
           IMG_DIR="$GITHUB_WORKSPACE/raw_kernel_images_staging"
           OUT_ZIP_DIR="$GITHUB_WORKSPACE/raw_images"
           mkdir -p "$IMG_DIR" "$OUT_ZIP_DIR"
 
-          # 1. Main Kernel Binary (Image & kernel.img)
-          if [ -f "$GITHUB_WORKSPACE/kernel/out/arch/arm64/boot/Image" ]; then
-            cp -f "$GITHUB_WORKSPACE/kernel/out/arch/arm64/boot/Image" "$IMG_DIR/Image"
-            cp -f "$GITHUB_WORKSPACE/kernel/out/arch/arm64/boot/Image" "$IMG_DIR/kernel.img"
-            echo "  [+] Included Image & kernel.img from kernel/out/arch/arm64/boot/Image ($(du -h "$IMG_DIR/Image" | cut -f1))"
-          elif [ -f "$GITHUB_WORKSPACE/kernel/anykernel/Image" ]; then
-            cp -f "$GITHUB_WORKSPACE/kernel/anykernel/Image" "$IMG_DIR/Image"
-            cp -f "$GITHUB_WORKSPACE/kernel/anykernel/Image" "$IMG_DIR/kernel.img"
-            echo "  [+] Included Image & kernel.img from kernel/anykernel/Image ($(du -h "$IMG_DIR/Image" | cut -f1))"
+          # Target HyperOS output directory specifically!
+          HYPEROS_BOOT="$GITHUB_WORKSPACE/kernel/out_hyperos/arch/arm64/boot"
+          if [ ! -d "$HYPEROS_BOOT" ]; then
+            HYPEROS_BOOT="$GITHUB_WORKSPACE/kernel/out/arch/arm64/boot"
           fi
 
-          # 2. DTBO Image (if built)
-          if [ -f "$GITHUB_WORKSPACE/kernel/out/arch/arm64/boot/dtbo.img" ]; then
-            cp -f "$GITHUB_WORKSPACE/kernel/out/arch/arm64/boot/dtbo.img" "$IMG_DIR/dtbo.img"
-            echo "  [+] Included dtbo.img from kernel/out/arch/arm64/boot/dtbo.img"
+          if [ -d "$HYPEROS_BOOT" ] && [ -f "$HYPEROS_BOOT/Image" ]; then
+            # 1. Main Kernel Binary (Image & kernel.img)
+            cp -f "$HYPEROS_BOOT/Image" "$IMG_DIR/Image"
+            cp -f "$HYPEROS_BOOT/Image" "$IMG_DIR/kernel.img"
+            echo "  [+] Included Image & kernel.img from $HYPEROS_BOOT/Image ($(du -h "$IMG_DIR/Image" | cut -f1))"
+
+            # 2. DTBO Image
+            if [ -f "$HYPEROS_BOOT/dtbo.img" ]; then
+              cp -f "$HYPEROS_BOOT/dtbo.img" "$IMG_DIR/dtbo.img"
+              echo "  [+] Included dtbo.img from $HYPEROS_BOOT/dtbo.img"
+            fi
+
+            # 3. DTB Blob / Table
+            if [ -f "$HYPEROS_BOOT/dtb" ]; then
+              cp -f "$HYPEROS_BOOT/dtb" "$IMG_DIR/dtb"
+              cp -f "$HYPEROS_BOOT/dtb" "$IMG_DIR/dtb.img"
+              echo "  [+] Included dtb & dtb.img from $HYPEROS_BOOT/dtb"
+            elif [ -f "$HYPEROS_BOOT/dtb.img" ]; then
+              cp -f "$HYPEROS_BOOT/dtb.img" "$IMG_DIR/dtb.img"
+              cp -f "$HYPEROS_BOOT/dtb.img" "$IMG_DIR/dtb"
+              echo "  [+] Included dtb.img from $HYPEROS_BOOT/dtb.img"
+            fi
+
+            # 4. Any other *.img files
+            find "$HYPEROS_BOOT" -maxdepth 1 -name "*.img" -exec cp -f {} "$IMG_DIR/" \; 2>/dev/null || true
+
+            # 5. Compress into a clean, lossless ZIP package
+            RAW_ZIP_NAME="EXTREME++_HyperOS4_Raw_Images_Build_${{ github.run_number }}.zip"
+            (
+              cd "$IMG_DIR"
+              zip -9 -r "$OUT_ZIP_DIR/$RAW_ZIP_NAME" ./*
+            )
+            rm -rf "$IMG_DIR"
+
+            echo "✅ Created HyperOS 4 Raw Images ZIP: $OUT_ZIP_DIR/$RAW_ZIP_NAME ($(du -h "$OUT_ZIP_DIR/$RAW_ZIP_NAME" | cut -f1))"
+            echo "RAW_IMAGES_ZIP_PATH=$OUT_ZIP_DIR/$RAW_ZIP_NAME" >> $GITHUB_ENV
+            echo "RAW_IMAGES_ZIP_NAME=$RAW_ZIP_NAME" >> $GITHUB_ENV
+          else
+            echo "ℹ️ HyperOS output not found (e.g. only AOSP was requested). Skipping HyperOS raw images zip."
           fi
-
-          # 3. DTB Blob / Table (used inside vendor_boot)
-          if [ -f "$GITHUB_WORKSPACE/kernel/out/arch/arm64/boot/dtb" ]; then
-            cp -f "$GITHUB_WORKSPACE/kernel/out/arch/arm64/boot/dtb" "$IMG_DIR/dtb"
-            cp -f "$GITHUB_WORKSPACE/kernel/out/arch/arm64/boot/dtb" "$IMG_DIR/dtb.img"
-            echo "  [+] Included dtb & dtb.img from kernel/out/arch/arm64/boot/dtb"
-          elif [ -f "$GITHUB_WORKSPACE/kernel/out/arch/arm64/boot/dtb.img" ]; then
-            cp -f "$GITHUB_WORKSPACE/kernel/out/arch/arm64/boot/dtb.img" "$IMG_DIR/dtb.img"
-            cp -f "$GITHUB_WORKSPACE/kernel/out/arch/arm64/boot/dtb.img" "$IMG_DIR/dtb"
-            echo "  [+] Included dtb.img from kernel/out/arch/arm64/boot/dtb.img"
-          elif [ -f "$GITHUB_WORKSPACE/kernel/anykernel/dtb" ]; then
-            cp -f "$GITHUB_WORKSPACE/kernel/anykernel/dtb" "$IMG_DIR/dtb"
-            cp -f "$GITHUB_WORKSPACE/kernel/anykernel/dtb" "$IMG_DIR/dtb.img"
-            echo "  [+] Included dtb from kernel/anykernel/dtb"
-          fi
-
-          # 4. Any other *.img files
-          find "$GITHUB_WORKSPACE/kernel/out/arch/arm64/boot" -maxdepth 1 -name "*.img" -exec cp -f {} "$IMG_DIR/" \; 2>/dev/null || true
-
-          # 5. Compress into a clean, lossless ZIP package (zip -9 lossless deflate)
-          RAW_ZIP_NAME="EXTREME++_Raw_Images_Build_${{ github.run_number }}.zip"
-          (
-            cd "$IMG_DIR"
-            zip -9 -r "$OUT_ZIP_DIR/$RAW_ZIP_NAME" ./*
-          )
-          rm -rf "$IMG_DIR"
-
-          echo "✅ Created Raw Images ZIP: $OUT_ZIP_DIR/$RAW_ZIP_NAME ($(du -h "$OUT_ZIP_DIR/$RAW_ZIP_NAME" | cut -f1))"
-          echo "RAW_IMAGES_ZIP_PATH=$OUT_ZIP_DIR/$RAW_ZIP_NAME" >> $GITHUB_ENV
-          echo "RAW_IMAGES_ZIP_NAME=$RAW_ZIP_NAME" >> $GITHUB_ENV
 
       - name: "📦 Upload Build Artifacts"
         if: success()
@@ -161,7 +177,6 @@ jobs:
           MSG="🔥 <b>EXTREME++ BMW Edition [BETA] Release #${{ github.run_number }}</b>%0A%0A"
           MSG="${MSG}📱 <b>Device:</b> POCO F4 (munch)%0A"
           MSG="${MSG}🏎️ <b>Edition:</b> EXTREME++ Gaming (BMW Edition [BETA])%0A"
-          MSG="${MSG}⚡ <b>Target ROM:</b> HyperOS / MIUI Android 13–17%0A"
           MSG="${MSG}🛠️ <b>Toolchain:</b> ZyC-Clang 16.0.6 + LLD%0A"
           MSG="${MSG}👑 <b>Author:</b> Extreme++ by @pandey_ji_8%0A"
           MSG="${MSG}${ROOT_DESC}%0A%0A"
@@ -169,7 +184,7 @@ jobs:
           MSG="${MSG}• 🚀 <b>Gaming [0]:</b> 3.19GHz Prime Monster + 2.42GHz Gold (Peak 120 FPS)%0A"
           MSG="${MSG}• ⚖️ <b>Balanced [1]:</b> 2.84GHz Prime Sweet-Spot + 2.25GHz Gold (Zero Heat 90 FPS)%0A"
           MSG="${MSG}• 🔋 <b>Battery [2]:</b> 2.42GHz Prime Marathon + 1.96GHz Gold (All-Day SOT)%0A%0A"
-          MSG="${MSG}📦 <i>Uploading flashable ZIP package below...</i>"
+          MSG="${MSG}📦 <i>Uploading flashable ZIP packages below...</i>"
 
           TARGETS=()
           [ -n "${{ secrets.TELEGRAM_CHAT_ID }}" ] && TARGETS+=("${{ secrets.TELEGRAM_CHAT_ID }}")
@@ -182,13 +197,24 @@ jobs:
               -d parse_mode="HTML" || true
           done
 
-          for z in $(find "$GITHUB_WORKSPACE/kernel" -maxdepth 1 -name "EXTREME++*.zip"); do
+          for z in $(find "$GITHUB_WORKSPACE/kernel" -maxdepth 1 -name "EXTREME++*.zip" | sort); do
             echo "Uploading $z to Telegram..."
+            BNAME=$(basename "$z")
+            if [[ "$BNAME" == *"HyperOS"* ]]; then
+              TARGET_TAG="⚡ <b>Target ROM:</b> Xiaomi HyperOS / HyperOS 4 (Android 13–17)"
+            elif [[ "$BNAME" == *"AOSP"* ]]; then
+              TARGET_TAG="⚡ <b>Target ROM:</b> AOSP Custom ROMs (Android 13–17 / A16 & A17 Tested)"
+            else
+              TARGET_TAG="⚡ <b>Target ROM:</b> POCO F4 (munch)"
+            fi
+
+            ZIP_CAPTION="📦 <b>${BNAME}</b>%0A${TARGET_TAG}%0A👑 Extreme++ BMW Edition by @pandey_ji_8"
             for chat in "${TARGETS[@]}"; do
               curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendDocument" \
                 -F chat_id="$chat" \
                 -F document=@"$z" \
-                -F caption="📦 $(basename "$z")" || true
+                -F caption="$ZIP_CAPTION" \
+                -F parse_mode="HTML" || true
             done
           done
 
@@ -202,25 +228,26 @@ jobs:
           fi
 
           ZIP_PATH="${{ env.RAW_IMAGES_ZIP_PATH }}"
-          if [ ! -f "$ZIP_PATH" ]; then
-            echo "⚠️ Raw images ZIP ($ZIP_PATH) not found, skipping DM upload."
+          if [ -z "$ZIP_PATH" ] || [ ! -f "$ZIP_PATH" ]; then
+            echo "ℹ️ HyperOS raw images ZIP not present (either only AOSP was built or packaging skipped). Skipping DM upload."
             exit 0
           fi
 
-          DM_CAPTION="🛠️ <b>EXTREME++ Kernel Raw Images (.img) Developer Pack</b>%0A%0A"
+          DM_CAPTION="🛠️ <b>EXTREME++ HyperOS 4 / HyperOS Raw Images Developer Pack</b>%0A%0A"
           DM_CAPTION="${DM_CAPTION}📱 <b>Device:</b> POCO F4 (munch)%0A"
           DM_CAPTION="${DM_CAPTION}🏎️ <b>Edition:</b> BMW Edition (Build #${{ github.run_number }})%0A"
+          DM_CAPTION="${DM_CAPTION}⚡ <b>Target ROM:</b> HyperOS 4 / HyperOS (Android 13–17)%0A"
           DM_CAPTION="${DM_CAPTION}📦 <b>Archive:</b> <code>${{ env.RAW_IMAGES_ZIP_NAME }}</code>%0A"
           DM_CAPTION="${DM_CAPTION}📁 <b>Contents:</b> Raw <code>Image</code>, <code>dtb</code>, <code>dtbo.img</code>%0A%0A"
-          DM_CAPTION="${DM_CAPTION}🔒 <i>Privately delivered to your DM for testing and fastboot unpacking (NOT sent to group).</i>"
+          DM_CAPTION="${DM_CAPTION}🔒 <i>Privately delivered to your DM for testing and fastboot ROM integration (AOSP is excluded).</i>"
 
-          echo "[*] Sending raw images ZIP exclusively to Telegram DM ($DM_ID)..."
+          echo "[*] Sending HyperOS raw images ZIP exclusively to Telegram DM ($DM_ID)..."
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendDocument" \
             -F chat_id="$DM_ID" \
             -F document=@"$ZIP_PATH" \
             -F caption="$DM_CAPTION" \
             -F parse_mode="HTML" || true
-          echo "✅ Raw kernel images package successfully dispatched to private DM!"
+          echo "✅ HyperOS raw kernel images package successfully dispatched to private DM!"
 
       - name: "📢 Telegram: Build Failed"
         if: failure()
