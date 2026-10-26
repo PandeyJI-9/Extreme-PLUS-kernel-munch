@@ -21,6 +21,7 @@
 #include <linux/kobject.h>
 #include <linux/sysfs.h>
 #include <linux/cpufreq.h>
+#include <linux/math64.h>
 
 
 struct extreme_plus_tunables {
@@ -45,7 +46,9 @@ struct extreme_plus_policy {
 	unsigned long hispeed_util;
 	unsigned long rtg_boost_util;
 	unsigned long max;
-	unsigned long prev_util;
+	unsigned long prev_raw_util;	/* pre-WALT-adjust util at last slope sample */
+	u64 prev_slope_time;		/* time of last slope sample (ns) */
+	u64 turbo_until;		/* Gear 2 hold deadline (ns) */
 
 	raw_spinlock_t		update_lock;	/* For shared policies */
 	u64			last_freq_update_time;
@@ -80,7 +83,6 @@ struct extreme_plus_cpu {
 	struct sched_walt_cpu_load walt_load;
 
 	unsigned long util;
-	unsigned long prev_util;
 	unsigned int flags;
 
 	unsigned long		bw_dl;
@@ -334,6 +336,16 @@ static void extreme_plus_deferred_update(struct extreme_plus_policy *sg_policy, 
 #define EXTREME_PREDICTIVE_SLOPE_PCT 25
 #define EXTREME_TURBO_SATURATION_PCT 90
 
+/* Slope sensing: util rise is normalized to one frame window (~8.33ms @120Hz) */
+#define EXTREME_SLOPE_WINDOW_NS      (8 * NSEC_PER_MSEC)
+#define EXTREME_SLOPE_MIN_DT_NS      (250 * NSEC_PER_USEC) /* ignore faster samples */
+#define EXTREME_SLOPE_MAX_DT_NS      (20 * NSEC_PER_MSEC)  /* older baseline is stale */
+#define EXTREME_SLOPE_MIN_ABS_PCT    6   /* min absolute rise (% of max) to count */
+/* Gear 2 hold: stay in Apex Turbo ~2 frame periods, unless load collapses */
+#define EXTREME_TURBO_HOLD_NS        (16 * NSEC_PER_MSEC)
+#define EXTREME_TURBO_HOLD_MIN_PCT   30
+#define EXTREME_PRIME_MID_FREQ       2419200
+
 static bool extreme_plus_cluster_has_heavy_tasks(struct cpufreq_policy *policy)
 {
 	unsigned int c;
@@ -414,23 +426,54 @@ static unsigned int get_next_freq(struct extreme_plus_policy *sg_policy,
  */
 static unsigned int extreme_plus_autonomous_engine(struct extreme_plus_cpu *sg_cpu,
 						  struct extreme_plus_policy *sg_policy,
-						  unsigned long util, unsigned long max, u64 time)
+						  unsigned long util, unsigned long max,
+						  unsigned long raw_util, u64 time)
 {
 	struct cpufreq_policy *policy = sg_policy->policy;
 	unsigned int cpu = sg_cpu->cpu;
 	unsigned int cur_max = READ_ONCE(policy->max);
 	unsigned int cur_min = READ_ONCE(policy->min);
 	unsigned int raw_f = get_next_freq(sg_policy, util, max);
-	long slope = (long)util - (long)sg_policy->prev_util;
-	bool is_burst_slope = (slope >= (long)mult_frac(max, EXTREME_PREDICTIVE_SLOPE_PCT, 100));
+	bool is_burst_slope = false;
+	bool in_turbo_hold;
 	bool is_saturated = (util >= mult_frac(max, EXTREME_TURBO_SATURATION_PCT, 100));
 	bool is_render_active = false;
 	bool boot_settled = (time >= 60ULL * NSEC_PER_SEC);
 	unsigned int target_f;
 	unsigned int c;
 
-	sg_policy->prev_util = util;
-	sg_cpu->prev_util = util;
+	/*
+	 * Predictive slope, measured on RAW util (before WALT boost/hispeed
+	 * adjustments, so boost toggling is not mistaken for a frame spike) and
+	 * normalized to one frame window so irregular sample spacing doesn't
+	 * skew it. A burst needs both a relative (per-window) and an absolute rise.
+	 */
+	{
+		u64 dt = time - sg_policy->prev_slope_time;
+
+		if (!sg_policy->prev_slope_time || dt > EXTREME_SLOPE_MAX_DT_NS) {
+			/* No usable baseline (first sample / long gap): re-arm */
+			sg_policy->prev_raw_util = raw_util;
+			sg_policy->prev_slope_time = time;
+		} else if (dt >= EXTREME_SLOPE_MIN_DT_NS) {
+			s64 rise = (s64)raw_util - (s64)sg_policy->prev_raw_util;
+			s64 per_win = div64_s64(rise * (s64)EXTREME_SLOPE_WINDOW_NS,
+						(s64)dt);
+
+			is_burst_slope =
+				per_win >= (s64)mult_frac(max, EXTREME_PREDICTIVE_SLOPE_PCT, 100) &&
+				rise >= (s64)mult_frac(max, EXTREME_SLOPE_MIN_ABS_PCT, 100);
+
+			sg_policy->prev_raw_util = raw_util;
+			sg_policy->prev_slope_time = time;
+		}
+		/* dt < MIN_DT: keep baseline, let the rise accumulate */
+	}
+
+	if (boot_settled && is_burst_slope)
+		sg_policy->turbo_until = time + EXTREME_TURBO_HOLD_NS;
+	in_turbo_hold = boot_settled && time < sg_policy->turbo_until &&
+			raw_util >= mult_frac(max, EXTREME_TURBO_HOLD_MIN_PCT, 100);
 
 	/* Cluster-wide Render & Multitask Evaluation */
 	for_each_cpu(c, policy->cpus) {
@@ -451,7 +494,7 @@ static unsigned int extreme_plus_autonomous_engine(struct extreme_plus_cpu *sg_c
 	/* ── Cluster 2: Prime Core 7 (Kryo 585 Prime) ── */
 	if (cpu == 7) {
 		/* Gear 2 (Apex Turbo): Only post-boot on genuine frame spike (slope >= 25%) or heavy saturation (>= 90%) */
-		if (boot_settled && (is_burst_slope || is_saturated)) {
+		if (boot_settled && (is_burst_slope || is_saturated || in_turbo_hold)) {
 			target_f = cur_max;
 		} else if (is_render_active || util >= sg_policy->hispeed_util) {
 			/* Gear 1 (Cruising Gear 2.84 GHz): Lock rock-solid 120 FPS stably without overheating */
@@ -460,7 +503,7 @@ static unsigned int extreme_plus_autonomous_engine(struct extreme_plus_cpu *sg_c
 			/* Normal UI / Idle: follow calculated demand, gliding smoothly through cruising ceiling */
 			if (raw_f > EXTREME_PRIME_CRUISE_CEIL)
 				target_f = min(cur_max, (unsigned int)EXTREME_PRIME_CRUISE_CEIL);
-			else if (sg_policy->cached_raw_freq > EXTREME_PRIME_CRUISE_CEIL && raw_f < 2419200)
+			else if (sg_policy->cached_raw_freq > EXTREME_PRIME_CRUISE_CEIL && raw_f < EXTREME_PRIME_MID_FREQ)
 				target_f = min(cur_max, (unsigned int)EXTREME_PRIME_CRUISE_CEIL);
 			else
 				target_f = raw_f;
@@ -469,7 +512,7 @@ static unsigned int extreme_plus_autonomous_engine(struct extreme_plus_cpu *sg_c
 	/* ── Cluster 1: Gold Cores 4-6 (Kryo 585 Gold) ── */
 	else if (cpu >= 4 && cpu < 7) {
 		/* Gear 2 (Apex Gold Turbo 2.42 GHz): On burst slope or heavy saturation (>= 90%) */
-		if (is_burst_slope || is_saturated) {
+		if (boot_settled && (is_burst_slope || is_saturated || in_turbo_hold)) {
 			target_f = cur_max;
 		} else if (is_render_active || util >= sg_policy->hispeed_util) {
 			/* Gear 1 (120 FPS Sustained Gaming Cruise 2.25 GHz): Complete all worker threads in < 6ms */
@@ -913,7 +956,8 @@ static void extreme_plus_update_single(struct update_util_data *hook, u64 time,
 				sg_cpu->walt_load.rtgb_active, flags);
 
 	extreme_plus_walt_adjust(sg_cpu, &util, &max);
-	next_f = extreme_plus_autonomous_engine(sg_cpu, sg_policy, util, max, time);
+	next_f = extreme_plus_autonomous_engine(sg_cpu, sg_policy, util, max,
+						sg_cpu->util, time);
 	/*
 	 * Do not reduce the frequency if the CPU has not been idle
 	 * recently, as the reduction is likely to be premature then.
@@ -944,7 +988,7 @@ static unsigned int extreme_plus_next_freq_shared(struct extreme_plus_cpu *sg_cp
 	struct extreme_plus_policy *sg_policy = sg_cpu->sg_policy;
 	struct cpufreq_policy *policy = sg_policy->policy;
 	u64 last_freq_update_time = sg_policy->last_freq_update_time;
-	unsigned long util = 0, max = 1;
+	unsigned long util = 0, max = 1, raw_util = 0;
 	unsigned int j;
 
 	for_each_cpu(j, policy->cpus) {
@@ -975,6 +1019,7 @@ static unsigned int extreme_plus_next_freq_shared(struct extreme_plus_cpu *sg_cp
 		 */
 		j_util = j_sg_cpu->util;
 		j_max = j_sg_cpu->max;
+		raw_util = max(raw_util, j_util);
 		j_util = extreme_plus_iowait_apply(j_sg_cpu, time, j_util, j_max);
 		extreme_plus_walt_adjust(j_sg_cpu, &j_util, &j_max);
 
@@ -984,7 +1029,8 @@ static unsigned int extreme_plus_next_freq_shared(struct extreme_plus_cpu *sg_cp
 		}
 	}
 
-	return extreme_plus_autonomous_engine(sg_cpu, sg_policy, util, max, time);
+	return extreme_plus_autonomous_engine(sg_cpu, sg_policy, util, max,
+					      raw_util, time);
 }
 
 static void
@@ -1571,6 +1617,9 @@ static int extreme_plus_start(struct cpufreq_policy *policy)
 	sg_policy->need_freq_update		= false;
 	sg_policy->cached_raw_freq		= 0;
 	sg_policy->prev_cached_raw_freq		= 0;
+	sg_policy->prev_raw_util		= 0;
+	sg_policy->prev_slope_time		= 0;
+	sg_policy->turbo_until			= 0;
 
 	for_each_cpu(cpu, policy->cpus) {
 		struct extreme_plus_cpu *sg_cpu = &per_cpu(extreme_plus_cpu, cpu);
