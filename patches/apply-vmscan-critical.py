@@ -43,19 +43,29 @@ static inline bool task_is_critical(struct task_struct *task)
     # Insert helper before throttle_direct_reclaim
     content = content.replace(target_func, helper_code + target_func, 1)
 
-    # Reuse the stock "kernel threads should not be throttled" early-out
-    # (goto out -> return false). Inserting a new statement right after the
-    # opening brace would sit before the local declarations and break the
-    # build with -Werror,-Wdeclaration-after-statement.
+    # Hook task_is_critical() into throttle_direct_reclaim() WITHOUT adding a
+    # statement before the local declarations (-Wdeclaration-after-statement).
+    # Preferred: swap the stock kernel-thread early-out's condition. It exists as
+    #   if (current->flags & PF_KTHREAD)                                  (older)
+    #   if ((current->flags & PF_KTHREAD) || !strcmp(..., ULMK_MAGIC))    (this tree)
+    # so match on the common "(current->flags & PF_KTHREAD)" part only.
     func_idx = content.find(target_func)
     func_end = content.find("\n}\n", func_idx)
     body = content[func_idx:func_end]
-    stock_check = "if (current->flags & PF_KTHREAD)"
-    if stock_check not in body:
-        print("⚠️ [VMScan Anti-Stutter] stock PF_KTHREAD check not found in throttle_direct_reclaim")
-        return False
-    body = body.replace(stock_check, "if (task_is_critical(current))", 1)
-    content = content[:func_idx] + body + content[func_end:]
+    stock = "(current->flags & PF_KTHREAD)"
+    if stock in body:
+        body = body.replace(stock, "task_is_critical(current)", 1)
+        content = content[:func_idx] + body + content[func_end:]
+    else:
+        # Fallback: insert right after the last local declaration.
+        decl_idx = body.find("pgdat = NULL;")
+        if decl_idx == -1:
+            print("⚠️ [VMScan Anti-Stutter] no hook point found in throttle_direct_reclaim - patch NOT applied")
+            return False
+        eol = func_idx + body.find("\n", decl_idx)
+        content = (content[:eol] +
+                   "\n\n\tif (task_is_critical(current))\n\t\treturn false;" +
+                   content[eol:])
 
     with open(path, "w") as f:
         f.write(content)
