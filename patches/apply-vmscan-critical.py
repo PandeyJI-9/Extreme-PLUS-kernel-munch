@@ -43,22 +43,19 @@ static inline bool task_is_critical(struct task_struct *task)
     # Insert helper before throttle_direct_reclaim
     content = content.replace(target_func, helper_code + target_func, 1)
 
-    # Insert skip check inside throttle_direct_reclaim STRICTLY AFTER all local variable declarations
-    # to avoid C90 -Wdeclaration-after-statement compiler error!
+    # Reuse the stock "kernel threads should not be throttled" early-out
+    # (goto out -> return false). Inserting a new statement right after the
+    # opening brace would sit before the local declarations and break the
+    # build with -Werror,-Wdeclaration-after-statement.
     func_idx = content.find(target_func)
-    decl_marker = "pgdat = NULL;"
-    decl_idx = content.find(decl_marker, func_idx)
-    if decl_idx == -1:
-        # Fallback: look for zoneref declaration
-        decl_marker = "struct zoneref *z;"
-        decl_idx = content.find(decl_marker, func_idx)
-        if decl_idx == -1:
-            print("⚠️ [VMScan Anti-Stutter] Could not locate declaration markers in throttle_direct_reclaim")
-            return False
-
-    end_of_line = content.find("\n", decl_idx)
-    skip_check = "\n\n\t/* EXTREME++: Skip direct reclaim throttle for critical UI/Render tasks (Google ACK fix) */\n\tif (task_is_critical(current))\n\t\treturn false;"
-    content = content[:end_of_line] + skip_check + content[end_of_line:]
+    func_end = content.find("\n}\n", func_idx)
+    body = content[func_idx:func_end]
+    stock_check = "if (current->flags & PF_KTHREAD)"
+    if stock_check not in body:
+        print("⚠️ [VMScan Anti-Stutter] stock PF_KTHREAD check not found in throttle_direct_reclaim")
+        return False
+    body = body.replace(stock_check, "if (task_is_critical(current))", 1)
+    content = content[:func_idx] + body + content[func_end:]
 
     with open(path, "w") as f:
         f.write(content)
