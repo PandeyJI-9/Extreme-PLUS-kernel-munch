@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # ==============================================================================
 # PROJECT EXTREME++ | Maintainer: PandeyJI-9
-# Device: POCO F4 (munch) | Target: HyperOS ONLY
+# Device: POCO F4 (munch) | Targets: HyperOS 4 / HyperOS & AOSP
 # mm/vmscan: Skip Direct Reclaim Throttle for Critical Tasks (SurfaceFlinger)
 # Reference: Android Common Kernel commit 0e36eb2f & 3c20b9e9 (Google ACK Anti-Stutter Fix)
 # ==============================================================================
@@ -60,7 +60,7 @@ static inline bool task_is_critical(struct task_struct *task)
     with open(path, "w") as f:
         f.write(content)
 
-    print("✅ [VMScan Anti-Stutter] Successfully patched mm/vmscan.c: Critical processes (SurfaceFlinger) bypass reclaim throttle!")
+    print("✅ [VMScan Anti-Stutter] Successfully patched mm/vmscan.c (C90 declaration-safe): Critical processes bypass reclaim throttle!")
     return True
 
 if __name__ == "__main__":
