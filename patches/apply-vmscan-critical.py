@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # ==============================================================================
 # PROJECT EXTREME++ | Maintainer: PandeyJI-9
-# Device: POCO F4 (munch) | Target: HyperOS ONLY
+# Device: POCO F4 (munch) | Targets: HyperOS 4 / HyperOS & AOSP
 # mm/vmscan: Skip Direct Reclaim Throttle for Critical Tasks (SurfaceFlinger)
 # Reference: Android Common Kernel commit 0e36eb2f & 3c20b9e9 (Google ACK Anti-Stutter Fix)
 # ==============================================================================
@@ -43,20 +43,27 @@ static inline bool task_is_critical(struct task_struct *task)
     # Insert helper before throttle_direct_reclaim
     content = content.replace(target_func, helper_code + target_func, 1)
 
-    # Insert skip check inside throttle_direct_reclaim right after opening brace
+    # Insert skip check inside throttle_direct_reclaim STRICTLY AFTER all local variable declarations
+    # to avoid C90 -Wdeclaration-after-statement compiler error!
     func_idx = content.find(target_func)
-    brace_idx = content.find("{", func_idx)
-    if brace_idx == -1:
-        print("⚠️ [VMScan Anti-Stutter] Could not locate opening brace for throttle_direct_reclaim")
-        return False
+    decl_marker = "pgdat = NULL;"
+    decl_idx = content.find(decl_marker, func_idx)
+    if decl_idx == -1:
+        # Fallback: look for zoneref declaration
+        decl_marker = "struct zoneref *z;"
+        decl_idx = content.find(decl_marker, func_idx)
+        if decl_idx == -1:
+            print("⚠️ [VMScan Anti-Stutter] Could not locate declaration markers in throttle_direct_reclaim")
+            return False
 
-    skip_check = "\n\tif (task_is_critical(current))\n\t\treturn false;\n"
-    content = content[:brace_idx + 1] + skip_check + content[brace_idx + 1:]
+    end_of_line = content.find("\n", decl_idx)
+    skip_check = "\n\n\t/* EXTREME++: Skip direct reclaim throttle for critical UI/Render tasks (Google ACK fix) */\n\tif (task_is_critical(current))\n\t\treturn false;"
+    content = content[:end_of_line] + skip_check + content[end_of_line:]
 
     with open(path, "w") as f:
         f.write(content)
 
-    print("✅ [VMScan Anti-Stutter] Successfully patched mm/vmscan.c: Critical processes (SurfaceFlinger) bypass reclaim throttle!")
+    print("✅ [VMScan Anti-Stutter] Successfully patched mm/vmscan.c (C90 declaration-safe): Critical processes bypass reclaim throttle!")
     return True
 
 if __name__ == "__main__":
