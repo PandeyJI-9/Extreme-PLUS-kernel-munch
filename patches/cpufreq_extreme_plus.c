@@ -399,14 +399,14 @@ static inline unsigned int extreme_gold_cruise(void)
 
 	return cruise;
 }
-#define EXTREME_PREDICTIVE_SLOPE_PCT 25
+#define EXTREME_PREDICTIVE_SLOPE_PCT 40
 #define EXTREME_TURBO_SATURATION_PCT 90
 
 /* Slope sensing: util rise is normalized to one frame window (~8.33ms @120Hz) */
 #define EXTREME_SLOPE_WINDOW_NS      (8 * NSEC_PER_MSEC)
 #define EXTREME_SLOPE_MIN_DT_NS      (250 * NSEC_PER_USEC) /* ignore faster samples */
 #define EXTREME_SLOPE_MAX_DT_NS      (20 * NSEC_PER_MSEC)  /* older baseline is stale */
-#define EXTREME_SLOPE_MIN_ABS_PCT    6   /* min absolute rise (% of max) to count */
+#define EXTREME_SLOPE_MIN_ABS_PCT    16  /* min absolute rise (% of max) to count as real fling */
 /* Gear 2 hold: stay in Apex Turbo ~2 frame periods, unless load collapses */
 #define EXTREME_TURBO_HOLD_NS        (16 * NSEC_PER_MSEC)
 #define EXTREME_TURBO_HOLD_MIN_PCT   30
@@ -582,38 +582,30 @@ static unsigned int extreme_plus_autonomous_engine(struct extreme_plus_cpu *sg_c
 	if (cpu == 7) {
 		unsigned int prime_cruise = extreme_prime_cruise();
 
-		/* Gear 2 (Apex Turbo): Only post-boot on genuine frame spike (slope >= 25%) or heavy saturation (>= 90%) */
-		if (boot_settled && (is_burst_slope || is_saturated || in_turbo_hold)) {
+		/* Gear 2 (Apex Turbo 3.19 GHz): On genuine heavy saturation (>= 90%) or steep burst hold */
+		if (boot_settled && (is_saturated || in_turbo_hold)) {
 			target_f = cur_max;
 		} else if (is_render_active || util >= sg_policy->hispeed_util) {
-			/* Gear 1 (Cruising Gear): Lock target FPS stably without overheating */
-			target_f = min(cur_max, prime_cruise);
+			/* Gear 1 (Cruising Gear): Maintain sustained baseline without artificially clipping higher steps */
+			target_f = min(cur_max, max(raw_f, prime_cruise));
 		} else {
-			/* Normal UI / Idle: follow calculated demand, gliding smoothly through cruising ceiling */
-			if (raw_f > prime_cruise)
-				target_f = min(cur_max, prime_cruise);
-			else if (sg_policy->cached_raw_freq > prime_cruise && raw_f < EXTREME_PRIME_MID_FREQ)
-				target_f = min(cur_max, prime_cruise);
-			else
-				target_f = raw_f;
+			/* Normal UI / Demand: scale smoothly through all OPP steps without skipping */
+			target_f = raw_f;
 		}
 	}
 	/* ── Cluster 1: Gold Cores 4-6 (Kryo 585 Gold) ── */
 	else if (cpu >= 4 && cpu < 7) {
 		unsigned int gold_cruise = extreme_gold_cruise();
 
-		/* Gear 2 (Apex Gold Turbo 2.42 GHz): On burst slope or heavy saturation (>= 90%) */
-		if (boot_settled && (is_burst_slope || is_saturated || in_turbo_hold)) {
+		/* Gear 2 (Apex Gold Turbo 2.42 GHz): On heavy saturation (>= 90%) or steep burst hold */
+		if (boot_settled && (is_saturated || in_turbo_hold)) {
 			target_f = cur_max;
 		} else if (is_render_active || util >= sg_policy->hispeed_util) {
-			/* Gear 1 (Sustained Gaming Cruise): Complete all worker threads in < 6ms */
-			target_f = min(cur_max, gold_cruise);
+			/* Gear 1 (Sustained Gaming Cruise): Maintain cruising floor while allowing higher scaling */
+			target_f = min(cur_max, max(raw_f, gold_cruise));
 		} else {
 			/* Normal UI / Idle: follow calculated demand cleanly down to hardware floor (710 MHz) */
-			if (raw_f > gold_cruise)
-				target_f = min(cur_max, gold_cruise);
-			else
-				target_f = raw_f;
+			target_f = raw_f;
 		}
 	}
 	/* ── Cluster 0: Silver Cores 0-3 (Kryo 585 Silver) ── */
