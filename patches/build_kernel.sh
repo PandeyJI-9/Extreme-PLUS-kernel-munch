@@ -571,7 +571,7 @@ for p in /sys/devices/system/cpu/cpufreq/policy*; do
     for gov in extreme+ schedutil; do
         if [ -d "$p/$gov" ]; then
             echo 0 > "$p/$gov/up_rate_limit_us" 2>/dev/null || true
-            echo 20000 > "$p/$gov/down_rate_limit_us" 2>/dev/null || true
+            echo 5000 > "$p/$gov/down_rate_limit_us" 2>/dev/null || true
             echo 65 > "$p/$gov/hispeed_load" 2>/dev/null || true
             echo 1 > "$p/$gov/pl" 2>/dev/null || true
         fi
@@ -723,7 +723,7 @@ for p in /sys/devices/system/cpu/cpufreq/policy*; do
     for gov in extreme+ schedutil; do
         if [ -d "$p/$gov" ]; then
             echo 0 > "$p/$gov/up_rate_limit_us" 2>/dev/null || true
-            echo 20000 > "$p/$gov/down_rate_limit_us" 2>/dev/null || true
+            echo 5000 > "$p/$gov/down_rate_limit_us" 2>/dev/null || true
             echo 65 > "$p/$gov/hispeed_load" 2>/dev/null || true
             echo 1 > "$p/$gov/pl" 2>/dev/null || true
         fi

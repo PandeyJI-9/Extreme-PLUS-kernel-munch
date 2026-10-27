@@ -331,8 +331,74 @@ static void extreme_plus_deferred_update(struct extreme_plus_policy *sg_policy, 
 #define EXTREME_GOLD_ACTIVE_FLOOR    1804800
 #define EXTREME_PRIME_ACTIVE_FLOOR   1516800
 
-#define EXTREME_GOLD_CRUISE_CEIL     2246400
-#define EXTREME_PRIME_CRUISE_CEIL    2841600
+#define EXTREME_DEFAULT_TARGET_FPS   90
+#define EXTREME_FPS_MIN              30
+#define EXTREME_FPS_MAX              240
+
+/*
+ * PROJECT EXTREME++ Profile Architecture:
+ * Profile 0 (Gaming / Default): Prime up to 3.19 GHz (3187200 kHz), Gold up to 2.42 GHz
+ * Profile 1 (Balanced):         Prime clamped to 2.84 GHz (2841600 kHz), Gold to 2.25 GHz
+ * Profile 2 (Battery):          Prime clamped to 2.42 GHz (2419200 kHz), Gold to 1.96 GHz
+ */
+#define EXTREME_PROFILE_GAMING       0
+#define EXTREME_PROFILE_BALANCED     1
+#define EXTREME_PROFILE_BATTERY      2
+
+#define EXTREME_PRIME_STOCK_MAX      3187200U
+#define EXTREME_PRIME_BALANCED_MAX   2841600U
+#define EXTREME_PRIME_BATTERY_MAX    2419200U
+
+#define EXTREME_GOLD_STOCK_MAX       2419200U
+#define EXTREME_GOLD_BALANCED_MAX    2246400U
+#define EXTREME_GOLD_BATTERY_MAX     1958400U
+
+static int extreme_target_fps = EXTREME_DEFAULT_TARGET_FPS;
+static int extreme_profile_mode = EXTREME_PROFILE_GAMING;
+static DEFINE_MUTEX(extreme_profile_lock);
+static void extreme_profile_apply(int mode);
+
+static inline unsigned int extreme_prime_cruise(void)
+{
+	int fps = READ_ONCE(extreme_target_fps);
+	int profile = READ_ONCE(extreme_profile_mode);
+	unsigned int cruise;
+
+	if (fps < EXTREME_FPS_MIN)
+		fps = EXTREME_DEFAULT_TARGET_FPS;
+	if (fps <= 60)
+		cruise = 1804800;   /* 60 FPS  - 1.80 GHz efficiency */
+	else if (fps <= 90)
+		cruise = 2419200;   /* 90 FPS  - 2.42 GHz balanced */
+	else
+		cruise = 2841600;   /* 120+ FPS - 2.84 GHz performance */
+
+	if (profile == EXTREME_PROFILE_BATTERY)
+		cruise = min(cruise, (unsigned int)EXTREME_PRIME_BATTERY_MAX);
+
+	return cruise;
+}
+
+static inline unsigned int extreme_gold_cruise(void)
+{
+	int fps = READ_ONCE(extreme_target_fps);
+	int profile = READ_ONCE(extreme_profile_mode);
+	unsigned int cruise;
+
+	if (fps < EXTREME_FPS_MIN)
+		fps = EXTREME_DEFAULT_TARGET_FPS;
+	if (fps <= 60)
+		cruise = 1804800;   /* 60 FPS  - matches active floor */
+	else if (fps <= 90)
+		cruise = 2054400;   /* 90 FPS  - 2.05 GHz native Kona step */
+	else
+		cruise = 2246400;   /* 120+ FPS - 2.25 GHz sustained */
+
+	if (profile == EXTREME_PROFILE_BATTERY)
+		cruise = min(cruise, (unsigned int)EXTREME_GOLD_BATTERY_MAX);
+
+	return cruise;
+}
 #define EXTREME_PREDICTIVE_SLOPE_PCT 25
 #define EXTREME_TURBO_SATURATION_PCT 90
 
@@ -433,6 +499,7 @@ static unsigned int extreme_plus_autonomous_engine(struct extreme_plus_cpu *sg_c
 	unsigned int cpu = sg_cpu->cpu;
 	unsigned int cur_max = READ_ONCE(policy->max);
 	unsigned int cur_min = READ_ONCE(policy->min);
+	int profile = READ_ONCE(extreme_profile_mode);
 	unsigned int raw_f = get_next_freq(sg_policy, util, max);
 	bool is_burst_slope = false;
 	bool in_turbo_hold;
@@ -441,6 +508,23 @@ static unsigned int extreme_plus_autonomous_engine(struct extreme_plus_cpu *sg_c
 	bool boot_settled = (time >= 60ULL * NSEC_PER_SEC);
 	unsigned int target_f;
 	unsigned int c;
+
+	/*
+	 * In-Kernel Dynamic Profile Clamping:
+	 * Guarantee that user profile selection cannot be bypassed by thermal
+	 * resets, userspace daemons (mi_thermald/perfd), or burst logic.
+	 */
+	if (cpu == 7) {
+		if (profile == EXTREME_PROFILE_BALANCED)
+			cur_max = min(cur_max, (unsigned int)EXTREME_PRIME_BALANCED_MAX);
+		else if (profile == EXTREME_PROFILE_BATTERY)
+			cur_max = min(cur_max, (unsigned int)EXTREME_PRIME_BATTERY_MAX);
+	} else if (cpu >= 4 && cpu < 7) {
+		if (profile == EXTREME_PROFILE_BALANCED)
+			cur_max = min(cur_max, (unsigned int)EXTREME_GOLD_BALANCED_MAX);
+		else if (profile == EXTREME_PROFILE_BATTERY)
+			cur_max = min(cur_max, (unsigned int)EXTREME_GOLD_BATTERY_MAX);
+	}
 
 	/*
 	 * Predictive slope, measured on RAW util (before WALT boost/hispeed
@@ -452,7 +536,16 @@ static unsigned int extreme_plus_autonomous_engine(struct extreme_plus_cpu *sg_c
 		u64 dt = time - sg_policy->prev_slope_time;
 
 		if (!sg_policy->prev_slope_time || dt > EXTREME_SLOPE_MAX_DT_NS) {
-			/* No usable baseline (first sample / long gap): re-arm */
+			/*
+			 * Frame 0 Touch Burst / Post-Idle Wakeup:
+			 * If dt > EXTREME_SLOPE_MAX_DT_NS (>20ms), the core was idling.
+			 * An incoming util jump directly to >= 25% indicates an instant
+			 * user touch fling or render launch. Firing immediately restores
+			 * the zero-latency Frame 0 response of the Oct 17 build.
+			 */
+			if (raw_util >= mult_frac(max, EXTREME_PREDICTIVE_SLOPE_PCT, 100))
+				is_burst_slope = true;
+
 			sg_policy->prev_raw_util = raw_util;
 			sg_policy->prev_slope_time = time;
 		} else if (dt >= EXTREME_SLOPE_MIN_DT_NS) {
@@ -493,34 +586,38 @@ static unsigned int extreme_plus_autonomous_engine(struct extreme_plus_cpu *sg_c
 
 	/* ── Cluster 2: Prime Core 7 (Kryo 585 Prime) ── */
 	if (cpu == 7) {
+		unsigned int prime_cruise = extreme_prime_cruise();
+
 		/* Gear 2 (Apex Turbo): Only post-boot on genuine frame spike (slope >= 25%) or heavy saturation (>= 90%) */
 		if (boot_settled && (is_burst_slope || is_saturated || in_turbo_hold)) {
 			target_f = cur_max;
 		} else if (is_render_active || util >= sg_policy->hispeed_util) {
-			/* Gear 1 (Cruising Gear 2.84 GHz): Lock rock-solid 120 FPS stably without overheating */
-			target_f = min(cur_max, (unsigned int)EXTREME_PRIME_CRUISE_CEIL);
+			/* Gear 1 (Cruising Gear): Lock target FPS stably without overheating */
+			target_f = min(cur_max, prime_cruise);
 		} else {
 			/* Normal UI / Idle: follow calculated demand, gliding smoothly through cruising ceiling */
-			if (raw_f > EXTREME_PRIME_CRUISE_CEIL)
-				target_f = min(cur_max, (unsigned int)EXTREME_PRIME_CRUISE_CEIL);
-			else if (sg_policy->cached_raw_freq > EXTREME_PRIME_CRUISE_CEIL && raw_f < EXTREME_PRIME_MID_FREQ)
-				target_f = min(cur_max, (unsigned int)EXTREME_PRIME_CRUISE_CEIL);
+			if (raw_f > prime_cruise)
+				target_f = min(cur_max, prime_cruise);
+			else if (sg_policy->cached_raw_freq > prime_cruise && raw_f < EXTREME_PRIME_MID_FREQ)
+				target_f = min(cur_max, prime_cruise);
 			else
 				target_f = raw_f;
 		}
 	}
 	/* ── Cluster 1: Gold Cores 4-6 (Kryo 585 Gold) ── */
 	else if (cpu >= 4 && cpu < 7) {
+		unsigned int gold_cruise = extreme_gold_cruise();
+
 		/* Gear 2 (Apex Gold Turbo 2.42 GHz): On burst slope or heavy saturation (>= 90%) */
 		if (boot_settled && (is_burst_slope || is_saturated || in_turbo_hold)) {
 			target_f = cur_max;
 		} else if (is_render_active || util >= sg_policy->hispeed_util) {
-			/* Gear 1 (120 FPS Sustained Gaming Cruise 2.25 GHz): Complete all worker threads in < 6ms */
-			target_f = min(cur_max, (unsigned int)EXTREME_GOLD_CRUISE_CEIL);
+			/* Gear 1 (Sustained Gaming Cruise): Complete all worker threads in < 6ms */
+			target_f = min(cur_max, gold_cruise);
 		} else {
 			/* Normal UI / Idle: follow calculated demand cleanly */
-			if (raw_f > EXTREME_GOLD_CRUISE_CEIL)
-				target_f = min(cur_max, (unsigned int)EXTREME_GOLD_CRUISE_CEIL);
+			if (raw_f > gold_cruise)
+				target_f = min(cur_max, gold_cruise);
 			else
 				target_f = raw_f;
 		}
@@ -1519,7 +1616,7 @@ static int extreme_plus_init(struct cpufreq_policy *policy)
 	}
 
 	tunables->up_rate_limit_us = 0;
-	tunables->down_rate_limit_us = 20000;
+	tunables->down_rate_limit_us = 5000;
 	tunables->hispeed_load = 65;
 
 	switch (policy->cpu) {
@@ -1557,6 +1654,8 @@ static int extreme_plus_init(struct cpufreq_policy *policy)
 
 out:
 	mutex_unlock(&global_tunables_lock);
+	if (extreme_profile_mode != EXTREME_PROFILE_GAMING)
+		extreme_profile_apply(extreme_profile_mode);
 	return 0;
 
 fail:
@@ -1664,6 +1763,20 @@ static void extreme_plus_limits(struct cpufreq_policy *policy)
 	struct extreme_plus_policy *sg_policy = policy->governor_data;
 	unsigned long flags, now;
 	unsigned int freq;
+	int profile = READ_ONCE(extreme_profile_mode);
+
+	/* Enforce active profile ceiling so userspace daemon resets cannot leak 3.19GHz */
+	if (policy->cpu == 7) {
+		if (profile == EXTREME_PROFILE_BALANCED && policy->max > EXTREME_PRIME_BALANCED_MAX)
+			policy->max = EXTREME_PRIME_BALANCED_MAX;
+		else if (profile == EXTREME_PROFILE_BATTERY && policy->max > EXTREME_PRIME_BATTERY_MAX)
+			policy->max = EXTREME_PRIME_BATTERY_MAX;
+	} else if (policy->cpu == 4) {
+		if (profile == EXTREME_PROFILE_BALANCED && policy->max > EXTREME_GOLD_BALANCED_MAX)
+			policy->max = EXTREME_GOLD_BALANCED_MAX;
+		else if (profile == EXTREME_PROFILE_BATTERY && policy->max > EXTREME_GOLD_BATTERY_MAX)
+			policy->max = EXTREME_GOLD_BATTERY_MAX;
+	}
 
 	if (!policy->fast_switch_enabled) {
 		mutex_lock(&sg_policy->work_lock);
@@ -1728,9 +1841,6 @@ struct cpufreq_governor *cpufreq_default_governor(void)
  * Profile 2 (Battery):          Prime clamped to 2.42 GHz (2419200 kHz), Gold to 1.96 GHz
  * ═══════════════════════════════════════════════════════════════════════════════
  */
-static int extreme_profile_mode = 0; /* Default 0: Gaming Monster */
-static DEFINE_MUTEX(extreme_profile_lock);
-
 static void extreme_profile_apply(int mode)
 {
 	struct cpufreq_policy *policy_prime;
@@ -1739,18 +1849,18 @@ static void extreme_profile_apply(int mode)
 	unsigned int gold_max_freq;
 
 	switch (mode) {
-	case 1: /* Balanced: 2.84 GHz Prime, 2.25 GHz Gold */
-		prime_max_freq = 2841600;
-		gold_max_freq = 2246400;
+	case EXTREME_PROFILE_BALANCED:
+		prime_max_freq = EXTREME_PRIME_BALANCED_MAX;
+		gold_max_freq = EXTREME_GOLD_BALANCED_MAX;
 		break;
-	case 2: /* Battery: 2.42 GHz Prime, 1.96 GHz Gold */
-		prime_max_freq = 2419200;
-		gold_max_freq = 1958400;
+	case EXTREME_PROFILE_BATTERY:
+		prime_max_freq = EXTREME_PRIME_BATTERY_MAX;
+		gold_max_freq = EXTREME_GOLD_BATTERY_MAX;
 		break;
-	case 0: /* Gaming: 3.19 GHz Prime, 2.42 GHz Gold (Stock Max Unlocked) */
+	case EXTREME_PROFILE_GAMING:
 	default:
-		prime_max_freq = 3187200;
-		gold_max_freq = 2419200;
+		prime_max_freq = EXTREME_PRIME_STOCK_MAX;
+		gold_max_freq = EXTREME_GOLD_STOCK_MAX;
 		break;
 	}
 
@@ -1817,6 +1927,34 @@ static ssize_t extreme_profile_store(struct kobject *kobj,
 static struct kobj_attribute extreme_profile_kattr =
 	__ATTR(extreme_profile, 0664, extreme_profile_show, extreme_profile_store);
 
+static ssize_t extreme_target_fps_show(struct kobject *kobj,
+				       struct kobj_attribute *attr, char *buf)
+{
+	return scnprintf(buf, PAGE_SIZE, "%d\n", READ_ONCE(extreme_target_fps));
+}
+
+static ssize_t extreme_target_fps_store(struct kobject *kobj,
+					struct kobj_attribute *attr,
+					const char *buf, size_t count)
+{
+	int val;
+
+	if (kstrtoint(buf, 10, &val) < 0)
+		return -EINVAL;
+
+	if (val < EXTREME_FPS_MIN || val > EXTREME_FPS_MAX)
+		return -EINVAL;
+
+	WRITE_ONCE(extreme_target_fps, val);
+	pr_info("extreme+: target FPS -> %d (Prime cruise %u, Gold cruise %u)\n",
+		val, extreme_prime_cruise(), extreme_gold_cruise());
+
+	return count;
+}
+
+static struct kobj_attribute extreme_target_fps_kattr =
+	__ATTR(extreme_target_fps, 0664, extreme_target_fps_show, extreme_target_fps_store);
+
 static int __init extreme_plus_register(void)
 {
 	int ret;
@@ -1830,6 +1968,13 @@ static int __init extreme_plus_register(void)
 		pr_warn("EXTREME++: Failed to create /sys/kernel/extreme_profile node\n");
 	else
 		pr_info("EXTREME++ BMW Edition: /sys/kernel/extreme_profile registered successfully!\n");
+
+	ret = sysfs_create_file(kernel_kobj, &extreme_target_fps_kattr.attr);
+	if (ret)
+		pr_warn("extreme+: Failed to create /sys/kernel/extreme_target_fps node\n");
+	else
+		pr_info("extreme+: /sys/kernel/extreme_target_fps registered (default %d)\n",
+			extreme_target_fps);
 
 	return 0;
 }
