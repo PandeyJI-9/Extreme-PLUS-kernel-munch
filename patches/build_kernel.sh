@@ -648,6 +648,17 @@ chown root:system /sys/devices/system/cpu/cpufreq/policy*/scaling_max_freq 2>/de
 chmod 664 /sys/devices/system/cpu/cpufreq/policy*/scaling_max_freq 2>/dev/null || true
 chown root:system /sys/kernel/extreme_profile 2>/dev/null || true
 chmod 664 /sys/kernel/extreme_profile 2>/dev/null || true
+chown root:system /sys/kernel/extreme_target_fps 2>/dev/null || true
+chmod 664 /sys/kernel/extreme_target_fps 2>/dev/null || true
+
+# Bypass Charging Permissions & Compatibility Symlink
+chmod 666 /sys/class/power_supply/battery/input_suspend 2>/dev/null || true
+chmod 666 /sys/class/power_supply/battery/battery_input_suspend 2>/dev/null || true
+chmod 666 /sys/class/power_supply/battery/charging_enabled 2>/dev/null || true
+chown root:system /sys/class/power_supply/battery/input_suspend 2>/dev/null || true
+if [ -d /sys/class/qcom-battery ] && [ ! -e /sys/class/qcom-battery/bypass_charging_enable ]; then
+    ln -sf /sys/class/power_supply/battery/input_suspend /sys/class/qcom-battery/bypass_charging_enable 2>/dev/null || true
+fi
 
 for f in /sys/class/qcom-battery/quick_charge_type /sys/class/power_supply/battery/fastcharge_mode; do
     [ -f "$f" ] && echo 1 > "$f" 2>/dev/null || true
@@ -796,6 +807,17 @@ chown root:system /sys/devices/system/cpu/cpufreq/policy*/scaling_max_freq 2>/de
 chmod 664 /sys/devices/system/cpu/cpufreq/policy*/scaling_max_freq 2>/dev/null || true
 chown root:system /sys/kernel/extreme_profile 2>/dev/null || true
 chmod 664 /sys/kernel/extreme_profile 2>/dev/null || true
+chown root:system /sys/kernel/extreme_target_fps 2>/dev/null || true
+chmod 664 /sys/kernel/extreme_target_fps 2>/dev/null || true
+
+# Bypass Charging Permissions & Compatibility Symlink
+chmod 666 /sys/class/power_supply/battery/input_suspend 2>/dev/null || true
+chmod 666 /sys/class/power_supply/battery/battery_input_suspend 2>/dev/null || true
+chmod 666 /sys/class/power_supply/battery/charging_enabled 2>/dev/null || true
+chown root:system /sys/class/power_supply/battery/input_suspend 2>/dev/null || true
+if [ -d /sys/class/qcom-battery ] && [ ! -e /sys/class/qcom-battery/bypass_charging_enable ]; then
+    ln -sf /sys/class/power_supply/battery/input_suspend /sys/class/qcom-battery/bypass_charging_enable 2>/dev/null || true
+fi
 
 echo "PROJECT EXTREME++: AOSP Beast service active!" > /dev/kmsg 2>/dev/null || true
 ) &
