@@ -412,54 +412,46 @@ static inline unsigned int extreme_gold_cruise(void)
 #define EXTREME_TURBO_HOLD_MIN_PCT   30
 #define EXTREME_PRIME_MID_FREQ       2419200
 
-static bool extreme_plus_cluster_has_heavy_tasks(struct cpufreq_policy *policy)
-{
-	unsigned int c;
-
-	if (!policy)
-		return false;
-
-	for_each_cpu(c, policy->cpus) {
-		struct rq *rq = cpu_rq(c);
-		struct extreme_plus_cpu *c_cpu = &per_cpu(extreme_plus_cpu, c);
-		if (rq && rq->nr_running > 1)
-			return true;
-#ifdef CONFIG_SCHED_WALT
-		if (!use_pelt() && c_cpu->walt_load.rtgb_active)
-			return true;
-#endif
-	}
-	return false;
-}
-
-static unsigned int extreme_plus_apply_active_floor(struct cpufreq_policy *policy, unsigned int freq)
+static unsigned int extreme_plus_apply_active_floor(struct cpufreq_policy *policy,
+						   unsigned int freq,
+						   unsigned long util,
+						   unsigned long max)
 {
 	unsigned int cpu = policy->cpu;
-	bool has_heavy = extreme_plus_cluster_has_heavy_tasks(policy);
+	bool is_busy = (util >= mult_frac(max, 35, 100));
+
+#ifdef CONFIG_SCHED_WALT
+	if (!use_pelt()) {
+		unsigned int c;
+		for_each_cpu(c, policy->cpus) {
+			struct extreme_plus_cpu *c_cpu = &per_cpu(extreme_plus_cpu, c);
+			if (c_cpu->walt_load.rtgb_active) {
+				is_busy = true;
+				break;
+			}
+		}
+	}
+#endif
 
 	/*
 	 * Anti-Flicker & Active Task Floor:
-	 * 1. Idle Floor (576 MHz): Little cores (0-3) must never collapse to 300 MHz
-	 *    between video frames. On Samsung E4 AMOLED panels (POCO F4), dropping to
-	 *    300 MHz causes DSI command FIFO and VSYNC interrupt handling delays during
-	 *    YouTube dynamic refresh rate mode changes (120Hz <-> 60Hz), triggering
-	 *    visible screen brightness flickering. 576 MHz draws virtually identical
-	 *    idle power (~600mV rail) but eliminates mode-switch latency completely.
-	 * 2. Active Task Floor: When heavy runnable tasks (>1) are queued on sibling cores
-	 *    or render thread boost is active, maintain responsive floors to eliminate
-	 *    UI scroll stutter and 3D render loop frame drops. Under single-thread or idle,
-	 *    allow cores to gracefully scale down to policy min to conserve battery.
+	 * 1. Little cores (0-3): Maintain 576 MHz idle floor to eliminate Samsung E4
+	 *    AMOLED panel refresh rate mode-switch flickering. When busy, floor at 1056 MHz.
+	 * 2. Gold cores (4-6) & Prime (7): When actively executing load (util >= 35% or WALT RTGB),
+	 *    maintain responsive gaming floors (Gold: 1.80 GHz, Prime: 1.51 GHz).
+	 *    When IDLE or light load (< 35% util), allow full scale-down to hardware minimum
+	 *    (Gold: 710 MHz, Prime: 844 MHz) so FKM / screen-on idle draws lowest power!
 	 */
 	if (cpu < 4) {
 		if (freq < EXTREME_LITTLE_IDLE_FLOOR)
 			freq = EXTREME_LITTLE_IDLE_FLOOR;
-		if (has_heavy && freq < EXTREME_LITTLE_ACTIVE_FLOOR)
+		if (is_busy && freq < EXTREME_LITTLE_ACTIVE_FLOOR)
 			freq = EXTREME_LITTLE_ACTIVE_FLOOR;
 	} else if (cpu < 7) {
-		if (has_heavy && freq < EXTREME_GOLD_ACTIVE_FLOOR)
+		if (is_busy && freq < EXTREME_GOLD_ACTIVE_FLOOR)
 			freq = EXTREME_GOLD_ACTIVE_FLOOR;
 	} else {
-		if (has_heavy && freq < EXTREME_PRIME_ACTIVE_FLOOR)
+		if (is_busy && freq < EXTREME_PRIME_ACTIVE_FLOOR)
 			freq = EXTREME_PRIME_ACTIVE_FLOOR;
 	}
 	return freq;
@@ -571,17 +563,19 @@ static unsigned int extreme_plus_autonomous_engine(struct extreme_plus_cpu *sg_c
 	/* Cluster-wide Render & Multitask Evaluation */
 	for_each_cpu(c, policy->cpus) {
 		struct extreme_plus_cpu *c_cpu = &per_cpu(extreme_plus_cpu, c);
-		struct rq *c_rq = cpu_rq(c);
-		if (c_rq && c_rq->nr_running > 1) {
-			is_render_active = true;
-			break;
-		}
 #ifdef CONFIG_SCHED_WALT
 		if (!use_pelt() && c_cpu->walt_load.rtgb_active) {
 			is_render_active = true;
 			break;
 		}
 #endif
+		if (util >= sg_policy->hispeed_util) {
+			struct rq *c_rq = cpu_rq(c);
+			if (c_rq && c_rq->nr_running > 1) {
+				is_render_active = true;
+				break;
+			}
+		}
 	}
 
 	/* ── Cluster 2: Prime Core 7 (Kryo 585 Prime) ── */
@@ -615,7 +609,7 @@ static unsigned int extreme_plus_autonomous_engine(struct extreme_plus_cpu *sg_c
 			/* Gear 1 (Sustained Gaming Cruise): Complete all worker threads in < 6ms */
 			target_f = min(cur_max, gold_cruise);
 		} else {
-			/* Normal UI / Idle: follow calculated demand cleanly */
+			/* Normal UI / Idle: follow calculated demand cleanly down to hardware floor (710 MHz) */
 			if (raw_f > gold_cruise)
 				target_f = min(cur_max, gold_cruise);
 			else
@@ -628,7 +622,7 @@ static unsigned int extreme_plus_autonomous_engine(struct extreme_plus_cpu *sg_c
 	}
 
 	/* Apply Anti-Flicker & Active Task Floors */
-	target_f = extreme_plus_apply_active_floor(policy, target_f);
+	target_f = extreme_plus_apply_active_floor(policy, target_f, util, max);
 	target_f = clamp_val(target_f, cur_min, cur_max);
 	trace_sugov_next_freq(policy->cpu, util, max, target_f);
 
@@ -1654,8 +1648,6 @@ static int extreme_plus_init(struct cpufreq_policy *policy)
 
 out:
 	mutex_unlock(&global_tunables_lock);
-	if (extreme_profile_mode != EXTREME_PROFILE_GAMING)
-		extreme_profile_apply(extreme_profile_mode);
 	return 0;
 
 fail:
@@ -1843,8 +1835,7 @@ struct cpufreq_governor *cpufreq_default_governor(void)
  */
 static void extreme_profile_apply(int mode)
 {
-	struct cpufreq_policy *policy_prime;
-	struct cpufreq_policy *policy_gold;
+	struct cpufreq_policy *policy;
 	unsigned int prime_max_freq;
 	unsigned int gold_max_freq;
 
@@ -1865,33 +1856,41 @@ static void extreme_profile_apply(int mode)
 	}
 
 	/* Update Prime Core (CPU 7 / Policy 7) */
-	policy_prime = cpufreq_cpu_get(7);
-	if (policy_prime) {
-		if (prime_max_freq > policy_prime->cpuinfo.max_freq)
-			prime_max_freq = policy_prime->cpuinfo.max_freq;
-		if (prime_max_freq < policy_prime->min)
-			prime_max_freq = policy_prime->min;
-		down_write(&policy_prime->rwsem);
-		policy_prime->user_policy.max = prime_max_freq;
-		policy_prime->max = prime_max_freq;
-		up_write(&policy_prime->rwsem);
-		cpufreq_update_policy(7);
-		cpufreq_cpu_put(policy_prime);
+	policy = cpufreq_cpu_get(7);
+	if (policy) {
+		if (prime_max_freq > policy->cpuinfo.max_freq)
+			prime_max_freq = policy->cpuinfo.max_freq;
+		if (prime_max_freq < policy->min)
+			prime_max_freq = policy->min;
+		down_write(&policy->rwsem);
+		policy->user_policy.max = prime_max_freq;
+		policy->max = prime_max_freq;
+		if (policy->governor == &extreme_plus_gov && policy->governor_data) {
+			struct extreme_plus_policy *sg_policy = policy->governor_data;
+			sg_policy->need_freq_update = true;
+			WRITE_ONCE(sg_policy->limits_changed, true);
+		}
+		up_write(&policy->rwsem);
+		cpufreq_cpu_put(policy);
 	}
 
 	/* Update Gold Cores (CPU 4-6 / Policy 4) */
-	policy_gold = cpufreq_cpu_get(4);
-	if (policy_gold) {
-		if (gold_max_freq > policy_gold->cpuinfo.max_freq)
-			gold_max_freq = policy_gold->cpuinfo.max_freq;
-		if (gold_max_freq < policy_gold->min)
-			gold_max_freq = policy_gold->min;
-		down_write(&policy_gold->rwsem);
-		policy_gold->user_policy.max = gold_max_freq;
-		policy_gold->max = gold_max_freq;
-		up_write(&policy_gold->rwsem);
-		cpufreq_update_policy(4);
-		cpufreq_cpu_put(policy_gold);
+	policy = cpufreq_cpu_get(4);
+	if (policy) {
+		if (gold_max_freq > policy->cpuinfo.max_freq)
+			gold_max_freq = policy->cpuinfo.max_freq;
+		if (gold_max_freq < policy->min)
+			gold_max_freq = policy->min;
+		down_write(&policy->rwsem);
+		policy->user_policy.max = gold_max_freq;
+		policy->max = gold_max_freq;
+		if (policy->governor == &extreme_plus_gov && policy->governor_data) {
+			struct extreme_plus_policy *sg_policy = policy->governor_data;
+			sg_policy->need_freq_update = true;
+			WRITE_ONCE(sg_policy->limits_changed, true);
+		}
+		up_write(&policy->rwsem);
+		cpufreq_cpu_put(policy);
 	}
 
 	pr_info("EXTREME++ BMW Edition: Profile switched to %d (Prime target: %u kHz, Gold target: %u kHz)\n",

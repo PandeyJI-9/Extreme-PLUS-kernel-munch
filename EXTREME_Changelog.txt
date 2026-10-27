@@ -5,6 +5,12 @@ Device codename: munch
 Target ROM: Xiaomi HyperOS
 Kernel maintainer: @pandey_ji_8
 
+==========27/10/2026 (Build #111 - BMW Edition)==========
+* fix(governor): allow Gold cores (4-6) to drop cleanly to idle (710 MHz) by restricting active floors to busy/render states
+* fix(governor): remove recursive cpufreq_update_policy during governor init and CPU hotplug, eliminating Prime core deadlock on profile switch
+* fix(service): check existing scaling_governor before re-applying extreme+ in 00-extreme-performance.sh to prevent governor restart stalls
+* fix(power): complete hardware bypass charging via PM8150B/SMB5 charge disable bit and FCC 0mA
+
 ==========07/10/2026 (Build #82)==========
 * fix(power): use lambda in re.sub to prevent C string escape sequence mangling
 * feat(power): overhaul charging architecture, unlock universal fast charging (PD/PPS/QC), fix 67W Mi Turbo handshake & add dynamic thermal guard

@@ -566,7 +566,9 @@ echo 55 > /proc/sys/kernel/sched_group_downmigrate 2>/dev/null || true
 # EXTREME+ Governor Enforcement
 for p in /sys/devices/system/cpu/cpufreq/policy*; do
     if [ -f "$p/scaling_available_governors" ] && grep -q "extreme+" "$p/scaling_available_governors"; then
-        echo "extreme+" > "$p/scaling_governor" 2>/dev/null || true
+        if [ "$(cat $p/scaling_governor 2>/dev/null)" != "extreme+" ]; then
+            echo "extreme+" > "$p/scaling_governor" 2>/dev/null || true
+        fi
     fi
     for gov in extreme+ schedutil; do
         if [ -d "$p/$gov" ]; then
@@ -729,7 +731,9 @@ echo 55 > /proc/sys/kernel/sched_group_downmigrate 2>/dev/null || true
 # EXTREME+ Governor Enforcement
 for p in /sys/devices/system/cpu/cpufreq/policy*; do
     if [ -f "$p/scaling_available_governors" ] && grep -q "extreme+" "$p/scaling_available_governors"; then
-        echo "extreme+" > "$p/scaling_governor" 2>/dev/null || true
+        if [ "$(cat $p/scaling_governor 2>/dev/null)" != "extreme+" ]; then
+            echo "extreme+" > "$p/scaling_governor" 2>/dev/null || true
+        fi
     fi
     for gov in extreme+ schedutil; do
         if [ -d "$p/$gov" ]; then
