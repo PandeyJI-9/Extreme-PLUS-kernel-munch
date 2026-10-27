@@ -120,7 +120,7 @@ def patch_smb5_lib():
 
         # Patch smblib_get_prop_input_suspend
         get_pattern = r'int\s+smblib_get_prop_input_suspend\s*\(\s*struct\s+smb_charger\s*\*chg\s*,\s*union\s+power_supply_propval\s*\*val\s*\)\s*\{[\s\S]*?return\s+0;\s*\}'
-        get_repl = """int smblib_get_prop_input_suspend(struct smb_charger *chg,
+        get_repl = r"""int smblib_get_prop_input_suspend(struct smb_charger *chg,
 				  union power_supply_propval *val)
 {
 	if (get_client_vote(chg->chg_disable_votable, BYPASS_VOTER) == 1)
@@ -132,11 +132,11 @@ def patch_smb5_lib():
 	return 0;
 }"""
         if re.search(get_pattern, c_content):
-            c_content = re.sub(get_pattern, get_repl, c_content)
+            c_content = re.sub(get_pattern, lambda m: get_repl, c_content)
 
         # Patch smblib_set_prop_input_suspend
         set_pattern = r'int\s+smblib_set_prop_input_suspend\s*\(\s*struct\s+smb_charger\s*\*chg\s*,\s*const\s+union\s+power_supply_propval\s*\*val\s*\)\s*\{[\s\S]*?power_supply_changed\(chg->batt_psy\);\s*return\s+rc;\s*\}'
-        set_repl = """int smblib_set_prop_input_suspend(struct smb_charger *chg,
+        set_repl = r"""int smblib_set_prop_input_suspend(struct smb_charger *chg,
 				  const union power_supply_propval *val)
 {
 	int rc = 0;
@@ -144,14 +144,14 @@ def patch_smb5_lib():
 	/* EXTREME++ True Bypass Charging: Never suspend USB input current! */
 	rc = vote(chg->usb_icl_votable, USER_VOTER, false, 0);
 	if (rc < 0) {
-		smblib_err(chg, "Couldn't vote to %s USB rc=%d\\n",
+		smblib_err(chg, "Couldn't vote to %s USB rc=%d\n",
 			(bool)val->intval ? "suspend" : "resume", rc);
 		return rc;
 	}
 
 	rc = vote(chg->dc_suspend_votable, USER_VOTER, false, 0);
 	if (rc < 0) {
-		smblib_err(chg, "Couldn't vote to %s DC rc=%d\\n",
+		smblib_err(chg, "Couldn't vote to %s DC rc=%d\n",
 			(bool)val->intval ? "suspend" : "resume", rc);
 		return rc;
 	}
@@ -174,7 +174,7 @@ def patch_smb5_lib():
 	}
 
 	if (rc < 0) {
-		smblib_err(chg, "Couldn't vote to %d input_suspend rc=%d\\n",
+		smblib_err(chg, "Couldn't vote to %d input_suspend rc=%d\n",
 			val->intval, rc);
 		return rc;
 	}
@@ -183,11 +183,11 @@ def patch_smb5_lib():
 	return rc;
 }"""
         if re.search(set_pattern, c_content):
-            c_content = re.sub(set_pattern, set_repl, c_content)
+            c_content = re.sub(set_pattern, lambda m: set_repl, c_content)
 
         # Patch smblib_set_prop_battery_input_suspend
         batt_pattern = r'int\s+smblib_set_prop_battery_input_suspend\s*\(\s*struct\s+smb_charger\s*\*chg\s*,\s*const\s+union\s+power_supply_propval\s*\*val\s*\)\s*\{[\s\S]*?power_supply_changed\(chg->batt_psy\);\s*return\s+rc;\s*\}'
-        batt_repl = """int smblib_set_prop_battery_input_suspend(struct smb_charger *chg,
+        batt_repl = r"""int smblib_set_prop_battery_input_suspend(struct smb_charger *chg,
 		const union power_supply_propval *val)
 {
 	int rc;
@@ -195,14 +195,14 @@ def patch_smb5_lib():
 	/* vote 0mA when battery suspended */
 	rc = vote(chg->fcc_votable, USER_VOTER, (bool)val->intval, 0);
 	if (rc < 0) {
-		smblib_err(chg, "Couldn't vote to %s fcc rc=%d\\n",
+		smblib_err(chg, "Couldn't vote to %s fcc rc=%d\n",
 			(bool)val->intval ? "suspend" : "resume", rc);
 		return rc;
 	}
 
 	rc = vote(chg->chg_disable_votable, USER_VOTER, (bool)val->intval, 0);
 	if (rc < 0) {
-		smblib_err(chg, "Couldn't vote to %s chg rc=%d\\n",
+		smblib_err(chg, "Couldn't vote to %s chg rc=%d\n",
 			(bool)val->intval ? "suspend" : "resume", rc);
 		return rc;
 	}
@@ -211,7 +211,7 @@ def patch_smb5_lib():
 	return rc;
 }"""
         if re.search(batt_pattern, c_content):
-            c_content = re.sub(batt_pattern, batt_repl, c_content)
+            c_content = re.sub(batt_pattern, lambda m: batt_repl, c_content)
 
         # Neutralize thermal daemon overrides when bypass charging is active
         temp_level_marker = "chg->system_temp_level = val->intval;"
