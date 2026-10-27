@@ -85,18 +85,13 @@ def patch_smb5_lib():
         with open(hp, "r") as f:
             h_content = f.read()
         if "BYPASS_VOTER" not in h_content:
-            marker = '#define THERMAL_FCC_OVERRIDE_VOTER'
-            if marker in h_content:
-                h_content = h_content.replace(
-                    marker,
-                    f'{marker}\n#define BYPASS_VOTER\t\t\t"BYPASS_VOTER"'
-                )
+            last_endif = h_content.rfind("#endif")
+            if last_endif != -1:
+                h_content = (h_content[:last_endif] +
+                             '#define BYPASS_VOTER\t\t\t"BYPASS_VOTER"\n\n' +
+                             h_content[last_endif:])
             else:
-                last_endif = h_content.rfind("#endif")
-                if last_endif != -1:
-                    h_content = (h_content[:last_endif] +
-                                 '#define BYPASS_VOTER\t\t\t"BYPASS_VOTER"\n\n' +
-                                 h_content[last_endif:])
+                h_content += '\n#define BYPASS_VOTER\t\t\t"BYPASS_VOTER"\n'
             with open(hp, "w") as f:
                 f.write(h_content)
             print(f"✅ [Bypass Charging] Injected BYPASS_VOTER definition in {hp}")
