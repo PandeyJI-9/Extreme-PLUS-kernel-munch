@@ -2,3 +2,4 @@ attachments/
 __pycache__/
 *.pyc
 tg_*.txt
+.monitor_build.py

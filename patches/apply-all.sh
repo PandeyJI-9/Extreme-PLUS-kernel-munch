@@ -41,8 +41,12 @@ echo "━━━ [6/7] Patching Safe PD/PPS Fast Charging & Thermal DTS Stepping 
 (cd "${KERNEL_SRC}" && python3 "${SCRIPT_DIR}/apply-fastcharge-bypass.py") || echo "⚠️ Fast charging script issue, continuing build..."
 echo ""
 
-echo "━━━ [7/7] Patching Critical Tasks Direct Reclaim Anti-Stutter (Google ACK fix) ━━━"
+echo "━━━ [7/8] Patching Critical Tasks Direct Reclaim Anti-Stutter (Google ACK fix) ━━━"
 python3 "${SCRIPT_DIR}/apply-vmscan-critical.py" "${KERNEL_SRC}/mm/vmscan.c" || echo "⚠️ vmscan script issue, continuing build..."
+echo ""
+
+echo "━━━ [8/8] Patching Xiaomi HyperOS 4 / MIUI Universal Millet Compatibility ━━━"
+python3 "${SCRIPT_DIR}/apply-millet-compat.py" "${KERNEL_SRC}" || echo "⚠️ Millet script issue, continuing build..."
 echo ""
 
 echo "✅ ALL PATCHES APPLIED SUCCESSFULLY!"
