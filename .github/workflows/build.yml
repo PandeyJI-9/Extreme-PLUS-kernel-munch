@@ -3,11 +3,15 @@ name: "🚀 Build EXTREME++ Kernel (BMW Edition - Dynamic Profiles)"
 on:
   workflow_dispatch:
     inputs:
-      build_ksu:
-        description: 'Integrate KowSU (KOWX712 Multi-Manager & SuSFS)'
+      root_mode:
+        description: 'Root Variant: root (SuSFS v2.3.0) | noroot (Pure Clean) | both'
         required: true
-        type: boolean
-        default: true
+        type: choice
+        default: 'root'
+        options:
+          - 'root'
+          - 'noroot'
+          - 'both'
       target_os:
         description: 'Target OS: both | hyperos | aosp'
         required: true
@@ -34,9 +38,11 @@ jobs:
           [ -n "${{ secrets.TELEGRAM_CHAT_ID }}" ] && TARGETS+=("${{ secrets.TELEGRAM_CHAT_ID }}")
           [ -n "${{ secrets.TELEGRAM_DM_ID }}" ] && TARGETS+=("${{ secrets.TELEGRAM_DM_ID }}")
 
-          ROOT_LABEL="🛡️ Architecture: Pure Clean Base (No Root)"
-          if [ "${{ inputs.build_ksu }}" = "true" ]; then
-            ROOT_LABEL="⚡ Root: Inbuilt Multi-Manager Root (SuSFS v2.3.0)"
+          ROOT_LABEL="⚡ Root: Inbuilt Multi-Manager Root (SuSFS v2.3.0)"
+          if [ "${{ inputs.root_mode }}" = "noroot" ]; then
+            ROOT_LABEL="🛡️ Architecture: Pure Clean Base (No Root)"
+          elif [ "${{ inputs.root_mode }}" = "both" ]; then
+            ROOT_LABEL="⚡ Dual Release: KowSU + SuSFS v2.3.0 & Pure Clean Base (No Root)"
           fi
 
           TARGET_LABEL="Dual Target: HyperOS 4 + AOSP (A16 & A17)"
@@ -92,11 +98,7 @@ jobs:
       - name: "🔨 Compile EXTREME++ Kernel"
         run: |
           cd kernel
-          KSU_MODE="noroot"
-          if [ "${{ inputs.build_ksu }}" = "true" ]; then
-            KSU_MODE="ksu"
-          fi
-          ./build_kernel.sh munch "$KSU_MODE" "${{ inputs.target_os }}"
+          ./build_kernel.sh munch "${{ inputs.root_mode }}" "${{ inputs.target_os }}"
           
           echo "✅ Built ZIP files:"
           ls -lh EXTREME++*.zip
@@ -169,9 +171,11 @@ jobs:
       - name: "📢 Telegram: Official Release Broadcast"
         if: success()
         run: |
-          ROOT_DESC="🛡️ <b>Root:</b> Pure Clean Base (No Root)"
-          if [ "${{ inputs.build_ksu }}" = "true" ]; then
-            ROOT_DESC="⚡ <b>Root:</b> Inbuilt Multi-Manager Root (SuSFS v2.3.0)"
+          ROOT_DESC="⚡ <b>Root:</b> Inbuilt Multi-Manager Root (SuSFS v2.3.0)"
+          if [ "${{ inputs.root_mode }}" = "noroot" ]; then
+            ROOT_DESC="🛡️ <b>Root:</b> Pure Clean Base (No Root)"
+          elif [ "${{ inputs.root_mode }}" = "both" ]; then
+            ROOT_DESC="⚡ <b>Root Variants:</b> KowSU Multi-Manager Root (SuSFS v2.3.0) + Pure Clean Base (No Root)"
           fi
 
           MSG="🔥 <b>EXTREME++ BMW Edition [BETA] Release #${{ github.run_number }}</b>%0A%0A"
@@ -208,7 +212,15 @@ jobs:
               TARGET_TAG="⚡ <b>Target ROM:</b> POCO F4 (munch)"
             fi
 
-            ZIP_CAPTION="📦 <b>${BNAME}</b>%0A${TARGET_TAG}%0A👑 Extreme++ BMW Edition by @pandey_ji_8"
+            if [[ "$BNAME" == *"KowSU"* ]]; then
+              VARIANT_TAG="⚡ <b>Variant:</b> KowSU Multi-Manager Root (SuSFS v2.3.0)"
+            elif [[ "$BNAME" == *"NoRoot"* ]]; then
+              VARIANT_TAG="🛡️ <b>Variant:</b> Pure Clean Base (No Root / No SuSFS)"
+            else
+              VARIANT_TAG=""
+            fi
+
+            ZIP_CAPTION="📦 <b>${BNAME}</b>%0A${TARGET_TAG}%0A${VARIANT_TAG}%0A👑 Extreme++ BMW Edition by @pandey_ji_8"
             for chat in "${TARGETS[@]}"; do
               curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendDocument" \
                 -F chat_id="$chat" \

@@ -10,17 +10,29 @@ trap 'echo "❌ [ERROR] Script failed on line $LINENO"; exit 1' ERR
 
 if [ -z "$1" ]; then
     echo "[!] Error: No device specified."
-    echo "Usage: $0 <device_name> [ksu|noroot] [hyperos|aosp|both]"
+    echo "Usage: $0 <device_name> [root|noroot|both] [hyperos|aosp|both]"
     exit 1
 fi
 
 DEVICE_NAME="$1"
 DEFCONFIG="${DEVICE_NAME}_defconfig"
-ENABLE_KSU=0
 
-if [ "$2" == "ksu" ] || [ "$2" == "true" ] || [ "$2" == "1" ]; then
-    ENABLE_KSU=1
-fi
+ROOT_MODE="${2:-root}"
+ROOT_MODE=$(echo "$ROOT_MODE" | tr '[:upper:]' '[:lower:]')
+case "$ROOT_MODE" in
+    ksu|root|true|1)
+        ROOT_MODE="root"
+        ;;
+    noroot|clean|false|0)
+        ROOT_MODE="noroot"
+        ;;
+    both)
+        ROOT_MODE="both"
+        ;;
+    *)
+        ROOT_MODE="root"
+        ;;
+esac
 
 TARGET_OS="${3:-both}"
 TARGET_OS=$(echo "$TARGET_OS" | tr '[:upper:]' '[:lower:]')
@@ -46,7 +58,7 @@ TOTAL_CORES=$(nproc --all)
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "🚀 EXTREME++ BMW Edition Build Engine Initiated!"
 echo "   Device: POCO F4 (munch / SM8250-AC)"
-echo "   Root Mode: $([ "$ENABLE_KSU" -eq 1 ] && echo 'KowSU Multi-Manager + SuSFS v2.3.0' || echo 'Pure Clean Base')"
+echo "   Root Mode: ${ROOT_MODE}"
 echo "   Target Mode: ${TARGET_OS}"
 echo "   System Cores: ${TOTAL_CORES} (Running at Full Speed)"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -96,10 +108,12 @@ if ! grep -q "selinux,baseband_guard" security/Kconfig; then
 fi
 
 # ------------------------------------------
-# 3. KernelSU (RKSU / ReSukiSU Multi-Manager Non-GKI 4.19 with SuSFS v2.3.0) Setup
+# 3. KernelSU (RKSU / ReSukiSU Multi-Manager Non-GKI 4.19 with SuSFS v2.3.0) Setup Function
 # ------------------------------------------
-if [ "$ENABLE_KSU" -eq 1 ]; then
-    echo "[*] Injecting ReSukiSU / RKSU Multi-Manager (Non-GKI 4.19 with SuSFS v2.3.0) Source..."
+inject_ksu_susfs() {
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "⚡ Injecting ReSukiSU / KowSU Multi-Manager & SuSFS v2.3.0 Source..."
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash -s -- v4.2.0-rc3
 
     if [ -f "drivers/kernelsu/Kconfig" ]; then
@@ -152,10 +166,7 @@ if apk_sign_path:
     echo "CONFIG_KSU_MULTI_MANAGER_SUPPORT=y" >> "arch/arm64/configs/${DEFCONFIG}"
     echo "CONFIG_THREAD_INFO_IN_TASK=y" >> "arch/arm64/configs/${DEFCONFIG}"
     echo "[+] RKSU / ReSukiSU Multi-Manager Non-GKI setup finished."
-else
-    echo "[*] Ensuring Pure Clean Kernel Base (Zero embedded root hooks)..."
-    sed -i '/CONFIG_KSU/d' "arch/arm64/configs/${DEFCONFIG}" 2>/dev/null || true
-fi
+}
 
 # ------------------------------------------
 # 4. Native FakeDreamer Adreno 650 Undervolt & Speed Bins (150MHz - 670MHz)
@@ -281,7 +292,9 @@ rm -rf anykernel_template/.git
 # ==============================================================================
 build_target_os() {
     local OS="$1"
+    local ENABLE_KSU="${2:-0}"
     local OS_UPPER=$(echo "$OS" | tr '[:lower:]' '[:upper:]')
+    local ROOT_LABEL=$([ "$ENABLE_KSU" -eq 1 ] && echo "KowSU + SuSFS v2.3.0" || echo "Pure Clean Base")
     local OUT_DIR="${KERNEL_DIR}/out_${OS}"
     local MAKE_OPTS=(
         O="${OUT_DIR}"
@@ -297,7 +310,7 @@ build_target_os() {
 
     echo ""
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "🔨 Starting Kernel Compilation for ${DEVICE_NAME} (Target: ${OS_UPPER})"
+    echo "🔨 Starting Kernel Compilation for ${DEVICE_NAME} (Target: ${OS_UPPER} | ${ROOT_LABEL})"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
     rm -rf "${OUT_DIR}"
@@ -384,7 +397,8 @@ build_target_os() {
             -d KSU \
             -d KSU_SUSFS \
             -d KSU_TRACEPOINT_HOOK \
-            -d KSU_MANUAL_HOOK
+            -d KSU_MANUAL_HOOK \
+            -d KSU_MULTI_MANAGER_SUPPORT
         sed -i '/CONFIG_KSU/d' "${OUT_DIR}/.config" 2>/dev/null || true
     fi
 
@@ -907,6 +921,7 @@ ui_print "  👑  AUTHOR  : Extreme++ by @pandey_ji_8      ";
 ui_print "  📱  DEVICE  : POCO F4 (munch) | ${OS_UPPER}  ";
 ui_print "  ⚡  CLOCK   : 3.19 GHz Unlocked Monster Peak ";
 ui_print "  🚀  PROFILES: In-Kernel Dynamic Switcher     ";
+ui_print "  🛡️  ROOT    : $([ "$ENABLE_KSU" -eq 1 ] && echo 'KowSU + SuSFS v2.3.0' || echo 'Pure Clean Base (No Root)') ";
 ui_print " ══════════════════════════════════════════════";
 ui_print " ";
 
@@ -976,12 +991,48 @@ EOF
 # ==============================================================================
 # EXECUTE REQUESTED TARGET BUILDS
 # ==============================================================================
-if [ "$TARGET_OS" == "hyperos" ] || [ "$TARGET_OS" == "both" ]; then
-    build_target_os "hyperos"
-fi
+if [ "$ROOT_MODE" == "noroot" ]; then
+    echo "[*] Executing Pure Clean Non-Root Build..."
+    sed -i '/CONFIG_KSU/d' "arch/arm64/configs/${DEFCONFIG}" 2>/dev/null || true
+    if [ "$TARGET_OS" == "hyperos" ] || [ "$TARGET_OS" == "both" ]; then
+        build_target_os "hyperos" 0
+    fi
+    if [ "$TARGET_OS" == "aosp" ] || [ "$TARGET_OS" == "both" ]; then
+        build_target_os "aosp" 0
+    fi
+elif [ "$ROOT_MODE" == "root" ]; then
+    echo "[*] Executing KowSU + SuSFS v2.3.0 Root Build..."
+    inject_ksu_susfs
+    if [ "$TARGET_OS" == "hyperos" ] || [ "$TARGET_OS" == "both" ]; then
+        build_target_os "hyperos" 1
+    fi
+    if [ "$TARGET_OS" == "aosp" ] || [ "$TARGET_OS" == "both" ]; then
+        build_target_os "aosp" 1
+    fi
+elif [ "$ROOT_MODE" == "both" ]; then
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "🚀 DUAL BUILD REQUESTED: Compiling BOTH Non-Root & Root Variants!"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-if [ "$TARGET_OS" == "aosp" ] || [ "$TARGET_OS" == "both" ]; then
-    build_target_os "aosp"
+    echo ""
+    echo "[*] Phase 1/2: Compiling Pure Clean Non-Root Variant(s)..."
+    sed -i '/CONFIG_KSU/d' "arch/arm64/configs/${DEFCONFIG}" 2>/dev/null || true
+    if [ "$TARGET_OS" == "hyperos" ] || [ "$TARGET_OS" == "both" ]; then
+        build_target_os "hyperos" 0
+    fi
+    if [ "$TARGET_OS" == "aosp" ] || [ "$TARGET_OS" == "both" ]; then
+        build_target_os "aosp" 0
+    fi
+
+    echo ""
+    echo "[*] Phase 2/2: Compiling Root (KowSU + SuSFS v2.3.0) Variant(s)..."
+    inject_ksu_susfs
+    if [ "$TARGET_OS" == "hyperos" ] || [ "$TARGET_OS" == "both" ]; then
+        build_target_os "hyperos" 1
+    fi
+    if [ "$TARGET_OS" == "aosp" ] || [ "$TARGET_OS" == "both" ]; then
+        build_target_os "aosp" 1
+    fi
 fi
 
 echo ""
