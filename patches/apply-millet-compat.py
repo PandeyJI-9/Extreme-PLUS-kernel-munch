@@ -229,7 +229,7 @@ static void recv_handler(struct sk_buff *skb)
 
 content = content[:start_recv] + new_recv_handler + content[end_recv:]
 
-# 3. Patch millet_sendto_user to protect against dead ports (<= 0) and fallback across protocols
+# 3. Patch millet_sendto_user to protect against dead ports (<= 0)
 target_sendto = "monitor_port = atomic_read(&sk->mod[monitor].port);"
 replace_sendto = """monitor_port = atomic_read(&sk->mod[monitor].port);
 	if (monitor_port <= 0) {
@@ -239,45 +239,6 @@ replace_sendto = """monitor_port = atomic_read(&sk->mod[monitor].port);
 
 if target_sendto in content and "if (monitor_port <= 0)" not in content:
     content = content.replace(target_sendto, replace_sendto, 1)
-
-# Also enhance unicast with fallback across all registered netlink protocols
-old_unicast_block = """	ret = nlmsg_unicast(sk->sock, skb, monitor_port);
-
-	if (ret < 0) {
-		if (millet_debug)
-			pr_err("nlmsg_unicast failed! %s errno %d\\n",
-				__func__, ret);
-		return RET_ERR;
-	}"""
-
-new_unicast_block = """	ret = nlmsg_unicast(sk->sock, skb, monitor_port);
-
-	if (ret < 0) {
-		int pi;
-		for (pi = 0; pi < EXTREME_MILLET_MAX_SOCKS; pi++) {
-			if (extreme_millet_socks[pi] && extreme_millet_socks[pi] != sk->sock) {
-				struct sk_buff *retry_skb = skb_clone(skb, GFP_ATOMIC);
-				if (retry_skb) {
-					int r = nlmsg_unicast(extreme_millet_socks[pi], retry_skb, monitor_port);
-					if (r >= 0) {
-						ret = r;
-						sk->sock = extreme_millet_socks[pi];
-						break;
-					}
-				}
-			}
-		}
-	}
-
-	if (ret < 0) {
-		if (millet_debug)
-			pr_err("nlmsg_unicast failed! %s errno %d\\n",
-				__func__, ret);
-		return RET_ERR;
-	}"""
-
-if old_unicast_block in content:
-    content = content.replace(old_unicast_block, new_unicast_block, 1)
 
 # 4. Patch millet_init to bind Netlink protocols 29, 30, and 31 simultaneously
 old_init_block = """	pr_err("enter millet_init func!\\n");
