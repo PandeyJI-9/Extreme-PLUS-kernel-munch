@@ -271,6 +271,26 @@ if [ -f "kernel/sched/cpufreq_schedutil.c" ]; then
     echo "[+] Schedutil up_rate_limit_us set to 0 in kernel/sched/cpufreq_schedutil.c for lightning boot"
 fi
 
+# Hardening fs/susfs.c against Clang -Wunused-variable / -Wunused-function when features are disabled
+if [ -f "fs/susfs.c" ]; then
+    echo "[*] Hardening fs/susfs.c against Clang -Wunused warnings..."
+    python3 -c '
+with open("fs/susfs.c", "r") as f:
+    c = f.read()
+c = c.replace("size_t copied_size = 0;", "size_t copied_size __maybe_unused = 0;")
+c = c.replace("char *buf_ptr = NULL;", "char *buf_ptr __maybe_unused = NULL;")
+c = c.replace("static int copy_config_to_buf", "static int __maybe_unused copy_config_to_buf")
+with open("fs/susfs.c", "w") as f:
+    f.write(c)
+print("✅ Hardened fs/susfs.c with __maybe_unused annotations")
+' || true
+fi
+
+if [ -f "fs/Makefile" ] && ! grep -q "CFLAGS_susfs.o" fs/Makefile; then
+    echo "CFLAGS_susfs.o += -Wno-unused-variable -Wno-unused-function -Wno-unused-but-set-variable" >> fs/Makefile
+    echo "[+] Added CFLAGS_susfs.o warning overrides to fs/Makefile"
+fi
+
 
 # ------------------------------------------
 # 7. Clone AnyKernel3 Base Template (Clean AstideLabs / osm0sis)
