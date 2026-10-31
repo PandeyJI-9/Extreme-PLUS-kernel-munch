@@ -17,20 +17,26 @@ fi
 DEVICE_NAME="$1"
 DEFCONFIG="${DEVICE_NAME}_defconfig"
 
-ROOT_MODE="${2:-root}"
+ROOT_MODE="${2:-ksu_susfs}"
 ROOT_MODE=$(echo "$ROOT_MODE" | tr '[:upper:]' '[:lower:]')
 case "$ROOT_MODE" in
-    ksu|root|true|1)
-        ROOT_MODE="root"
+    ksu_susfs|susfs|root|ksu|true|1)
+        ROOT_MODE="ksu_susfs"
+        ;;
+    ksu_no_susfs|nosusfs|no_susfs|ksunosusfs)
+        ROOT_MODE="ksu_no_susfs"
         ;;
     noroot|clean|false|0)
         ROOT_MODE="noroot"
+        ;;
+    all)
+        ROOT_MODE="all"
         ;;
     both)
         ROOT_MODE="both"
         ;;
     *)
-        ROOT_MODE="root"
+        ROOT_MODE="ksu_susfs"
         ;;
 esac
 
@@ -101,6 +107,10 @@ EOF
 # 3. KernelSU (RKSU / ReSukiSU Multi-Manager Non-GKI 4.19 with SuSFS v2.3.0) Setup Function
 # ------------------------------------------
 inject_ksu_susfs() {
+    if [ -d "KernelSU" ] || [ -d "drivers/kernelsu" ]; then
+        echo "[*] ReSukiSU source already present, skipping re-injection..."
+        return 0
+    fi
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo "⚡ Injecting ReSukiSU / KowSU Multi-Manager & SuSFS v2.3.0 Source..."
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -280,9 +290,27 @@ rm -f anykernel_template/*.dreamless anykernel_template/*.img anykernel_template
 # ==============================================================================
 build_target_os() {
     local OS="$1"
-    local ENABLE_KSU="${2:-0}"
+    local ROOT_TYPE="${2:-0}"
     local OS_UPPER=$(echo "$OS" | tr '[:lower:]' '[:upper:]')
-    local ROOT_LABEL=$([ "$ENABLE_KSU" -eq 1 ] && echo "KowSU + SuSFS v2.3.0" || echo "Pure Clean Base")
+    local ENABLE_KSU=0
+    local ENABLE_SUSFS=0
+    local ROOT_LABEL="Pure Clean Base"
+    local ROOT_BANNER="Pure Clean Base (No Root)"
+    local ZIP_SUFFIX="NoRoot"
+
+    if [ "$ROOT_TYPE" == "1" ] || [ "$ROOT_TYPE" == "ksu_susfs" ]; then
+        ENABLE_KSU=1
+        ENABLE_SUSFS=1
+        ROOT_LABEL="KowSU + SuSFS v2.3.0"
+        ROOT_BANNER="KowSU + SuSFS v2.3.0 (Multi-Manager)"
+        ZIP_SUFFIX="KowSU_SuSFS"
+    elif [ "$ROOT_TYPE" == "2" ] || [ "$ROOT_TYPE" == "ksu_no_susfs" ]; then
+        ENABLE_KSU=1
+        ENABLE_SUSFS=0
+        ROOT_LABEL="KowSU Multi-Manager (No SuSFS)"
+        ROOT_BANNER="KowSU Multi-Manager (Clean / No SuSFS)"
+        ZIP_SUFFIX="KowSU_NoSuSFS"
+    fi
     local OUT_DIR="${KERNEL_DIR}/out_${OS}"
     local MAKE_OPTS=(
         O="${OUT_DIR}"
@@ -361,27 +389,51 @@ build_target_os() {
         -d DEBUG_KMEMLEAK \
         -d DEBUG_PREEMPT
 
-    # 6. Root Configuration (KowSU / ReSukiSU + SuSFS v2.3.0 vs Pure Clean Base)
+    # 6. Root Configuration (ksu_susfs vs ksu_no_susfs vs noroot)
     if [ "$ENABLE_KSU" -eq 1 ]; then
-        echo "[*] Injecting Full RKSU / ReSukiSU + SuSFS v2.3.0 Configuration into ${OS_UPPER} .config..."
-        scripts/config --file "${OUT_DIR}/.config" \
-            -e KSU \
-            -e KSU_SUSFS \
-            -d KSU_TRACEPOINT_HOOK \
-            -d KSU_MANUAL_HOOK \
-            -e KSU_MULTI_MANAGER_SUPPORT \
-            -e THREAD_INFO_IN_TASK \
-            -e KSU_SUSFS_SUS_PATH \
-            -e KSU_SUSFS_SUS_MOUNT \
-            -e KSU_SUSFS_SUS_KSTAT \
-            -e KSU_SUSFS_SPOOF_UNAME \
-            -e KSU_SUSFS_ENABLE_LOG \
-            -e KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS \
-            -e KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG \
-            -e KSU_SUSFS_OPEN_REDIRECT \
-            -e KSU_SUSFS_SUS_MAP \
-            -d KSU_DISABLE_MANAGER \
-            -d KSU_DISABLE_POLICY
+        if [ "$ENABLE_SUSFS" -eq 1 ]; then
+            echo "[*] Injecting Full RKSU / KowSU + SuSFS v2.3.0 Configuration into ${OS_UPPER} .config..."
+            scripts/config --file "${OUT_DIR}/.config" \
+                -e KSU \
+                -e KSU_SUSFS \
+                -d KSU_TRACEPOINT_HOOK \
+                -d KSU_MANUAL_HOOK \
+                -e KSU_MULTI_MANAGER_SUPPORT \
+                -e THREAD_INFO_IN_TASK \
+                -e KSU_SUSFS_SUS_PATH \
+                -e KSU_SUSFS_SUS_MOUNT \
+                -e KSU_SUSFS_SUS_KSTAT \
+                -e KSU_SUSFS_SPOOF_UNAME \
+                -e KSU_SUSFS_ENABLE_LOG \
+                -e KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS \
+                -e KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG \
+                -e KSU_SUSFS_OPEN_REDIRECT \
+                -e KSU_SUSFS_SUS_MAP \
+                -d KSU_DISABLE_MANAGER \
+                -d KSU_DISABLE_POLICY
+        else
+            echo "[*] Injecting RKSU / KowSU (Standard - No SuSFS) Configuration into ${OS_UPPER} .config..."
+            scripts/config --file "${OUT_DIR}/.config" \
+                -e KSU \
+                -d KSU_SUSFS \
+                -e KSU_MANUAL_HOOK \
+                -d KSU_TRACEPOINT_HOOK \
+                -e KSU_MULTI_MANAGER_SUPPORT \
+                -e THREAD_INFO_IN_TASK \
+                -e KSU_MANUAL_HOOK_AUTO_SETUID_HOOK \
+                -e KSU_MANUAL_HOOK_AUTO_INITRC_HOOK \
+                -d KSU_SUSFS_SUS_PATH \
+                -d KSU_SUSFS_SUS_MOUNT \
+                -d KSU_SUSFS_SUS_KSTAT \
+                -d KSU_SUSFS_SPOOF_UNAME \
+                -d KSU_SUSFS_ENABLE_LOG \
+                -d KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS \
+                -d KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG \
+                -d KSU_SUSFS_OPEN_REDIRECT \
+                -d KSU_SUSFS_SUS_MAP \
+                -d KSU_DISABLE_MANAGER \
+                -d KSU_DISABLE_POLICY
+        fi
     else
         echo "[*] Disabling embedded KSU for Pure Clean Kernel (${OS_UPPER})..."
         scripts/config --file "${OUT_DIR}/.config" \
@@ -554,7 +606,7 @@ ui_print "  👑  AUTHOR  : Extreme++ by @pandey_ji_8      ";
 ui_print "  📱  DEVICE  : POCO F4 (munch) | ${OS_UPPER}  ";
 ui_print "  ⚡  CLOCK   : 3.19 GHz Unlocked Monster Peak ";
 ui_print "  🚀  PROFILES: In-Kernel Dynamic Switcher     ";
-ui_print "  🛡️  ROOT    : $([ "$ENABLE_KSU" -eq 1 ] && echo 'KowSU + SuSFS v2.3.0' || echo 'Pure Clean Base (No Root)') ";
+ui_print "  🛡️  ROOT    : ${ROOT_BANNER} ";
 ui_print " ══════════════════════════════════════════════";
 ui_print " ";
 
@@ -595,12 +647,7 @@ EOF
 
     # Package into flashable ZIP
     local DATE_TAG="$(date +'%d%b%Y_%H%M')"
-    local ZIP_NAME
-    if [ "$ENABLE_KSU" -eq 1 ]; then
-        ZIP_NAME="${ZIP_BASE}_KowSU_${DATE_TAG}.zip"
-    else
-        ZIP_NAME="${ZIP_BASE}_NoRoot_${DATE_TAG}.zip"
-    fi
+    local ZIP_NAME="${ZIP_BASE}_${ZIP_SUFFIX}_${DATE_TAG}.zip"
 
     (
         cd "${AK_DIR}"
@@ -624,7 +671,16 @@ if [ "$ROOT_MODE" == "noroot" ]; then
     if [ "$TARGET_OS" == "aosp" ] || [ "$TARGET_OS" == "both" ]; then
         build_target_os "aosp" 0
     fi
-elif [ "$ROOT_MODE" == "root" ]; then
+elif [ "$ROOT_MODE" == "ksu_no_susfs" ]; then
+    echo "[*] Executing KowSU Multi-Manager (Standard / No SuSFS) Build..."
+    inject_ksu_susfs
+    if [ "$TARGET_OS" == "hyperos" ] || [ "$TARGET_OS" == "both" ]; then
+        build_target_os "hyperos" 2
+    fi
+    if [ "$TARGET_OS" == "aosp" ] || [ "$TARGET_OS" == "both" ]; then
+        build_target_os "aosp" 2
+    fi
+elif [ "$ROOT_MODE" == "ksu_susfs" ]; then
     echo "[*] Executing KowSU + SuSFS v2.3.0 Root Build..."
     inject_ksu_susfs
     if [ "$TARGET_OS" == "hyperos" ] || [ "$TARGET_OS" == "both" ]; then
@@ -635,11 +691,8 @@ elif [ "$ROOT_MODE" == "root" ]; then
     fi
 elif [ "$ROOT_MODE" == "both" ]; then
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "🚀 DUAL BUILD REQUESTED: Compiling BOTH Non-Root & Root Variants!"
+    echo "🚀 DUAL BUILD REQUESTED: Compiling Pure Clean & KowSU + SuSFS!"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-
-    echo ""
-    echo "[*] Phase 1/2: Compiling Pure Clean Non-Root Variant(s)..."
     sed -i '/CONFIG_KSU/d' "arch/arm64/configs/${DEFCONFIG}" 2>/dev/null || true
     if [ "$TARGET_OS" == "hyperos" ] || [ "$TARGET_OS" == "both" ]; then
         build_target_os "hyperos" 0
@@ -647,10 +700,34 @@ elif [ "$ROOT_MODE" == "both" ]; then
     if [ "$TARGET_OS" == "aosp" ] || [ "$TARGET_OS" == "both" ]; then
         build_target_os "aosp" 0
     fi
-
-    echo ""
-    echo "[*] Phase 2/2: Compiling Root (KowSU + SuSFS v2.3.0) Variant(s)..."
     inject_ksu_susfs
+    if [ "$TARGET_OS" == "hyperos" ] || [ "$TARGET_OS" == "both" ]; then
+        build_target_os "hyperos" 1
+    fi
+    if [ "$TARGET_OS" == "aosp" ] || [ "$TARGET_OS" == "both" ]; then
+        build_target_os "aosp" 1
+    fi
+elif [ "$ROOT_MODE" == "all" ]; then
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "🚀 COMPLETE SUITE REQUESTED: Compiling ALL 3 Root Variants!"
+    echo "   1. Pure Clean Base (No Root)"
+    echo "   2. KowSU Multi-Manager (Standard / No SuSFS)"
+    echo "   3. KowSU Multi-Manager + SuSFS v2.3.0"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    sed -i '/CONFIG_KSU/d' "arch/arm64/configs/${DEFCONFIG}" 2>/dev/null || true
+    if [ "$TARGET_OS" == "hyperos" ] || [ "$TARGET_OS" == "both" ]; then
+        build_target_os "hyperos" 0
+    fi
+    if [ "$TARGET_OS" == "aosp" ] || [ "$TARGET_OS" == "both" ]; then
+        build_target_os "aosp" 0
+    fi
+    inject_ksu_susfs
+    if [ "$TARGET_OS" == "hyperos" ] || [ "$TARGET_OS" == "both" ]; then
+        build_target_os "hyperos" 2
+    fi
+    if [ "$TARGET_OS" == "aosp" ] || [ "$TARGET_OS" == "both" ]; then
+        build_target_os "aosp" 2
+    fi
     if [ "$TARGET_OS" == "hyperos" ] || [ "$TARGET_OS" == "both" ]; then
         build_target_os "hyperos" 1
     fi

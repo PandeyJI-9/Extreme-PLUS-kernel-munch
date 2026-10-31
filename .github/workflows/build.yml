@@ -4,13 +4,15 @@ on:
   workflow_dispatch:
     inputs:
       root_mode:
-        description: 'Root Variant: root (SuSFS v2.3.0) | noroot (Pure Clean) | both'
+        description: 'Root Variant: ksu_susfs (SuSFS v2.3.0) | ksu_no_susfs (Standard KSU) | noroot (Pure Clean) | all'
         required: true
         type: choice
-        default: 'root'
+        default: 'ksu_susfs'
         options:
-          - 'root'
+          - 'ksu_susfs'
+          - 'ksu_no_susfs'
           - 'noroot'
+          - 'all'
           - 'both'
       target_os:
         description: 'Target OS: both | hyperos | aosp'
@@ -38,11 +40,15 @@ jobs:
           [ -n "${{ secrets.TELEGRAM_CHAT_ID }}" ] && TARGETS+=("${{ secrets.TELEGRAM_CHAT_ID }}")
           [ -n "${{ secrets.TELEGRAM_DM_ID }}" ] && TARGETS+=("${{ secrets.TELEGRAM_DM_ID }}")
 
-          ROOT_LABEL="⚡ Root: Inbuilt Multi-Manager Root (SuSFS v2.3.0)"
+          ROOT_LABEL="⚡ Root: KowSU Multi-Manager Root (SuSFS v2.3.0)"
           if [ "${{ inputs.root_mode }}" = "noroot" ]; then
             ROOT_LABEL="🛡️ Architecture: Pure Clean Base (No Root)"
+          elif [ "${{ inputs.root_mode }}" = "ksu_no_susfs" ]; then
+            ROOT_LABEL="⚡ Root: KowSU Multi-Manager (Standard Clean KSU / No SuSFS)"
           elif [ "${{ inputs.root_mode }}" = "both" ]; then
             ROOT_LABEL="⚡ Dual Release: KowSU + SuSFS v2.3.0 & Pure Clean Base (No Root)"
+          elif [ "${{ inputs.root_mode }}" = "all" ]; then
+            ROOT_LABEL="🚀 Complete Suite: KowSU + SuSFS, KowSU Standard KSU, and Pure Clean Base"
           fi
 
           TARGET_LABEL="Dual Target: HyperOS 4 + AOSP (A16 & A17)"
@@ -171,11 +177,15 @@ jobs:
       - name: "📢 Telegram: Official Release Broadcast"
         if: success()
         run: |
-          ROOT_DESC="⚡ <b>Root:</b> Inbuilt Multi-Manager Root (SuSFS v2.3.0)"
+          ROOT_DESC="⚡ <b>Root:</b> KowSU Multi-Manager Root (SuSFS v2.3.0)"
           if [ "${{ inputs.root_mode }}" = "noroot" ]; then
             ROOT_DESC="🛡️ <b>Root:</b> Pure Clean Base (No Root)"
+          elif [ "${{ inputs.root_mode }}" = "ksu_no_susfs" ]; then
+            ROOT_DESC="⚡ <b>Root:</b> KowSU Multi-Manager (Standard Clean KSU / No SuSFS)"
           elif [ "${{ inputs.root_mode }}" = "both" ]; then
-            ROOT_DESC="⚡ <b>Root Variants:</b> KowSU Multi-Manager Root (SuSFS v2.3.0) + Pure Clean Base (No Root)"
+            ROOT_DESC="⚡ <b>Root Variants:</b> KowSU Multi-Manager (SuSFS v2.3.0) + Pure Clean Base (No Root)"
+          elif [ "${{ inputs.root_mode }}" = "all" ]; then
+            ROOT_DESC="🚀 <b>Root Variants:</b> All 3 (KowSU + SuSFS v2.3.0, KowSU Standard KSU, Pure Clean)"
           fi
 
           MSG="🔥 <b>EXTREME++ BMW Edition [BETA] Release #${{ github.run_number }}</b>%0A%0A"
@@ -212,10 +222,14 @@ jobs:
               TARGET_TAG="⚡ <b>Target ROM:</b> POCO F4 (munch)"
             fi
 
-            if [[ "$BNAME" == *"KowSU"* ]]; then
+            if [[ "$BNAME" == *"KowSU_SuSFS"* ]]; then
               VARIANT_TAG="⚡ <b>Variant:</b> KowSU Multi-Manager Root (SuSFS v2.3.0)"
+            elif [[ "$BNAME" == *"KowSU_NoSuSFS"* ]]; then
+              VARIANT_TAG="⚡ <b>Variant:</b> KowSU Multi-Manager Root (Standard Clean KSU / No SuSFS)"
             elif [[ "$BNAME" == *"NoRoot"* ]]; then
               VARIANT_TAG="🛡️ <b>Variant:</b> Pure Clean Base (No Root / No SuSFS)"
+            elif [[ "$BNAME" == *"KowSU"* ]]; then
+              VARIANT_TAG="⚡ <b>Variant:</b> KowSU Multi-Manager Root"
             else
               VARIANT_TAG=""
             fi
