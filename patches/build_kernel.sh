@@ -277,15 +277,17 @@ if [ -f "fs/dcache.c" ]; then
 fi
 
 # ------------------------------------------
-# 7. Clone AnyKernel3 Base Template
+# 7. Clone AnyKernel3 Base Template (Clean AstideLabs / osm0sis)
 # ------------------------------------------
-echo "[*] Cloning AnyKernel3 base template..."
+echo "[*] Cloning clean AnyKernel3 base template..."
 rm -rf anykernel_template
-if ! git clone --depth=1 https://github.com/re-noroi/anykernel3-test -b munch anykernel_template; then
-    echo "[!] Fallback to AstideLabs AnyKernel3..."
-    git clone --depth=1 https://github.com/AstideLabs/AnyKernel3 -b kona anykernel_template
+if ! git clone --depth=1 https://github.com/AstideLabs/AnyKernel3 -b kona anykernel_template; then
+    echo "[!] Fallback to osm0sis AnyKernel3..."
+    git clone --depth=1 https://github.com/osm0sis/AnyKernel3 -b master anykernel_template
 fi
 rm -rf anykernel_template/.git
+# Sanitize: Remove any lingering foreign trigger/flag files (*.dreamless, stale images/dtb)
+rm -f anykernel_template/*.dreamless anykernel_template/*.img anykernel_template/*dtb*
 
 # ==============================================================================
 # MODULAR BUILD FUNCTION (HyperOS vs AOSP)
@@ -512,6 +514,8 @@ build_target_os() {
     local AK_DIR="${KERNEL_DIR}/anykernel_${OS}"
     rm -rf "${AK_DIR}"
     cp -r anykernel_template "${AK_DIR}"
+    # Safety cleanup: Ensure zero unwanted trigger/dreamless files exist in the flashable zip
+    rm -f "${AK_DIR}"/*.dreamless "${AK_DIR}"/*.img "${AK_DIR}"/dtb*
 
     cp "${OUT_DIR}/arch/arm64/boot/Image" "${AK_DIR}/Image"
     if [ -f "${OUT_DIR}/arch/arm64/boot/dtb" ]; then
