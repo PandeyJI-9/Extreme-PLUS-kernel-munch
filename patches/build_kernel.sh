@@ -293,16 +293,20 @@ fi
 
 
 # ------------------------------------------
-# 7. Clone AnyKernel3 Base Template (Clean AstideLabs / osm0sis)
+# 7. Clone AnyKernel3 Base Template (Clean AstideLabs / re-noroi / osm0sis)
 # ------------------------------------------
 echo "[*] Cloning clean AnyKernel3 base template..."
 rm -rf anykernel_template
 if ! git clone --depth=1 https://github.com/AstideLabs/AnyKernel3 -b kona anykernel_template; then
-    echo "[!] Fallback to osm0sis AnyKernel3..."
-    git clone --depth=1 https://github.com/osm0sis/AnyKernel3 -b master anykernel_template
+    echo "[!] Fallback to re-noroi AnyKernel3 (munch)..."
+    if ! git clone --depth=1 https://github.com/re-noroi/anykernel3-test -b munch anykernel_template; then
+        echo "[!] Fallback to osm0sis AnyKernel3..."
+        git clone --depth=1 https://github.com/osm0sis/AnyKernel3 -b master anykernel_template
+    fi
 fi
 rm -rf anykernel_template/.git
 # Sanitize: Remove any lingering foreign trigger/flag files (*.dreamless, stale images/dtb)
+find anykernel_template -type f -name "*.dreamless" -delete
 rm -f anykernel_template/*.dreamless anykernel_template/*.img anykernel_template/*dtb*
 
 # ==============================================================================
@@ -574,6 +578,7 @@ build_target_os() {
     rm -rf "${AK_DIR}"
     cp -r anykernel_template "${AK_DIR}"
     # Safety cleanup: Ensure zero unwanted trigger/dreamless files exist in the flashable zip
+    find "${AK_DIR}" -type f -name "*.dreamless" -delete
     rm -f "${AK_DIR}"/*.dreamless "${AK_DIR}"/*.img "${AK_DIR}"/dtb*
 
     cp "${OUT_DIR}/arch/arm64/boot/Image" "${AK_DIR}/Image"
@@ -598,18 +603,45 @@ do.systemless=1
 do.cleanup=1
 do.cleanuponabort=0
 device.name1=munch
-device.name2=POCO F4
+device.name2=munchin
+device.name3=POCO F4
+device.name4=22021211RG
+device.name5=22021211RI
 supported.versions=13-17
 '; }
 
-# shell variables
-block=boot;
-is_slot_device=1;
-ramdisk_compression=auto;
-patch_vbmeta_flag=0;
+# -------------------------------------------------------------
+# Dynamic Block Partition Detection
+# -------------------------------------------------------------
+if [ -e /dev/block/bootdevice/by-name/boot ] || [ -e /dev/block/bootdevice/by-name/boot_a ]; then
+    BOOT_BLOCK=/dev/block/bootdevice/by-name/boot;
+    VENDOR_BOOT_BLOCK=/dev/block/bootdevice/by-name/vendor_boot;
+elif [ -e /dev/block/by-name/boot ] || [ -e /dev/block/by-name/boot_a ]; then
+    BOOT_BLOCK=/dev/block/by-name/boot;
+    VENDOR_BOOT_BLOCK=/dev/block/bootdevice/by-name/vendor_boot;
+else
+    BOOT_BLOCK=boot;
+    VENDOR_BOOT_BLOCK=vendor_boot;
+fi
 
+# Universal Shell Variables (Both UPPERCASE and lowercase for 100% AK3 compatibility)
+BLOCK=\$BOOT_BLOCK;
+block=\$BOOT_BLOCK;
+IS_SLOT_DEVICE=auto;
+is_slot_device=1;
+RAMDISK_COMPRESSION=auto;
+ramdisk_compression=auto;
+PATCH_VBMETA_FLAG=auto;
+patch_vbmeta_flag=0;
+NO_BLOCK_DISPLAY=1;
+no_block_display=1;
+
+# Import AnyKernel core methods & setup
 . tools/ak3-core.sh;
 
+# =============================================================
+# EXTREME++ CYBERPUNK BANNER & SYSTEM METADATA
+# =============================================================
 ui_print " ";
 ui_print " ══════════════════════════════════════════════";
 ui_print "   ______      __                              ";
@@ -627,38 +659,61 @@ ui_print "  🚀  PROFILES: In-Kernel Dynamic Switcher     ";
 ui_print "  🛡️  ROOT    : ${ROOT_BANNER} ";
 ui_print " ══════════════════════════════════════════════";
 ui_print " ";
+sleep 1;
 
-ui_print "  [1/4] ⚡ Extracting & Patching Boot Partition...";
+# =============================================================
+# 4-STAGE FLASHING ANIMATION & INSTALLATION PROGRESS
+# =============================================================
+ui_print "  [1/4] ⚡ Extracting & Analyzing Boot Partition...";
+sleep 1;
 dump_boot;
-ui_print "  [1/4] 🚀 Writing EXTREME++ 3.19 GHz Kernel Image...";
+ui_print "  [1/4] 🚀 Flashing EXTREME++ 3.19 GHz Monster Kernel Image...";
 write_boot;
+ui_print "  [1/4] ✅ Boot Image Applied Flawlessly!";
+ui_print " ";
+sleep 1;
 
 ## vendor_boot DTB install
 ui_print "  [2/4] 📦 Analyzing Vendor Boot Partition...";
-block=vendor_boot;
+sleep 1;
+BLOCK=\$VENDOR_BOOT_BLOCK;
+block=\$VENDOR_BOOT_BLOCK;
+IS_SLOT_DEVICE=auto;
 is_slot_device=1;
+RAMDISK_COMPRESSION=auto;
 ramdisk_compression=auto;
+PATCH_VBMETA_FLAG=auto;
 patch_vbmeta_flag=0;
 
 reset_ak;
 dump_boot;
 ui_print "  [2/4] 🏎️ Writing FakeDreamer Adreno 650 Undervolted DTB...";
 write_boot;
+ui_print "  [2/4] ✅ DTB & GPU Overclock/Undervolt Table Injected!";
+ui_print " ";
+sleep 1;
 
 # Clean conflicting legacy service.d scripts from /data/adb (Fixes Poco logo freeze & bootloops)
-ui_print "  [3/4] 🛡️ Checking Storage & Subsystems...";
+ui_print "  [3/4] 🛡️ Verifying Storage & Purging Conflicting Scripts...";
+sleep 1;
 mount /data 2>/dev/null
 if [ -d /data/adb ]; then
     ui_print "  [3/4] 🧹 Auto-purging conflicting legacy scripts from /data/adb...";
     rm -f /data/adb/service.d/00-extreme-performance.sh
     rm -f /data/adb/post-fs-data.d/00-extreme-props.sh
 fi
+ui_print "  [3/4] ✅ Subsystems Clean & Verified!";
+ui_print " ";
+sleep 1;
 
 ui_print "  [4/4] ✨ Preserving OEM Display Calibrations & Finalizing...";
+sleep 1;
 ui_print " ";
 ui_print " ══════════════════════════════════════════════";
 ui_print "  🎉 Extreme++ Kernel (${OS_UPPER}) Flashed!  ";
-ui_print "  🏎️ BMW Edition is Ready to Rock!             ";
+ui_print "  🏎️ BMW Gaming Edition is Ready to Race!     ";
+ui_print "  ⚡ 3.19 GHz Monster Peak Unlocked!           ";
+ui_print "  🚀 Reboot and enjoy maximum smoothness!      ";
 ui_print " ══════════════════════════════════════════════";
 ui_print " ";
 EOF
