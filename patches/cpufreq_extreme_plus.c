@@ -376,6 +376,8 @@ static inline unsigned int extreme_prime_cruise(void)
 
 	if (profile == EXTREME_PROFILE_BATTERY)
 		cruise = min(cruise, (unsigned int)EXTREME_PRIME_BATTERY_MAX);
+	else if (profile == EXTREME_PROFILE_BALANCED)
+		cruise = min(cruise, (unsigned int)EXTREME_PRIME_BALANCED_MAX);
 
 	return cruise;
 }
@@ -397,6 +399,8 @@ static inline unsigned int extreme_gold_cruise(void)
 
 	if (profile == EXTREME_PROFILE_BATTERY)
 		cruise = min(cruise, (unsigned int)EXTREME_GOLD_BATTERY_MAX);
+	else if (profile == EXTREME_PROFILE_BALANCED)
+		cruise = min(cruise, (unsigned int)EXTREME_GOLD_BALANCED_MAX);
 
 	return cruise;
 }
@@ -1823,27 +1827,24 @@ static void extreme_profile_apply(int mode)
 	unsigned int prime_max_freq;
 	unsigned int gold_max_freq;
 	unsigned int down_delay_us;
-	unsigned int up_delay_us;
+	unsigned int up_delay_us = 0; /* 0us: Instant touch response across ALL modes (Zero UI Lag!) */
 
 	switch (mode) {
 	case EXTREME_PROFILE_BALANCED:
-		prime_max_freq = EXTREME_PRIME_BALANCED_MAX;
-		gold_max_freq = EXTREME_GOLD_BALANCED_MAX;
-		down_delay_us = 15000;
-		up_delay_us = 500;
+		prime_max_freq = EXTREME_PRIME_BALANCED_MAX; /* 2.84 GHz sweet spot */
+		gold_max_freq = EXTREME_GOLD_BALANCED_MAX;   /* 2.25 GHz */
+		down_delay_us = 15000;                       /* 15ms hold */
 		break;
 	case EXTREME_PROFILE_BATTERY:
-		prime_max_freq = EXTREME_PRIME_BATTERY_MAX;
-		gold_max_freq = EXTREME_GOLD_BATTERY_MAX;
-		down_delay_us = 8000;
-		up_delay_us = 1000;
+		prime_max_freq = EXTREME_PRIME_BATTERY_MAX;  /* 2.42 GHz marathon */
+		gold_max_freq = EXTREME_GOLD_BATTERY_MAX;    /* 1.96 GHz */
+		down_delay_us = 8000;                        /* 8ms clean decay */
 		break;
 	case EXTREME_PROFILE_GAMING:
 	default:
-		prime_max_freq = EXTREME_PRIME_STOCK_MAX;
-		gold_max_freq = EXTREME_GOLD_STOCK_MAX;
-		down_delay_us = 25000;
-		up_delay_us = 0;
+		prime_max_freq = EXTREME_PRIME_STOCK_MAX;    /* 3.19 GHz monster boost */
+		gold_max_freq = EXTREME_GOLD_STOCK_MAX;      /* 2.42 GHz */
+		down_delay_us = 25000;                       /* 25ms hold for frame pacing */
 		break;
 	}
 
@@ -1921,13 +1922,23 @@ static ssize_t extreme_profile_store(struct kobject *kobj,
 				     struct kobj_attribute *attr,
 				     const char *buf, size_t count)
 {
-	int val;
+	int val = -1;
 
-	if (kstrtoint(buf, 10, &val) < 0)
+	if (!buf || count == 0)
 		return -EINVAL;
 
-	if (val < 0 || val > 2)
+	if (sysfs_streq(buf, "0") || sysfs_streq(buf, "gaming") || sysfs_streq(buf, "performance") || sysfs_streq(buf, "perf"))
+		val = EXTREME_PROFILE_GAMING;
+	else if (sysfs_streq(buf, "1") || sysfs_streq(buf, "balanced") || sysfs_streq(buf, "bal") || sysfs_streq(buf, "default"))
+		val = EXTREME_PROFILE_BALANCED;
+	else if (sysfs_streq(buf, "2") || sysfs_streq(buf, "battery") || sysfs_streq(buf, "powersave") || sysfs_streq(buf, "bat"))
+		val = EXTREME_PROFILE_BATTERY;
+	else if (kstrtoint(buf, 10, &val) == 0) {
+		if (val < 0 || val > 2)
+			return -EINVAL;
+	} else {
 		return -EINVAL;
+	}
 
 	mutex_lock(&extreme_profile_lock);
 	extreme_profile_mode = val;
@@ -1939,6 +1950,9 @@ static ssize_t extreme_profile_store(struct kobject *kobj,
 
 static struct kobj_attribute extreme_profile_kattr =
 	__ATTR(extreme_profile, 0664, extreme_profile_show, extreme_profile_store);
+
+static struct kobj_attribute kernel_profile_kattr =
+	__ATTR(profile, 0664, extreme_profile_show, extreme_profile_store);
 
 static ssize_t extreme_target_fps_show(struct kobject *kobj,
 				       struct kobj_attribute *attr, char *buf)
@@ -1981,6 +1995,12 @@ static int __init extreme_plus_register(void)
 		pr_warn("EXTREME++: Failed to create /sys/kernel/extreme_profile node\n");
 	else
 		pr_info("EXTREME++ BMW Edition: /sys/kernel/extreme_profile registered successfully!\n");
+
+	ret = sysfs_create_file(kernel_kobj, &kernel_profile_kattr.attr);
+	if (ret)
+		pr_warn("EXTREME++: Failed to create /sys/kernel/profile alias node\n");
+	else
+		pr_info("EXTREME++ BMW Edition: /sys/kernel/profile registered successfully!\n");
 
 	ret = sysfs_create_file(kernel_kobj, &extreme_target_fps_kattr.attr);
 	if (ret)
