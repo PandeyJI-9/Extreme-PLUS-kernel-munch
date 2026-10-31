@@ -412,16 +412,14 @@ build_target_os() {
                 -d KSU_DISABLE_MANAGER \
                 -d KSU_DISABLE_POLICY
         else
-            echo "[*] Injecting RKSU / KowSU (Standard - No SuSFS) Configuration into ${OS_UPPER} .config..."
+            echo "[*] Injecting KowSU Multi-Manager (Standard / No SuSFS Features) Configuration into ${OS_UPPER} .config..."
             scripts/config --file "${OUT_DIR}/.config" \
                 -e KSU \
-                -d KSU_SUSFS \
-                -e KSU_MANUAL_HOOK \
+                -e KSU_SUSFS \
                 -d KSU_TRACEPOINT_HOOK \
+                -d KSU_MANUAL_HOOK \
                 -e KSU_MULTI_MANAGER_SUPPORT \
                 -e THREAD_INFO_IN_TASK \
-                -e KSU_MANUAL_HOOK_AUTO_SETUID_HOOK \
-                -e KSU_MANUAL_HOOK_AUTO_INITRC_HOOK \
                 -d KSU_SUSFS_SUS_PATH \
                 -d KSU_SUSFS_SUS_MOUNT \
                 -d KSU_SUSFS_SUS_KSTAT \
