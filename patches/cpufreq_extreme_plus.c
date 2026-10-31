@@ -389,11 +389,11 @@ static inline unsigned int extreme_gold_cruise(void)
 	if (fps < EXTREME_FPS_MIN)
 		fps = EXTREME_DEFAULT_TARGET_FPS;
 	if (fps <= 60)
-		cruise = 1804800;   /* 60 FPS  - matches active floor */
+		cruise = 1497600;   /* 60 FPS  - 1.50 GHz smooth pacing */
 	else if (fps <= 90)
-		cruise = 2054400;   /* 90 FPS  - 2.05 GHz native Kona step */
+		cruise = 1804800;   /* 90 FPS  - 1.80 GHz solid pacing */
 	else
-		cruise = 2246400;   /* 120+ FPS - 2.25 GHz sustained */
+		cruise = 2016000;   /* 120+ FPS - 2.02 GHz performance pacing */
 
 	if (profile == EXTREME_PROFILE_BATTERY)
 		cruise = min(cruise, (unsigned int)EXTREME_GOLD_BATTERY_MAX);
@@ -528,69 +528,84 @@ static unsigned int extreme_plus_autonomous_engine(struct extreme_plus_cpu *sg_c
 			raw_util >= mult_frac(max, EXTREME_TURBO_HOLD_MIN_PCT, 100);
 
 	/* ── Cluster 2: Prime Core 7 (Kryo 585 Prime) ──
-	 * Prime Cortex-A77:
-	 * Balanced mode: 2.84 GHz sweet spot runs icy cool, saving ~40% power
-	 * and completely preventing Xiaomi mi_thermald from throttling.
-	 * Gaming mode: boosts up to 3.19 GHz on heavy saturation.
-	 * Idle: falls cleanly down to 844 MHz hardware floor.
+	 * Schedutil + Performance Hybrid with EKM Architecture:
+	 * 1. Base Scaling: Pure mathematical EAS schedutil scaling (raw_f).
+	 * 2. EKM Hispeed & Performance Active Floor:
+	 *    When util >= 75% or RTG render thread active, elevate floor to
+	 *    extreme_prime_cruise() (1.80 - 2.84 GHz) to prevent frame pacing stutter.
+	 * 3. Heavy Saturation (util >= 92%): Allows full cur_max (up to 3.19 GHz in Gaming mode).
+	 * 4. True Idle: Glides smoothly down through OPP steps to 844 MHz hardware floor.
 	 */
 	if (cpu == 7) {
-		unsigned int prime_cruise = extreme_prime_cruise();
-		bool prime_active = (util >= mult_frac(max, 25, 100)) || in_turbo_hold;
+		unsigned int prime_floor = 0;
+		bool rtg_or_burst = in_turbo_hold;
 
 #ifdef CONFIG_SCHED_WALT
-		if (!use_pelt() && sg_cpu->walt_load.rtgb_active &&
-		    sg_cpu->util >= mult_frac(max, 15, 100))
-			prime_active = true;
+		if (!use_pelt() && sg_cpu->walt_load.rtgb_active)
+			rtg_or_burst = true;
 #endif
 
 		if (boot_settled && is_saturated) {
+			/* Heavy saturation: provide peak power */
 			target_f = cur_max;
-		} else if (boot_settled && prime_active) {
-			target_f = min(cur_max, max(raw_f, prime_cruise));
+		} else if (boot_settled && ((util >= mult_frac(max, 75, 100)) || rtg_or_burst)) {
+			/* EKM Hispeed & Performance Floor: smooth frame pacing without thermal throttling */
+			prime_floor = extreme_prime_cruise();
+			target_f = max(raw_f, prime_floor);
+			target_f = min(target_f, cur_max);
 		} else {
+			/* Smooth mathematical EAS Schedutil scaling */
 			target_f = raw_f;
 		}
 	}
 	/* ── Cluster 1: Gold Cores 4-6 (Kryo 585 Gold) ──
-	 * User Performance-Governor Hybrid Architecture:
-	 * When active load/gaming is executing: lock into cur_max immediately
-	 * with zero mid-frame frequency oscillation (delivering the rock-solid
-	 * 100+ FPS frame pacing of the performance governor).
-	 * When idle / light load: drop smoothly down to 710 MHz hardware floor,
-	 * ensuring zero ambient heat buildup and long battery life!
+	 * Schedutil + Performance Hybrid with EKM Architecture:
+	 * 1. Base Scaling: Pure mathematical EAS schedutil scaling (raw_f).
+	 * 2. EKM Hispeed & Performance Active Floor:
+	 *    When util >= 70% or RTG render thread active, elevate floor to
+	 *    extreme_gold_cruise() (1.50 - 2.02 GHz).
+	 *    This prevents dropping below the gaming floor between frames (zero stutter!),
+	 *    while completely eliminating the violent 2.42 GHz lock that caused overheating.
+	 * 3. Heavy Saturation (util >= 90%): Unlocks up to 2.42 GHz cur_max.
+	 * 4. True Idle: Scales smoothly down through all 16 OPP steps to 710 MHz.
 	 */
 	else if (cpu >= 4 && cpu < 7) {
-		bool gold_active = (util >= mult_frac(max, 20, 100)) || in_turbo_hold;
+		unsigned int gold_floor = 0;
+		bool rtg_or_burst = in_turbo_hold;
 
-		if (!gold_active) {
+#ifdef CONFIG_SCHED_WALT
+		if (!use_pelt()) {
 			for_each_cpu(c, policy->cpus) {
 				struct extreme_plus_cpu *c_cpu = &per_cpu(extreme_plus_cpu, c);
-#ifdef CONFIG_SCHED_WALT
-				if (!use_pelt() && c_cpu->walt_load.rtgb_active &&
-				    c_cpu->util >= mult_frac(max, 10, 100)) {
-					gold_active = true;
-					break;
-				}
-#endif
-				if (c_cpu->util >= sg_policy->hispeed_util) {
-					gold_active = true;
+				if (c_cpu->walt_load.rtgb_active) {
+					rtg_or_burst = true;
 					break;
 				}
 			}
 		}
+#endif
 
-		if (boot_settled && gold_active) {
-			/* Performance-grade lock: zero PLL jitter, rock-solid frame pacing */
+		if (boot_settled && is_saturated) {
+			/* Heavy saturation: deliver cur_max */
 			target_f = cur_max;
+		} else if (boot_settled && ((util >= mult_frac(max, 70, 100)) || rtg_or_burst)) {
+			/* EKM Hispeed & Performance Floor */
+			gold_floor = extreme_gold_cruise();
+			target_f = max(raw_f, gold_floor);
+			target_f = min(target_f, cur_max);
 		} else {
-			/* True idle decay: scales cleanly down to 710 MHz */
+			/* Smooth mathematical EAS Schedutil scaling down to 710 MHz */
 			target_f = raw_f;
 		}
 	}
 	/* ── Cluster 0: Silver Cores 0-3 (Kryo 585 Silver) ── */
 	else {
-		target_f = raw_f;
+		if (boot_settled && util >= mult_frac(max, 80, 100)) {
+			/* EKM Little hispeed under high load */
+			target_f = max(raw_f, 1382400U);
+		} else {
+			target_f = raw_f;
+		}
 	}
 
 	/* Apply Anti-Flicker Floor (Silver 576 MHz) */
@@ -1581,15 +1596,15 @@ static int extreme_plus_init(struct cpufreq_policy *policy)
 		goto stop_kthread;
 	}
 
-	tunables->up_rate_limit_us = 0;
-	tunables->down_rate_limit_us = 5000;
-	tunables->hispeed_load = 65;
+	tunables->up_rate_limit_us = 500;
+	tunables->down_rate_limit_us = 20000;
+	tunables->hispeed_load = 75;
 
 	switch (policy->cpu) {
 	default:
 	case 0:
 		tunables->rtg_boost_freq = DEFAULT_CPU0_RTG_BOOST_FREQ;
-		tunables->hispeed_freq = 1056000;
+		tunables->hispeed_freq = 1382400;
 		break;
 	case 4:
 		tunables->rtg_boost_freq = DEFAULT_CPU4_RTG_BOOST_FREQ;
@@ -1597,7 +1612,7 @@ static int extreme_plus_init(struct cpufreq_policy *policy)
 		break;
 	case 7:
 		tunables->rtg_boost_freq = DEFAULT_CPU7_RTG_BOOST_FREQ;
-		tunables->hispeed_freq = 2169600;
+		tunables->hispeed_freq = 2419200;
 		break;
 	}
 
@@ -1807,20 +1822,28 @@ static void extreme_profile_apply(int mode)
 	struct cpufreq_policy *policy;
 	unsigned int prime_max_freq;
 	unsigned int gold_max_freq;
+	unsigned int down_delay_us;
+	unsigned int up_delay_us;
 
 	switch (mode) {
 	case EXTREME_PROFILE_BALANCED:
 		prime_max_freq = EXTREME_PRIME_BALANCED_MAX;
 		gold_max_freq = EXTREME_GOLD_BALANCED_MAX;
+		down_delay_us = 15000;
+		up_delay_us = 500;
 		break;
 	case EXTREME_PROFILE_BATTERY:
 		prime_max_freq = EXTREME_PRIME_BATTERY_MAX;
 		gold_max_freq = EXTREME_GOLD_BATTERY_MAX;
+		down_delay_us = 8000;
+		up_delay_us = 1000;
 		break;
 	case EXTREME_PROFILE_GAMING:
 	default:
 		prime_max_freq = EXTREME_PRIME_STOCK_MAX;
 		gold_max_freq = EXTREME_GOLD_STOCK_MAX;
+		down_delay_us = 25000;
+		up_delay_us = 0;
 		break;
 	}
 
@@ -1836,6 +1859,8 @@ static void extreme_profile_apply(int mode)
 		policy->max = prime_max_freq;
 		if (policy->governor == &extreme_plus_gov && policy->governor_data) {
 			struct extreme_plus_policy *sg_policy = policy->governor_data;
+			sg_policy->down_rate_delay_ns = down_delay_us * NSEC_PER_USEC;
+			sg_policy->up_rate_delay_ns = up_delay_us * NSEC_PER_USEC;
 			sg_policy->need_freq_update = true;
 			WRITE_ONCE(sg_policy->limits_changed, true);
 			smp_mb();
@@ -1856,6 +1881,8 @@ static void extreme_profile_apply(int mode)
 		policy->max = gold_max_freq;
 		if (policy->governor == &extreme_plus_gov && policy->governor_data) {
 			struct extreme_plus_policy *sg_policy = policy->governor_data;
+			sg_policy->down_rate_delay_ns = down_delay_us * NSEC_PER_USEC;
+			sg_policy->up_rate_delay_ns = up_delay_us * NSEC_PER_USEC;
 			sg_policy->need_freq_update = true;
 			WRITE_ONCE(sg_policy->limits_changed, true);
 			smp_mb();
@@ -1864,8 +1891,24 @@ static void extreme_profile_apply(int mode)
 		cpufreq_cpu_put(policy);
 	}
 
-	pr_info("EXTREME++ BMW Edition: Profile switched to %d (Prime target: %u kHz, Gold target: %u kHz)\n",
-		mode, prime_max_freq, gold_max_freq);
+	/* Update Little Cores (CPU 0-3 / Policy 0) */
+	policy = cpufreq_cpu_get(0);
+	if (policy) {
+		down_write(&policy->rwsem);
+		if (policy->governor == &extreme_plus_gov && policy->governor_data) {
+			struct extreme_plus_policy *sg_policy = policy->governor_data;
+			sg_policy->down_rate_delay_ns = down_delay_us * NSEC_PER_USEC;
+			sg_policy->up_rate_delay_ns = up_delay_us * NSEC_PER_USEC;
+			sg_policy->need_freq_update = true;
+			WRITE_ONCE(sg_policy->limits_changed, true);
+			smp_mb();
+		}
+		up_write(&policy->rwsem);
+		cpufreq_cpu_put(policy);
+	}
+
+	pr_info("EXTREME++ BMW Edition: Profile switched to %d (Prime target: %u kHz, Gold target: %u kHz, down_delay: %u us)\n",
+		mode, prime_max_freq, gold_max_freq, down_delay_us);
 }
 
 static ssize_t extreme_profile_show(struct kobject *kobj,

@@ -70,14 +70,17 @@ echo "[*] Cleaning previous temporary outputs..."
 rm -rf out out_hyperos out_aosp anykernel anykernel_* EXTREME++*.zip
 find . -type f \( -name "dtbo.img" -o -name "Image" -o -name "Image.gz" \) -delete
 
-# ZRAM ZSTD, EXTREME+ Governor & GPU Devfreq base symbols
-sed -i 's/CONFIG_ZRAM_DEF_COMP_LZ4=y/CONFIG_ZRAM_DEF_COMP_ZSTD=y/' "arch/arm64/configs/${DEFCONFIG}"
-grep -q "CONFIG_CRYPTO_ZSTD=y" "arch/arm64/configs/${DEFCONFIG}" || cat >> "arch/arm64/configs/${DEFCONFIG}" << 'EOF'
+# Fast ZRAM LZ4 (Zero CPU Overhead), EXTREME+ Governor & GPU Devfreq base symbols
+sed -i 's/CONFIG_ZRAM_DEF_COMP_ZSTD=y/CONFIG_ZRAM_DEF_COMP_LZ4=y/' "arch/arm64/configs/${DEFCONFIG}"
+grep -q "CONFIG_ZRAM_DEF_COMP_LZ4=y" "arch/arm64/configs/${DEFCONFIG}" || cat >> "arch/arm64/configs/${DEFCONFIG}" << 'EOF'
+CONFIG_CRYPTO_LZ4=y
+CONFIG_LZ4_COMPRESS=y
+CONFIG_LZ4_DECOMPRESS=y
+CONFIG_ZRAM_DEF_COMP_LZ4=y
+CONFIG_ZRAM_DEF_COMP="lz4"
 CONFIG_CRYPTO_ZSTD=y
 CONFIG_ZSTD_COMPRESS=y
 CONFIG_ZSTD_DECOMPRESS=y
-CONFIG_ZRAM_DEF_COMP_ZSTD=y
-CONFIG_ZRAM_DEF_COMP="zstd"
 CONFIG_PM_DEVFREQ=y
 CONFIG_DEVFREQ_GOV_QCOM_ADRENO_TZ=y
 CONFIG_DEVFREQ_GOV_QCOM_GPUBW_MON=y
@@ -93,19 +96,6 @@ CONFIG_DEFAULT_TCP_CONG="bbr"
 CONFIG_NET_SCH_FQ=y
 CONFIG_NET_SCH_FQ_CODEL=y
 EOF
-
-# ------------------------------------------
-# 2. Baseband & Network Guard
-# ------------------------------------------
-echo "[*] Injecting Baseband-guard Setup..."
-if ! wget -qO- https://raw.githubusercontent.com/vc-teahouse/Baseband-guard/main/setup.sh | bash; then
-    echo "❌ [ERROR] Baseband-guard download failed!"
-    exit 1
-fi
-
-if ! grep -q "selinux,baseband_guard" security/Kconfig; then
-    sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/selinux/selinux,baseband_guard/ } }' security/Kconfig
-fi
 
 # ------------------------------------------
 # 3. KernelSU (RKSU / ReSukiSU Multi-Manager Non-GKI 4.19 with SuSFS v2.3.0) Setup Function
@@ -271,10 +261,6 @@ if [ -f "kernel/sched/cpufreq_schedutil.c" ]; then
     echo "[+] Schedutil up_rate_limit_us set to 0 in kernel/sched/cpufreq_schedutil.c for lightning boot"
 fi
 
-if [ -f "fs/dcache.c" ]; then
-    sed -i 's/int sysctl_vfs_cache_pressure __read_mostly = [0-9]*;/int sysctl_vfs_cache_pressure __read_mostly = 50;/' fs/dcache.c
-    echo "[+] Optimized sysctl_vfs_cache_pressure to 50 in fs/dcache.c for instant app launch"
-fi
 
 # ------------------------------------------
 # 7. Clone AnyKernel3 Base Template (Clean AstideLabs / osm0sis)
@@ -338,15 +324,18 @@ build_target_os() {
         -e QCOM_KGSL_IOMMU \
         --set-str QCOM_ADRENO_DEFAULT_GOVERNOR "msm-adreno-tz"
 
-    # 3. ZRAM ZSTD Zero-Stutter Memory Compression
+    # 3. ZRAM Fast LZ4 Default Memory Compression (Instant Zero-Latency Decompress)
     scripts/config --file "${OUT_DIR}/.config" \
         -e ZRAM \
+        -e CRYPTO_LZ4 \
+        -e LZ4_COMPRESS \
+        -e LZ4_DECOMPRESS \
+        -e ZRAM_DEF_COMP_LZ4 \
+        -d ZRAM_DEF_COMP_ZSTD \
+        --set-str ZRAM_DEF_COMP "lz4" \
         -e CRYPTO_ZSTD \
         -e ZSTD_COMPRESS \
-        -e ZSTD_DECOMPRESS \
-        -e ZRAM_DEF_COMP_ZSTD \
-        -d ZRAM_DEF_COMP_LZ4 \
-        --set-str ZRAM_DEF_COMP "zstd"
+        -e ZSTD_DECOMPRESS
 
     # 4. Ultra-Fast & Safe Boot (Zero-Latency EXTREME+ Governor)
     scripts/config --file "${OUT_DIR}/.config" \
