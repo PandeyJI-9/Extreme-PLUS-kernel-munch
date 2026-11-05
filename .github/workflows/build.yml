@@ -81,7 +81,7 @@ jobs:
 
       - name: "🌐 Clone kernel source"
         run: |
-          git clone --depth=1 -b android17-aptusitu https://github.com/AstideLabs/android_kernel_xiaomi_sm8250 kernel
+          git clone --depth=1 -b android17-aptusitu-new https://github.com/AstideLabs/android_kernel_xiaomi_sm8250 kernel || git clone --depth=1 -b android17-aptusitu https://github.com/AstideLabs/android_kernel_xiaomi_sm8250 kernel || git clone --depth=1 https://github.com/AstideLabs/android_kernel_xiaomi_sm8250 kernel
 
       - name: "⚙️ Inject PandeyJI Custom Build Script"
         run: |
