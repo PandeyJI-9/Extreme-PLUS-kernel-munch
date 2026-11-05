@@ -1375,23 +1375,27 @@ static void extreme_profile_apply(int mode)
 	unsigned int gold_max_freq;
 	unsigned int down_delay_us;
 	unsigned int up_delay_us = 0; /* 0us: Instant touch response across ALL modes */
+	unsigned int hispeed_load;
 
 	switch (mode) {
 	case EXTREME_PROFILE_BALANCED:
 		prime_max_freq = EXTREME_PRIME_BALANCED_MAX; /* 2.84 GHz sweet spot */
 		gold_max_freq = EXTREME_GOLD_BALANCED_MAX;   /* 2.25 GHz */
 		down_delay_us = 15000;                       /* 15ms hold */
+		hispeed_load = 80;                           /* less eager than Gaming */
 		break;
 	case EXTREME_PROFILE_BATTERY:
 		prime_max_freq = EXTREME_PRIME_BATTERY_MAX;  /* 2.42 GHz marathon */
 		gold_max_freq = EXTREME_GOLD_BATTERY_MAX;    /* 1.96 GHz */
 		down_delay_us = 8000;                        /* 8ms clean decay */
+		hispeed_load = 85;                           /* only boost on real load */
 		break;
 	case EXTREME_PROFILE_GAMING:
 	default:
 		prime_max_freq = EXTREME_PRIME_STOCK_MAX;    /* 3.19 GHz monster boost */
 		gold_max_freq = EXTREME_GOLD_STOCK_MAX;      /* 2.42 GHz full peak */
 		down_delay_us = 20000;                       /* 20ms hold for frame pacing */
+		hispeed_load = DEFAULT_HISPEED_LOAD;         /* 75: responsive gaming */
 		break;
 	}
 
@@ -1412,6 +1416,7 @@ static void extreme_profile_apply(int mode)
 			if (sg_policy->tunables) {
 				sg_policy->tunables->down_rate_limit_us = down_delay_us;
 				sg_policy->tunables->up_rate_limit_us = up_delay_us;
+				sg_policy->tunables->hispeed_load = hispeed_load;
 			}
 			sg_policy->need_freq_update = true;
 			WRITE_ONCE(sg_policy->limits_changed, true);
@@ -1439,6 +1444,7 @@ static void extreme_profile_apply(int mode)
 			if (sg_policy->tunables) {
 				sg_policy->tunables->down_rate_limit_us = down_delay_us;
 				sg_policy->tunables->up_rate_limit_us = up_delay_us;
+				sg_policy->tunables->hispeed_load = hispeed_load;
 			}
 			sg_policy->need_freq_update = true;
 			WRITE_ONCE(sg_policy->limits_changed, true);
@@ -1461,6 +1467,7 @@ static void extreme_profile_apply(int mode)
 			if (sg_policy->tunables) {
 				sg_policy->tunables->down_rate_limit_us = down_delay_us;
 				sg_policy->tunables->up_rate_limit_us = up_delay_us;
+				sg_policy->tunables->hispeed_load = hispeed_load;
 			}
 			sg_policy->need_freq_update = true;
 			WRITE_ONCE(sg_policy->limits_changed, true);
