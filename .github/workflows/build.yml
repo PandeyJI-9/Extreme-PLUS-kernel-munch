@@ -81,7 +81,17 @@ jobs:
 
       - name: "🌐 Clone kernel source"
         run: |
-          git clone --depth=1 -b android17-aptusitu-new https://github.com/AstideLabs/android_kernel_xiaomi_sm8250 kernel || git clone --depth=1 -b android17-aptusitu https://github.com/AstideLabs/android_kernel_xiaomi_sm8250 kernel || git clone --depth=1 https://github.com/AstideLabs/android_kernel_xiaomi_sm8250 kernel
+          if git clone --depth=1 -b android17-aptusitu https://github.com/AstideLabs/android_kernel_xiaomi_sm8250 kernel 2>/dev/null; then
+            echo "[+] Cloned android17-aptusitu branch"
+          else
+            echo "[*] Falling back to verified SuSFS v2.3.0 tree (refs/pull/74/merge)..."
+            mkdir kernel && cd kernel
+            git init
+            git remote add origin https://github.com/AstideLabs/android_kernel_xiaomi_sm8250
+            git fetch --depth=1 origin refs/pull/74/merge
+            git checkout FETCH_HEAD
+            cd ..
+          fi
 
       - name: "⚙️ Inject PandeyJI Custom Build Script"
         run: |
