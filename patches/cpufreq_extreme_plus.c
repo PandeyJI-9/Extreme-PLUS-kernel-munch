@@ -129,6 +129,39 @@ static int extreme_profile_mode = EXTREME_PROFILE_GAMING;
 static DEFINE_MUTEX(extreme_profile_lock);
 static struct cpufreq_governor extreme_plus_gov;
 
+/*
+ * Frequency ceiling for the active profile.
+ * CPU7 is the Prime policy, CPU4..6 is the Gold policy and CPU0..3 is the
+ * Little policy.  A return value of 0 means "no extra software cap".
+ */
+static unsigned int extreme_profile_cap(struct cpufreq_policy *policy)
+{
+	unsigned int cap = 0;
+
+	if (!policy)
+		return 0;
+
+	switch (READ_ONCE(extreme_profile_mode)) {
+	case EXTREME_PROFILE_BALANCED:
+		if (policy->cpu == 7)
+			cap = EXTREME_PRIME_BALANCED_MAX;
+		else if (policy->cpu >= 4 && policy->cpu < 7)
+			cap = EXTREME_GOLD_BALANCED_MAX;
+		break;
+	case EXTREME_PROFILE_BATTERY:
+		if (policy->cpu == 7)
+			cap = EXTREME_PRIME_BATTERY_MAX;
+		else if (policy->cpu >= 4 && policy->cpu < 7)
+			cap = EXTREME_GOLD_BATTERY_MAX;
+		break;
+	case EXTREME_PROFILE_GAMING:
+	default:
+		break;
+	}
+
+	return cap;
+}
+
 /************************ Governor internals ***********************/
 
 static bool sugov_should_update_freq(struct sugov_policy *sg_policy, u64 time)
@@ -312,13 +345,31 @@ static unsigned int get_next_freq(struct sugov_policy *sg_policy,
 	struct cpufreq_policy *policy = sg_policy->policy;
 	unsigned int freq = arch_scale_freq_invariant() ?
 				policy->cpuinfo.max_freq : policy->cur;
+	unsigned int cap;
 
 	freq = map_util_freq(util, freq, max);
-	trace_sugov_next_freq(policy->cpu, util, max, freq);
 
 	/* Samsung E4 AMOLED Anti-Flicker Floor on Little cores (576 MHz) */
 	if (policy->cpu < 4 && freq < EXTREME_LITTLE_IDLE_FLOOR)
 		freq = EXTREME_LITTLE_IDLE_FLOOR;
+
+	/*
+	 * The profile ceiling must be enforced before the cached-frequency
+	 * check.  Fast-switch receives this value directly, so relying only on
+	 * policy->max is unsafe while userspace or HyperOS is rewriting limits.
+	 * policy->max still wins when thermal/QoS has restricted it further.
+	 */
+	cap = extreme_profile_cap(policy);
+	if (cap) {
+		if (policy->max && policy->max < cap)
+			cap = policy->max;
+	} else {
+		cap = policy->max;
+	}
+	if (cap && freq > cap)
+		freq = cap;
+
+	trace_sugov_next_freq(policy->cpu, util, max, freq);
 
 	if (freq == sg_policy->cached_raw_freq && !sg_policy->need_freq_update)
 		return sg_policy->next_freq;
@@ -1280,8 +1331,7 @@ static void extreme_plus_limits(struct cpufreq_policy *policy)
 	struct sugov_policy *sg_policy = policy->governor_data;
 	unsigned long flags, now;
 	unsigned int freq;
-	unsigned int profile_cap = 0;
-	int profile;
+	unsigned int profile_cap;
 
 	if (!sg_policy)
 		return;
@@ -1293,18 +1343,7 @@ static void extreme_plus_limits(struct cpufreq_policy *policy)
 	 * again.  Gaming intentionally has no cap so stock thermal protection
 	 * remains in full control.
 	 */
-	profile = READ_ONCE(extreme_profile_mode);
-	if (policy->cpu == 7) {
-		if (profile == EXTREME_PROFILE_BALANCED)
-			profile_cap = EXTREME_PRIME_BALANCED_MAX;
-		else if (profile == EXTREME_PROFILE_BATTERY)
-			profile_cap = EXTREME_PRIME_BATTERY_MAX;
-	} else if (policy->cpu == 4) {
-		if (profile == EXTREME_PROFILE_BALANCED)
-			profile_cap = EXTREME_GOLD_BALANCED_MAX;
-		else if (profile == EXTREME_PROFILE_BATTERY)
-			profile_cap = EXTREME_GOLD_BATTERY_MAX;
-	}
+	profile_cap = extreme_profile_cap(policy);
 
 	if (profile_cap && policy->max > profile_cap) {
 		if (profile_cap < policy->min)
@@ -1360,6 +1399,39 @@ struct cpufreq_governor *cpufreq_default_governor(void)
 #endif
 
 /************************ In-Kernel Dynamic Profile Switcher & EKM Support ***********************/
+
+/*
+ * Keep scaling_max_freq (policy->max) immediately consistent with the
+ * active profile.  cpufreq_update_policy() normally does this through the
+ * notifier chain, but on HyperOS a suspended/blocked notifier can leave the
+ * old value visible to FKM/EKM/DevCheck until the next update.  Only lower
+ * the limit here: thermal and QoS are still allowed to enforce a lower cap.
+ */
+static void extreme_sync_policy_max(unsigned int cpu, unsigned int cap)
+{
+	struct cpufreq_policy *policy = cpufreq_cpu_get(cpu);
+
+	if (!policy)
+		return;
+	if (!cap)
+		goto out;
+
+	down_write(&policy->rwsem);
+
+	if (cap > policy->cpuinfo.max_freq)
+		cap = policy->cpuinfo.max_freq;
+	if (cap < policy->min)
+		cap = policy->min;
+
+	if (policy->max > cap) {
+		policy->max = cap;
+		arch_set_max_freq_scale(policy->cpus, policy->max);
+	}
+
+	up_write(&policy->rwsem);
+out:
+	cpufreq_cpu_put(policy);
+}
 
 /*
  * Claude-Approved Profile Switcher:
@@ -1424,6 +1496,7 @@ static void extreme_profile_apply(int mode)
 		}
 		up_write(&policy->rwsem);
 		cpufreq_update_policy(7);
+		extreme_sync_policy_max(7, prime_max_freq);
 		cpufreq_cpu_put(policy);
 	}
 
@@ -1452,6 +1525,7 @@ static void extreme_profile_apply(int mode)
 		}
 		up_write(&policy->rwsem);
 		cpufreq_update_policy(4);
+		extreme_sync_policy_max(4, gold_max_freq);
 		cpufreq_cpu_put(policy);
 	}
 
