@@ -220,11 +220,12 @@ static void sugov_track_cycles(struct sugov_policy *sg_policy,
 	if (use_pelt())
 		return;
 
-	/* Claude Underflow Guard: prevent backwards step from wrapping u64 */
+	upto = min(upto, next_ws);
+
+	/* Underflow guard: prevent a backwards step from wrapping u64. */
 	if (upto <= sg_policy->last_cyc_update_time)
 		return;
 
-	upto = min(upto, next_ws);
 	delta_ns = upto - sg_policy->last_cyc_update_time;
 	delta_ns *= prev_freq;
 	do_div(delta_ns, (NSEC_PER_SEC / KHZ));
@@ -434,7 +435,13 @@ static void sugov_iowait_boost(struct sugov_cpu *sg_cpu, u64 time,
 		return;
 	}
 
-	sg_cpu->iowait_boost = sg_cpu->min;
+	/*
+	 * The first wakeup after IO used to start at the minimum OPP, which
+	 * made UFS wakeups feel delayed on this platform.  Start at half
+	 * capacity; subsequent IO wakeups still double up to the maximum.
+	 */
+	sg_cpu->iowait_boost = max_t(unsigned int, sg_cpu->min,
+				     SCHED_CAPACITY_SCALE >> 1);
 }
 
 static unsigned long sugov_iowait_apply(struct sugov_cpu *sg_cpu, u64 time,
@@ -479,7 +486,7 @@ static inline bool sugov_cpu_is_busy(struct sugov_cpu *sg_cpu) { return false; }
 #define DEFAULT_HISPEED_LOAD 75
 #define DEFAULT_CPU0_RTG_BOOST_FREQ 1382400U
 #define DEFAULT_CPU4_RTG_BOOST_FREQ 1996800U
-#define DEFAULT_CPU7_RTG_BOOST_FREQ 2419200U
+#define DEFAULT_CPU7_RTG_BOOST_FREQ 2841600U
 
 static void sugov_walt_adjust(struct sugov_cpu *sg_cpu, unsigned long *util,
 			      unsigned long *max)
@@ -524,11 +531,11 @@ static inline void ignore_dl_rate_limit(struct sugov_cpu *sg_cpu, struct sugov_p
 static inline unsigned int sugov_default_hispeed(struct cpufreq_policy *policy)
 {
 	if (policy->cpu < 4)
-		return 1056000;
+		return 1382400;
 	else if (policy->cpu < 7)
-		return 1804800;
+		return 1996800;
 	else
-		return 2169600;
+		return 2841600;
 }
 
 static inline unsigned int sugov_default_rtg_boost(struct cpufreq_policy *policy)
@@ -556,7 +563,6 @@ static void sugov_update_single(struct update_util_data *hook, u64 time,
 {
 	struct sugov_cpu *sg_cpu = container_of(hook, struct sugov_cpu, update_util);
 	struct sugov_policy *sg_policy = sg_cpu->sg_policy;
-	struct cpufreq_policy *policy = sg_policy->policy;
 	unsigned long util, max;
 	unsigned int next_f;
 	bool busy;
@@ -564,11 +570,30 @@ static void sugov_update_single(struct update_util_data *hook, u64 time,
 	if (!sg_policy->tunables->pl && (flags & SCHED_CPUFREQ_PL))
 		return;
 
-	util = sugov_get_util(sg_cpu);
-	max = sg_cpu->max;
-	sugov_calc_avg_cap(sg_policy, sg_cpu->walt_load.ws,
-			   sg_policy->policy->cur);
+	/*
+	 * Keep the cheap checks before sugov_get_util().  The WALT util
+	 * aggregation is expensive and a remote/rate-limited update must not
+	 * pay for it.
+	 */
+	sugov_iowait_boost(sg_cpu, time, flags);
+	sg_cpu->last_update = time;
 	ignore_dl_rate_limit(sg_cpu, sg_policy);
+
+	if (!sugov_should_update_freq(sg_policy, time))
+		return;
+
+	busy = use_pelt() && !sg_policy->need_freq_update &&
+		sugov_cpu_is_busy(sg_cpu);
+
+	/*
+	 * This assignment is critical on Kona: CPU7 has its own policy and
+	 * therefore uses this single-CPU path.  Without it sg_cpu->util stays
+	 * zero, so sugov_walt_adjust() can never apply hispeed or NL boosts to
+	 * the Prime core (the main gaming regression).
+	 */
+	sg_cpu->util = util = sugov_get_util(sg_cpu);
+	max = sg_cpu->max;
+	sg_cpu->flags = flags;
 
 	if (sg_policy->max != max) {
 		unsigned int hs_freq, boost_freq;
@@ -586,21 +611,15 @@ static void sugov_update_single(struct update_util_data *hook, u64 time,
 		sg_policy->rtg_boost_util = target_util(sg_policy, boost_freq);
 	}
 
-	sugov_iowait_boost(sg_cpu, time, flags);
-	sg_cpu->last_update = time;
+	util = sugov_iowait_apply(sg_cpu, time, util, max);
+	sugov_calc_avg_cap(sg_policy, sg_cpu->walt_load.ws,
+			   sg_policy->policy->cur);
 
 	trace_sugov_util_update(sg_cpu->cpu, sg_cpu->util, sg_policy->avg_cap,
 				max, sg_cpu->walt_load.nl,
 				sg_cpu->walt_load.pl,
 				sg_cpu->walt_load.rtgb_active, flags);
 
-	if (!sugov_should_update_freq(sg_policy, time))
-		return;
-
-	busy = use_pelt() && !sg_policy->need_freq_update &&
-		sugov_cpu_is_busy(sg_cpu);
-
-	util = sugov_iowait_apply(sg_cpu, time, util, max);
 	sugov_walt_adjust(sg_cpu, &util, &max);
 	next_f = get_next_freq(sg_policy, util, max);
 
@@ -609,7 +628,7 @@ static void sugov_update_single(struct update_util_data *hook, u64 time,
 		sg_policy->cached_raw_freq = sg_policy->prev_cached_raw_freq;
 	}
 
-	if (policy->fast_switch_enabled) {
+	if (sg_policy->policy->fast_switch_enabled) {
 		sugov_fast_switch(sg_policy, time, next_f);
 	} else {
 		raw_spin_lock(&sg_policy->update_lock);
@@ -1261,9 +1280,43 @@ static void extreme_plus_limits(struct cpufreq_policy *policy)
 	struct sugov_policy *sg_policy = policy->governor_data;
 	unsigned long flags, now;
 	unsigned int freq;
+	unsigned int profile_cap = 0;
+	int profile;
 
 	if (!sg_policy)
 		return;
+
+	/*
+	 * Re-apply the active profile ceiling here.  Userspace (mi_thermald,
+	 * perfd, FKM, etc.) can rewrite scaling_max_freq at any time; without
+	 * this check a Balanced/Battery profile silently becomes stock-max
+	 * again.  Gaming intentionally has no cap so stock thermal protection
+	 * remains in full control.
+	 */
+	profile = READ_ONCE(extreme_profile_mode);
+	if (policy->cpu == 7) {
+		if (profile == EXTREME_PROFILE_BALANCED)
+			profile_cap = EXTREME_PRIME_BALANCED_MAX;
+		else if (profile == EXTREME_PROFILE_BATTERY)
+			profile_cap = EXTREME_PRIME_BATTERY_MAX;
+	} else if (policy->cpu == 4) {
+		if (profile == EXTREME_PROFILE_BALANCED)
+			profile_cap = EXTREME_GOLD_BALANCED_MAX;
+		else if (profile == EXTREME_PROFILE_BATTERY)
+			profile_cap = EXTREME_GOLD_BATTERY_MAX;
+	}
+
+	if (profile_cap && policy->max > profile_cap) {
+		if (profile_cap < policy->min)
+			profile_cap = policy->min;
+		policy->max = profile_cap;
+		/*
+		 * cpufreq_set_policy() already updated the scheduler's max
+		 * capacity scale using the uncapped limit.  Keep it in sync
+		 * with the profile ceiling we just applied.
+		 */
+		arch_set_max_freq_scale(policy->cpus, policy->max);
+	}
 
 	if (!policy->fast_switch_enabled) {
 		mutex_lock(&sg_policy->work_lock);
@@ -1355,6 +1408,7 @@ static void extreme_profile_apply(int mode)
 			struct sugov_policy *sg_policy = policy->governor_data;
 			sg_policy->down_rate_delay_ns = down_delay_us * NSEC_PER_USEC;
 			sg_policy->up_rate_delay_ns = up_delay_us * NSEC_PER_USEC;
+			update_min_rate_limit_ns(sg_policy);
 			if (sg_policy->tunables) {
 				sg_policy->tunables->down_rate_limit_us = down_delay_us;
 				sg_policy->tunables->up_rate_limit_us = up_delay_us;
@@ -1381,6 +1435,7 @@ static void extreme_profile_apply(int mode)
 			struct sugov_policy *sg_policy = policy->governor_data;
 			sg_policy->down_rate_delay_ns = down_delay_us * NSEC_PER_USEC;
 			sg_policy->up_rate_delay_ns = up_delay_us * NSEC_PER_USEC;
+			update_min_rate_limit_ns(sg_policy);
 			if (sg_policy->tunables) {
 				sg_policy->tunables->down_rate_limit_us = down_delay_us;
 				sg_policy->tunables->up_rate_limit_us = up_delay_us;
@@ -1402,6 +1457,7 @@ static void extreme_profile_apply(int mode)
 			struct sugov_policy *sg_policy = policy->governor_data;
 			sg_policy->down_rate_delay_ns = down_delay_us * NSEC_PER_USEC;
 			sg_policy->up_rate_delay_ns = up_delay_us * NSEC_PER_USEC;
+			update_min_rate_limit_ns(sg_policy);
 			if (sg_policy->tunables) {
 				sg_policy->tunables->down_rate_limit_us = down_delay_us;
 				sg_policy->tunables->up_rate_limit_us = up_delay_us;
@@ -1448,7 +1504,7 @@ static ssize_t extreme_profile_store(struct kobject *kobj,
 	}
 
 	mutex_lock(&extreme_profile_lock);
-	extreme_profile_mode = val;
+	WRITE_ONCE(extreme_profile_mode, val);
 	extreme_profile_apply(val);
 	mutex_unlock(&extreme_profile_lock);
 
