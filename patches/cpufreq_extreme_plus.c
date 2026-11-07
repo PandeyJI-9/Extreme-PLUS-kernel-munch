@@ -37,6 +37,7 @@
 #include <linux/sched/sysctl.h>
 #include <linux/kobject.h>
 #include <linux/sysfs.h>
+#include <linux/string.h>
 
 #define EXTREME_LITTLE_IDLE_FLOOR    576000U
 
@@ -161,6 +162,105 @@ static unsigned int extreme_profile_cap(struct cpufreq_policy *policy)
 
 	return cap;
 }
+
+/*
+ * Apply the active profile cap to any target frequency.  policy->max is
+ * still respected so thermal/QoS can enforce a lower ceiling than the
+ * profile itself.
+ */
+static unsigned int extreme_clamp_freq(struct cpufreq_policy *policy,
+				       unsigned int freq)
+{
+	unsigned int cap = extreme_profile_cap(policy);
+
+	if (cap) {
+		if (policy->max && policy->max < cap)
+			cap = policy->max;
+	} else {
+		cap = policy->max;
+	}
+
+	if (cap && freq > cap)
+		freq = cap;
+
+	return freq;
+}
+
+/*
+ * Resolve the final target after applying the profile clamp.
+ *
+ * qcom-cpufreq-hw's fast_switch callback ignores its target_freq argument
+ * and programs policy->cached_resolved_idx instead.  The normal round-up
+ * resolver can therefore choose an OPP above the profile ceiling, and the
+ * cached index must be refreshed after the clamp.  If the ceiling is not an
+ * exact OPP, select the highest OPP at or below it so a profile can never
+ * run above its limit.
+ */
+static unsigned int extreme_resolve_freq(struct cpufreq_policy *policy,
+					unsigned int freq)
+{
+	unsigned int cap = extreme_profile_cap(policy);
+	unsigned int resolved;
+	int idx;
+
+	freq = extreme_clamp_freq(policy, freq);
+	resolved = cpufreq_driver_resolve_freq(policy, freq);
+
+	if (!cap || resolved <= cap)
+		return resolved;
+
+	if (policy->freq_table) {
+		idx = cpufreq_table_find_index_h(policy, cap);
+		if (idx >= 0) {
+			policy->cached_resolved_idx = idx;
+			return policy->freq_table[idx].frequency;
+		}
+	}
+
+	return cap;
+}
+
+/*
+ * Enforce the profile at the cpufreq policy level as well.  Some HyperOS
+ * components and third-party kernel managers write scaling_max_freq directly
+ * instead of going through the governor.  CPUFREQ_ADJUST is the common path
+ * for those writes, so clamp the new policy before cpufreq_set_policy()
+ * publishes policy->max and calls the governor.
+ */
+static int extreme_policy_notifier(struct notifier_block *nb,
+				   unsigned long event, void *data)
+{
+	struct cpufreq_policy *policy = data;
+	unsigned int cap;
+
+	(void)nb;
+
+	if (!policy)
+		return NOTIFY_DONE;
+
+	switch (event) {
+	case CPUFREQ_ADJUST:
+	case CPUFREQ_NOTIFY:
+		break;
+	default:
+		return NOTIFY_DONE;
+	}
+
+	cap = extreme_profile_cap(policy);
+	if (!cap)
+		return NOTIFY_OK;
+
+	if (cap < policy->min)
+		cap = policy->min;
+	if (policy->max > cap)
+		policy->max = cap;
+
+	return NOTIFY_OK;
+}
+
+static struct notifier_block extreme_policy_nb = {
+	.notifier_call = extreme_policy_notifier,
+};
 
 /************************ Governor internals ***********************/
 
@@ -302,6 +402,12 @@ static void sugov_fast_switch(struct sugov_policy *sg_policy, u64 time,
 	struct cpufreq_policy *policy = sg_policy->policy;
 	unsigned int cpu;
 
+	/*
+	 * Resolve after the final clamp; qcom-cpufreq-hw programs the cached
+	 * resolved index rather than the target argument passed to fast_switch.
+	 */
+	next_freq = extreme_resolve_freq(policy, next_freq);
+
 	if (!sugov_update_next_freq(sg_policy, time, next_freq))
 		return;
 
@@ -321,6 +427,8 @@ static void sugov_fast_switch(struct sugov_policy *sg_policy, u64 time,
 static void sugov_deferred_update(struct sugov_policy *sg_policy, u64 time,
 				  unsigned int next_freq)
 {
+	next_freq = extreme_clamp_freq(sg_policy->policy, next_freq);
+
 	if (!sugov_update_next_freq(sg_policy, time, next_freq))
 		return;
 
@@ -345,7 +453,6 @@ static unsigned int get_next_freq(struct sugov_policy *sg_policy,
 	struct cpufreq_policy *policy = sg_policy->policy;
 	unsigned int freq = arch_scale_freq_invariant() ?
 				policy->cpuinfo.max_freq : policy->cur;
-	unsigned int cap;
 
 	freq = map_util_freq(util, freq, max);
 
@@ -354,20 +461,11 @@ static unsigned int get_next_freq(struct sugov_policy *sg_policy,
 		freq = EXTREME_LITTLE_IDLE_FLOOR;
 
 	/*
-	 * The profile ceiling must be enforced before the cached-frequency
-	 * check.  Fast-switch receives this value directly, so relying only on
-	 * policy->max is unsafe while userspace or HyperOS is rewriting limits.
-	 * policy->max still wins when thermal/QoS has restricted it further.
+	 * Apply the profile ceiling before the cached-frequency check.  The
+	 * final clamp is repeated again in the switch paths below, so a stale
+	 * cache or a busy-hold cannot ever push the hardware past the profile.
 	 */
-	cap = extreme_profile_cap(policy);
-	if (cap) {
-		if (policy->max && policy->max < cap)
-			cap = policy->max;
-	} else {
-		cap = policy->max;
-	}
-	if (cap && freq > cap)
-		freq = cap;
+	freq = extreme_clamp_freq(policy, freq);
 
 	trace_sugov_next_freq(policy->cpu, util, max, freq);
 
@@ -378,8 +476,8 @@ static unsigned int get_next_freq(struct sugov_policy *sg_policy,
 	sg_policy->prev_cached_raw_freq = sg_policy->cached_raw_freq;
 	sg_policy->cached_raw_freq = freq;
 
-	/* Stock CAF round-up resolution: zero FPS drops */
-	return cpufreq_driver_resolve_freq(policy, freq);
+	/* Stock CAF round-up resolution, bounded by the active profile. */
+	return extreme_resolve_freq(policy, freq);
 }
 
 extern long
@@ -791,6 +889,8 @@ static void sugov_work(struct kthread_work *work)
 	sugov_track_cycles(sg_policy, sg_policy->policy->cur,
 			   ktime_get_ns());
 	raw_spin_unlock_irqrestore(&sg_policy->update_lock, flags);
+
+	freq = extreme_resolve_freq(sg_policy->policy, freq);
 
 	mutex_lock(&sg_policy->work_lock);
 	__cpufreq_driver_target(sg_policy->policy, freq, CPUFREQ_RELATION_L);
@@ -1360,6 +1460,8 @@ static void extreme_plus_limits(struct cpufreq_policy *policy)
 	if (!policy->fast_switch_enabled) {
 		mutex_lock(&sg_policy->work_lock);
 		raw_spin_lock_irqsave(&sg_policy->update_lock, flags);
+		if (sg_policy->need_freq_update)
+			sg_policy->last_freq_update_time = 0;
 		sugov_track_cycles(sg_policy, sg_policy->policy->cur,
 				   ktime_get_ns());
 		raw_spin_unlock_irqrestore(&sg_policy->update_lock, flags);
@@ -1367,6 +1469,8 @@ static void extreme_plus_limits(struct cpufreq_policy *policy)
 		mutex_unlock(&sg_policy->work_lock);
 	} else {
 		raw_spin_lock_irqsave(&sg_policy->update_lock, flags);
+		if (sg_policy->need_freq_update)
+			sg_policy->last_freq_update_time = 0;
 		freq = policy->cur;
 		now = ktime_get_ns();
 
@@ -1562,6 +1666,16 @@ static ssize_t extreme_profile_show(struct kobject *kobj,
 	return scnprintf(buf, PAGE_SIZE, "%d\n", READ_ONCE(extreme_profile_mode));
 }
 
+static bool extreme_profile_name_eq(const char *buf, const char *name)
+{
+	size_t len = strlen(name);
+
+	if (strncasecmp(buf, name, len))
+		return false;
+
+	return buf[len] == '\0' || buf[len] == '\n';
+}
+
 static ssize_t extreme_profile_store(struct kobject *kobj,
 				     struct kobj_attribute *attr,
 				     const char *buf, size_t count)
@@ -1571,11 +1685,20 @@ static ssize_t extreme_profile_store(struct kobject *kobj,
 	if (!buf || count == 0)
 		return -EINVAL;
 
-	if (sysfs_streq(buf, "0") || sysfs_streq(buf, "gaming") || sysfs_streq(buf, "performance") || sysfs_streq(buf, "perf"))
+	if (extreme_profile_name_eq(buf, "0") ||
+	    extreme_profile_name_eq(buf, "gaming") ||
+	    extreme_profile_name_eq(buf, "performance") ||
+	    extreme_profile_name_eq(buf, "perf"))
 		val = EXTREME_PROFILE_GAMING;
-	else if (sysfs_streq(buf, "1") || sysfs_streq(buf, "balanced") || sysfs_streq(buf, "bal") || sysfs_streq(buf, "default"))
+	else if (extreme_profile_name_eq(buf, "1") ||
+		 extreme_profile_name_eq(buf, "balanced") ||
+		 extreme_profile_name_eq(buf, "bal") ||
+		 extreme_profile_name_eq(buf, "default"))
 		val = EXTREME_PROFILE_BALANCED;
-	else if (sysfs_streq(buf, "2") || sysfs_streq(buf, "battery") || sysfs_streq(buf, "powersave") || sysfs_streq(buf, "bat"))
+	else if (extreme_profile_name_eq(buf, "2") ||
+		 extreme_profile_name_eq(buf, "battery") ||
+		 extreme_profile_name_eq(buf, "powersave") ||
+		 extreme_profile_name_eq(buf, "bat"))
 		val = EXTREME_PROFILE_BATTERY;
 	else if (kstrtoint(buf, 10, &val) == 0) {
 		if (val < 0 || val > 2)
@@ -1605,6 +1728,12 @@ static int __init extreme_plus_register(void)
 	ret = cpufreq_register_governor(&extreme_plus_gov);
 	if (ret)
 		return ret;
+
+	/* Keep profile limits enforced even when userspace rewrites policy max. */
+	ret = cpufreq_register_notifier(&extreme_policy_nb,
+					CPUFREQ_POLICY_NOTIFIER);
+	if (ret)
+		pr_warn("EXTREME++: Failed to register cpufreq policy notifier\n");
 
 	ret = sysfs_create_file(kernel_kobj, &extreme_profile_kattr.attr);
 	if (ret)
