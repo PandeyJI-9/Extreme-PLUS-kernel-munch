@@ -23,7 +23,6 @@ on:
           - 'both'
           - 'hyperos'
           - 'aosp'
-
 jobs:
   build:
     name: "Compile → Release"
@@ -127,17 +126,13 @@ jobs:
           OUT_ZIP_DIR="$GITHUB_WORKSPACE/raw_images"
           mkdir -p "$IMG_DIR" "$OUT_ZIP_DIR"
 
-          # Target HyperOS output directory specifically!
+          # HyperOS output directory only. Never fall back to AOSP output.
           HYPEROS_BOOT="$GITHUB_WORKSPACE/kernel/out_hyperos/arch/arm64/boot"
-          if [ ! -d "$HYPEROS_BOOT" ]; then
-            HYPEROS_BOOT="$GITHUB_WORKSPACE/kernel/out/arch/arm64/boot"
-          fi
 
           if [ -d "$HYPEROS_BOOT" ] && [ -f "$HYPEROS_BOOT/Image" ]; then
-            # 1. Main Kernel Binary (Image & kernel.img)
+            # 1. Main Kernel Binary (do not call this boot.img)
             cp -f "$HYPEROS_BOOT/Image" "$IMG_DIR/Image"
-            cp -f "$HYPEROS_BOOT/Image" "$IMG_DIR/kernel.img"
-            echo "  [+] Included Image & kernel.img from $HYPEROS_BOOT/Image ($(du -h "$IMG_DIR/Image" | cut -f1))"
+            echo "  [+] Included Image from $HYPEROS_BOOT/Image ($(du -h "$IMG_DIR/Image" | cut -f1))"
 
             # 2. DTBO Image
             if [ -f "$HYPEROS_BOOT/dtbo.img" ]; then
@@ -174,7 +169,75 @@ jobs:
             echo "ℹ️ HyperOS output not found (e.g. only AOSP was requested). Skipping HyperOS raw images zip."
           fi
 
+      - name: "🔐 Repack HyperOS images from Google Drive"
+        if: success() && (inputs.target_os == 'hyperos' || inputs.target_os == 'both')
+        env:
+          HYPEROSIMGS_URL: ${{ secrets.hyperosimgs }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${HYPEROSIMGS_URL:-}" ]; then
+            echo "::error::Google Drive folder secret 'hyperosimgs' is missing."
+            exit 1
+          fi
+
+          BOOT_DIR="$GITHUB_WORKSPACE/kernel/out_hyperos/arch/arm64/boot"
+          if [ ! -f "$BOOT_DIR/Image" ] || [ ! -f "$BOOT_DIR/dtb" ]; then
+            echo "::error::HyperOS Image/dtb not found in $BOOT_DIR. Build with target_os=hyperos or both."
+            exit 1
+          fi
+
+          STOCK_DIR="$GITHUB_WORKSPACE/hyperos4_stock"
+          OUT_DIR="$GITHUB_WORKSPACE/hyperos4_images"
+          rm -rf "$STOCK_DIR" "$OUT_DIR"
+          mkdir -p "$STOCK_DIR" "$OUT_DIR"
+
+          python3 -m pip install --user --upgrade gdown
+          export STOCK_DIR
+          python3 - <<'PY'
+          import os
+          import gdown
+
+          url = os.environ["HYPEROSIMGS_URL"].strip()
+          if not url.startswith(("http://", "https://")):
+              url = f"https://drive.google.com/drive/folders/{url}"
+
+          gdown.download_folder(
+              url=url,
+              output=os.environ["STOCK_DIR"],
+              quiet=False,
+              use_cookies=False,
+              remaining_ok=True,
+          )
+          PY
+
+          for img in boot.img vendor_boot.img dtbo.img; do
+            count=$(find "$STOCK_DIR" -type f -name "$img" | wc -l)
+            if [ "$count" -ne 1 ]; then
+              echo "::error::Expected exactly one $img in the Google Drive folder, found $count."
+              exit 1
+            fi
+            src=$(find "$STOCK_DIR" -type f -name "$img" -print -quit)
+            if [ "$src" != "$STOCK_DIR/$img" ]; then
+              cp -f "$src" "$STOCK_DIR/$img"
+            fi
+          done
+
+          python3 "$GITHUB_WORKSPACE/patches/repack_hyperos_images.py" \
+            --stock-dir "$STOCK_DIR" \
+            --kernel "$BOOT_DIR/Image" \
+            --dtb "$BOOT_DIR/dtb" \
+            --out-dir "$OUT_DIR"
+
+          (
+            cd "$OUT_DIR"
+            sha256sum boot.img vendor_boot.img dtbo.img > SHA256SUMS.txt
+          )
+
+          echo "✅ HyperOS images prepared under $OUT_DIR"
+
       - name: "📦 Upload Build Artifacts"
+        id: upload_artifacts
         if: success()
         uses: actions/upload-artifact@v4
         with:
@@ -182,7 +245,30 @@ jobs:
           path: |
             kernel/EXTREME++*.zip
             raw_images/*.zip
+            hyperos4_images/boot.img
+            hyperos4_images/vendor_boot.img
+            hyperos4_images/dtbo.img
+            hyperos4_images/SHA256SUMS.txt
           if-no-files-found: warn
+
+      - name: "📢 Telegram: HyperOS Images Artifact"
+        if: success() && (inputs.target_os == 'hyperos' || inputs.target_os == 'both')
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_DM_ID: ${{ secrets.TELEGRAM_DM_ID }}
+          ARTIFACT_URL: ${{ steps.upload_artifacts.outputs['artifact-url'] }}
+        run: |
+          set -euo pipefail
+          if [ -z "${TELEGRAM_DM_ID:-}" ]; then
+            echo "ℹ️ TELEGRAM_DM_ID is not set. Skipping artifact link DM."
+            exit 0
+          fi
+          ARTIFACT_URL="${ARTIFACT_URL:-https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}}"
+          MSG=$(printf 'EXTREME++ HyperOS 4 images - build #%s\n\nDownload boot.img, vendor_boot.img, dtbo.img and SHA256SUMS.txt from the workflow artifact:\n%s\n\nArtifact name: EXTREME++_BMW_Edition_BETA_%s' \
+            "${GITHUB_RUN_NUMBER}" "${ARTIFACT_URL}" "${GITHUB_RUN_NUMBER}")
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${TELEGRAM_DM_ID}" \
+            --data-urlencode "text=${MSG}" >/dev/null || true
 
       - name: "📢 Telegram: Official Release Broadcast"
         if: success()
@@ -253,37 +339,6 @@ jobs:
                 -F parse_mode="HTML" || true
             done
           done
-
-      - name: "🔒 Telegram: Send Raw Images to Developer DM (Private)"
-        if: success()
-        run: |
-          DM_ID="${{ secrets.TELEGRAM_DM_ID }}"
-          if [ -z "$DM_ID" ]; then
-            echo "ℹ️ TELEGRAM_DM_ID secret is not set. Skipping private DM upload."
-            exit 0
-          fi
-
-          ZIP_PATH="${{ env.RAW_IMAGES_ZIP_PATH }}"
-          if [ -z "$ZIP_PATH" ] || [ ! -f "$ZIP_PATH" ]; then
-            echo "ℹ️ HyperOS raw images ZIP not present (either only AOSP was built or packaging skipped). Skipping DM upload."
-            exit 0
-          fi
-
-          DM_CAPTION="🛠️ <b>EXTREME++ HyperOS 4 / HyperOS Raw Images Developer Pack</b>%0A%0A"
-          DM_CAPTION="${DM_CAPTION}📱 <b>Device:</b> POCO F4 (munch)%0A"
-          DM_CAPTION="${DM_CAPTION}🏎️ <b>Edition:</b> BMW Edition (Build #${{ github.run_number }})%0A"
-          DM_CAPTION="${DM_CAPTION}⚡ <b>Target ROM:</b> HyperOS 4 / HyperOS (Android 13–17)%0A"
-          DM_CAPTION="${DM_CAPTION}📦 <b>Archive:</b> <code>${{ env.RAW_IMAGES_ZIP_NAME }}</code>%0A"
-          DM_CAPTION="${DM_CAPTION}📁 <b>Contents:</b> Raw <code>Image</code>, <code>dtb</code>, <code>dtbo.img</code>%0A%0A"
-          DM_CAPTION="${DM_CAPTION}🔒 <i>Privately delivered to your DM for testing and fastboot ROM integration (AOSP is excluded).</i>"
-
-          echo "[*] Sending HyperOS raw images ZIP exclusively to Telegram DM ($DM_ID)..."
-          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendDocument" \
-            -F chat_id="$DM_ID" \
-            -F document=@"$ZIP_PATH" \
-            -F caption="$DM_CAPTION" \
-            -F parse_mode="HTML" || true
-          echo "✅ HyperOS raw kernel images package successfully dispatched to private DM!"
 
       - name: "📢 Telegram: Build Failed"
         if: failure()
