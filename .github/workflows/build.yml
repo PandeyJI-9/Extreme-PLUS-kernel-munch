@@ -171,15 +171,14 @@ jobs:
 
       - name: "🔐 Repack HyperOS images from Google Drive"
         if: success() && (inputs.target_os == 'hyperos' || inputs.target_os == 'both')
-        continue-on-error: true
         env:
-          HYPEROSIMGS_URL: ${{ secrets.hyperosimgs }}
+          HYPEROSIMGS_URL: ${{ secrets.hyperosimgs || secrets.HYPEROSIMGS }}
         run: |
           set -euo pipefail
 
           if [ -z "${HYPEROSIMGS_URL:-}" ]; then
-            echo "ℹ️ Google Drive folder secret 'hyperosimgs' is not set. Skipping HyperOS images repack."
-            exit 0
+            echo "::error::Google Drive secret 'hyperosimgs' is not set! Required to repack flashable HyperOS 4 images."
+            exit 1
           fi
 
           BOOT_DIR="$GITHUB_WORKSPACE/kernel/out_hyperos/arch/arm64/boot"
@@ -188,8 +187,8 @@ jobs:
           fi
 
           if [ ! -f "$BOOT_DIR/Image" ]; then
-            echo "::warning::HyperOS Image not found in $BOOT_DIR. Skipping repack."
-            exit 0
+            echo "::error::HyperOS Image not found in $BOOT_DIR! Kernel compilation did not produce an Image."
+            exit 1
           fi
 
           # Ensure dtb is available
@@ -202,8 +201,8 @@ jobs:
           fi
 
           if [ ! -f "$BOOT_DIR/dtb" ]; then
-            echo "::warning::HyperOS dtb not found in $BOOT_DIR. Skipping repack."
-            exit 0
+            echo "::error::HyperOS dtb not found in $BOOT_DIR!"
+            exit 1
           fi
 
           STOCK_DIR="$GITHUB_WORKSPACE/hyperos4_stock"
@@ -215,38 +214,85 @@ jobs:
           export STOCK_DIR
           python3 - <<'PY'
           import os
+          import re
+          import sys
           import gdown
 
-          url = os.environ["HYPEROSIMGS_URL"].strip()
-          if not url.startswith(("http://", "https://")):
-              url = f"https://drive.google.com/drive/folders/{url}"
+          raw = os.environ.get("HYPEROSIMGS_URL", "").strip().strip('"').strip("'")
+          stock_dir = os.environ["STOCK_DIR"]
+          if not raw:
+              print("::error::HYPEROSIMGS_URL is empty!", file=sys.stderr)
+              sys.exit(1)
 
-          try:
-              gdown.download_folder(
-                  url=url,
-                  output=os.environ["STOCK_DIR"],
-                  quiet=False,
-                  use_cookies=False,
-                  remaining_ok=True,
-              )
-          except Exception as exc:
-              print(f"Warning: gdown download failed: {exc}")
+          # Extract folder ID if present
+          folder_id = None
+          m = re.search(r'/folders/([a-zA-Z0-9_-]+)', raw)
+          if m:
+              folder_id = m.group(1)
+          elif re.search(r'[?&]id=([a-zA-Z0-9_-]+)', raw):
+              folder_id = re.search(r'[?&]id=([a-zA-Z0-9_-]+)', raw).group(1)
+          elif re.search(r'/d/([a-zA-Z0-9_-]+)', raw):
+              folder_id = re.search(r'/d/([a-zA-Z0-9_-]+)', raw).group(1)
+          elif re.fullmatch(r'[a-zA-Z0-9_-]+', raw):
+              folder_id = raw
+
+          print(f"[*] Downloading stock HyperOS 4 images from Google Drive: {raw}")
+
+          success = False
+          if folder_id:
+              try:
+                  print(f"[*] Attempting folder download by ID: {folder_id}")
+                  res = gdown.download_folder(id=folder_id, output=stock_dir, quiet=False, use_cookies=False, remaining_ok=True)
+                  if res:
+                      success = True
+              except Exception as exc:
+                  print(f"[*] gdown folder download by ID failed: {exc}", file=sys.stderr)
+
+          if not success:
+              url = raw if raw.startswith(("http://", "https://")) else f"https://drive.google.com/drive/folders/{raw}"
+              try:
+                  print(f"[*] Attempting folder download by URL: {url}")
+                  res = gdown.download_folder(url=url, output=stock_dir, quiet=False, use_cookies=False, remaining_ok=True)
+                  if res:
+                      success = True
+              except Exception as exc:
+                  print(f"[*] gdown folder download by URL failed: {exc}", file=sys.stderr)
+
+          if not success and folder_id:
+              try:
+                  print("[*] Attempting file download in case URL is a single archive...")
+                  res = gdown.download(id=folder_id, output=os.path.join(stock_dir, "stock_images.zip"), quiet=False, fuzzy=True)
+                  if res:
+                      success = True
+              except Exception as exc:
+                  print(f"[*] gdown file download failed: {exc}", file=sys.stderr)
           PY
 
+          # Extract any downloaded zip archives if present
+          for z in $(find "$STOCK_DIR" -type f -name "*.zip" 2>/dev/null); do
+            echo "[*] Extracting downloaded archive: $z"
+            unzip -q -o "$z" -d "$STOCK_DIR" || true
+          done
+
+          # Locate and flatten required stock images
           for img in boot.img vendor_boot.img dtbo.img; do
             count=$(find "$STOCK_DIR" -type f -name "$img" 2>/dev/null | wc -l)
-            if [ "$count" -ne 1 ]; then
-              echo "::warning::Expected exactly one $img in the Google Drive folder, found $count. Skipping repack."
-              exit 0
+            if [ "$count" -lt 1 ]; then
+              echo "::error::Required stock image '$img' was NOT found in downloaded Google Drive files!"
+              echo "Directory tree of $STOCK_DIR:"
+              find "$STOCK_DIR" -maxdepth 3 -ls || true
+              exit 1
             fi
             src=$(find "$STOCK_DIR" -type f -name "$img" -print -quit)
             if [ "$src" != "$STOCK_DIR/$img" ]; then
               cp -f "$src" "$STOCK_DIR/$img"
             fi
+            echo "  [+] Found $img: $src ($(du -h "$src" | cut -f1))"
           done
 
           chmod +x "$GITHUB_WORKSPACE/patches/avbtool" 2>/dev/null || true
 
+          echo "[*] Running HyperOS image repack tool..."
           python3 "$GITHUB_WORKSPACE/patches/repack_hyperos_images.py" \
             --stock-dir "$STOCK_DIR" \
             --kernel "$BOOT_DIR/Image" \
@@ -259,7 +305,8 @@ jobs:
             sha256sum boot.img vendor_boot.img dtbo.img > SHA256SUMS.txt
           )
 
-          echo "✅ HyperOS images prepared under $OUT_DIR"
+          echo "✅ HyperOS flashable partitioned images prepared under $OUT_DIR:"
+          ls -lh "$OUT_DIR"
 
       - name: "📦 Upload Build Artifacts"
         id: upload_artifacts
@@ -281,7 +328,7 @@ jobs:
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_DM_ID: ${{ secrets.TELEGRAM_DM_ID }}
-          ARTIFACT_URL: ${{ steps.upload_artifacts.outputs['artifact-url'] }}
+          ARTIFACT_URL: ${{ steps.upload_artifacts.outputs.artifact-url }}
         run: |
           set -euo pipefail
           if [ -z "${TELEGRAM_DM_ID:-}" ]; then
@@ -289,15 +336,16 @@ jobs:
             exit 0
           fi
           if [ ! -f "$GITHUB_WORKSPACE/hyperos4_images/boot.img" ]; then
-            echo "ℹ️ HyperOS 4 images not generated. Skipping artifact DM."
-            exit 0
+            echo "::error::HyperOS 4 images not found in $GITHUB_WORKSPACE/hyperos4_images! Artifact cannot be delivered."
+            exit 1
           fi
           ARTIFACT_URL="${ARTIFACT_URL:-https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}}"
-          MSG=$(printf 'EXTREME++ HyperOS 4 images - build #%s\n\nDownload boot.img, vendor_boot.img, dtbo.img and SHA256SUMS.txt from the workflow artifact:\n%s\n\nArtifact name: EXTREME++_BMW_Edition_BETA_%s' \
+          MSG=$(printf '🚀 <b>EXTREME++ HyperOS 4 Flashable Images</b> [Build #%s]\n\n📱 <b>Device:</b> POCO F4 (munch)\n🏎️ <b>Edition:</b> BMW Edition [BETA]\n\n📦 Download partitioned flashable images (<b>boot.img</b>, <b>vendor_boot.img</b>, <b>dtbo.img</b>, <b>SHA256SUMS.txt</b>) from the workflow artifact:\n👉 %s\n\n📁 <b>Artifact Name:</b> EXTREME++_BMW_Edition_BETA_%s' \
             "${GITHUB_RUN_NUMBER}" "${ARTIFACT_URL}" "${GITHUB_RUN_NUMBER}")
           curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage" \
-            --data-urlencode "chat_id=${TELEGRAM_DM_ID}" \
-            --data-urlencode "text=${MSG}" >/dev/null || true
+            -d chat_id="${TELEGRAM_DM_ID}" \
+            -d parse_mode="HTML" \
+            -d text="${MSG}" >/dev/null || true
 
       - name: "📢 Telegram: Official Release Broadcast"
         if: success()

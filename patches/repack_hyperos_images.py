@@ -41,10 +41,10 @@ def parse_boot_header(data: bytes) -> tuple[int, int, int]:
     kernel_size, ramdisk_size = struct.unpack_from("<II", data, 8)
     header_size = struct.unpack_from("<I", data, 20)[0]
     header_version = struct.unpack_from("<I", data, 40)[0]
-    if header_version != 3:
+    if header_version not in (3, 4):
         raise ValueError(f"boot.img: unsupported header version {header_version}")
-    if header_size != 1580:
-        raise ValueError(f"boot.img: unexpected v3 header size {header_size}")
+    if header_size not in (1580, 1584):
+        raise ValueError(f"boot.img: unexpected header size {header_size}")
     return kernel_size, ramdisk_size, header_size
 
 
@@ -77,7 +77,7 @@ def parse_vendor_header(data: bytes) -> tuple[int, int, int, int]:
     if data[:8] != VENDOR_BOOT_MAGIC:
         raise ValueError("vendor_boot.img: bad VNDRBOOT magic")
     header_version = struct.unpack_from("<I", data, 8)[0]
-    if header_version != 3:
+    if header_version not in (3, 4):
         raise ValueError(f"vendor_boot.img: unsupported header version {header_version}")
     page_size = struct.unpack_from("<I", data, 12)[0]
     vendor_ramdisk_size = struct.unpack_from("<I", data, 24)[0]
@@ -94,13 +94,14 @@ def vendor_layout(data: bytes) -> tuple[int, int, int, int, int]:
     return page_size, header_size, vendor_ramdisk_size, dtb_offset, content_end
 
 
-def read_avb_footer_info(avbtool: str, image: Path) -> dict[str, str]:
+def read_avb_footer_info(avbtool: str, image: Path) -> tuple[bool, dict[str, str], list[tuple[str, str]]]:
     proc = subprocess.run(
         [avbtool, "info_image", "--image", str(image)],
-        check=True,
         text=True,
         capture_output=True,
     )
+    if proc.returncode != 0:
+        return False, {}, []
     text = proc.stdout
     info: dict[str, str] = {}
     for key, pattern in {
@@ -110,21 +111,23 @@ def read_avb_footer_info(avbtool: str, image: Path) -> dict[str, str]:
         "flags": r"^\s*Flags:\s*(\d+)\s*$",
         "rollback": r"^\s*Rollback Index:\s*(\d+)\s*$",
         "rollback_location": r"^\s*Rollback Index Location:\s*(\d+)\s*$",
-        "fingerprint": r"^\s*Prop: com\.android\.build\.vendor_boot\.fingerprint -> '([^']+)'\s*$",
     }.items():
         match = re.search(pattern, text, re.MULTILINE)
         if match:
             info[key] = match.group(1)
-    missing = {"salt", "algorithm", "partition", "flags", "fingerprint"} - info.keys()
-    if missing:
-        raise ValueError(f"vendor_boot.img: could not parse AVB fields: {sorted(missing)}")
-    if info["algorithm"].upper() != "NONE":
+
+    props = re.findall(r"^\s*Prop:\s*(\S+)\s*->\s*'([^']*)'\s*$", text, re.MULTILINE)
+
+    if info.get("algorithm", "").upper() not in ("", "NONE"):
         raise ValueError(
             "vendor_boot.img: AVB footer is signed; cannot regenerate it without the ROM signing key"
         )
+    info.setdefault("partition", "vendor_boot")
+    info.setdefault("flags", "0")
     info.setdefault("rollback", "0")
     info.setdefault("rollback_location", "0")
-    return info
+    info.setdefault("salt", "")
+    return True, info, props
 
 
 def repack_vendor_boot(
@@ -152,26 +155,33 @@ def repack_vendor_boot(
     content[align(header_size, page_size):align(header_size, page_size) + vendor_ramdisk_size] = ramdisk
     content[dtb_offset:dtb_offset + new_dtb_size] = dtb
 
-    info = read_avb_footer_info(avbtool, stock_path)
-    with tempfile.TemporaryDirectory(prefix="hyperos-vendor-boot-") as tmp:
-        content_path = Path(tmp) / "vendor_boot"
-        content_path.write_bytes(content)
-        cmd = [
-            avbtool,
-            "add_hash_footer",
-            "--image", str(content_path),
-            "--partition_size", str(len(stock)),
-            "--partition_name", info["partition"],
-            "--hash_algorithm", "sha256",
-            "--salt", info["salt"],
-            "--algorithm", "NONE",
-            "--flags", info["flags"],
-            "--rollback_index", info["rollback"],
-            "--rollback_index_location", info["rollback_location"],
-            "--prop", f"com.android.build.vendor_boot.fingerprint:{info['fingerprint']}",
-        ]
-        subprocess.run(cmd, check=True, text=True)
-        shutil.copyfile(content_path, out_path)
+    has_avb, info, props = read_avb_footer_info(avbtool, stock_path)
+    if has_avb:
+        with tempfile.TemporaryDirectory(prefix="hyperos-vendor-boot-") as tmp:
+            content_path = Path(tmp) / "vendor_boot"
+            content_path.write_bytes(content)
+            cmd = [
+                avbtool,
+                "add_hash_footer",
+                "--image", str(content_path),
+                "--partition_size", str(len(stock)),
+                "--partition_name", info["partition"],
+                "--hash_algorithm", "sha256",
+                "--algorithm", "NONE",
+                "--flags", info["flags"],
+                "--rollback_index", info["rollback"],
+                "--rollback_index_location", info["rollback_location"],
+            ]
+            if info["salt"]:
+                cmd.extend(["--salt", info["salt"]])
+            for key, val in props:
+                cmd.extend(["--prop", f"{key}:{val}"])
+            subprocess.run(cmd, check=True, text=True)
+            shutil.copyfile(content_path, out_path)
+    else:
+        out = bytearray(len(stock))
+        out[:len(content)] = content
+        out_path.write_bytes(out)
 
 
 def main() -> int:
