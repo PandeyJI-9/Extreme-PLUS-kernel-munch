@@ -69,7 +69,7 @@ jobs:
       - name: "🛠️ Install build dependencies"
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib git gnupg gperf imagemagick lib32ncurses5-dev lib32readline-dev lib32z1-dev liblz4-tool libncurses5-dev libncurses5 libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev python3 python3-pip
+          sudo apt-get install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib git gnupg gperf imagemagick lib32ncurses5-dev lib32readline-dev lib32z1-dev liblz4-tool libncurses5-dev libncurses5 libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip unzip zlib1g-dev python3 python3-pip
 
       - name: "⚡ Setup ZyC-Clang 16"
         run: |
@@ -182,26 +182,14 @@ jobs:
           fi
 
           BOOT_DIR="$GITHUB_WORKSPACE/kernel/out_hyperos/arch/arm64/boot"
-          if [ ! -d "$BOOT_DIR" ]; then
-            BOOT_DIR="$GITHUB_WORKSPACE/kernel/out/arch/arm64/boot"
-          fi
 
           if [ ! -f "$BOOT_DIR/Image" ]; then
             echo "::error::HyperOS Image not found in $BOOT_DIR! Kernel compilation did not produce an Image."
             exit 1
           fi
 
-          # Ensure dtb is available
           if [ ! -f "$BOOT_DIR/dtb" ]; then
-            if [ -f "$BOOT_DIR/dtb.img" ]; then
-              cp -f "$BOOT_DIR/dtb.img" "$BOOT_DIR/dtb"
-            elif ls "$BOOT_DIR"/dts/vendor/qcom/*.dtb >/dev/null 2>&1; then
-              cat "$BOOT_DIR"/dts/vendor/qcom/*.dtb > "$BOOT_DIR/dtb"
-            fi
-          fi
-
-          if [ ! -f "$BOOT_DIR/dtb" ]; then
-            echo "::error::HyperOS dtb not found in $BOOT_DIR!"
+            echo "::error::HyperOS dtb not found in $BOOT_DIR! The build must produce arch/arm64/boot/dtb."
             exit 1
           fi
 
@@ -210,7 +198,7 @@ jobs:
           rm -rf "$STOCK_DIR" "$OUT_DIR"
           mkdir -p "$STOCK_DIR" "$OUT_DIR"
 
-          python3 -m pip install --user --upgrade gdown cryptography
+          python3 -m pip install --user --upgrade 'gdown==6.5.1'
           export STOCK_DIR
           python3 - <<'PY'
           import os
@@ -242,9 +230,11 @@ jobs:
           if folder_id:
               try:
                   print(f"[*] Attempting folder download by ID: {folder_id}")
-                  res = gdown.download_folder(id=folder_id, output=stock_dir, quiet=False, use_cookies=False, remaining_ok=True)
+                  res = gdown.download_folder(id=folder_id, output=stock_dir, quiet=False, use_cookies=False)
                   if res:
                       success = True
+                  else:
+                      print("[*] gdown folder download by ID returned no files", file=sys.stderr)
               except Exception as exc:
                   print(f"[*] gdown folder download by ID failed: {exc}", file=sys.stderr)
 
@@ -252,33 +242,47 @@ jobs:
               url = raw if raw.startswith(("http://", "https://")) else f"https://drive.google.com/drive/folders/{raw}"
               try:
                   print(f"[*] Attempting folder download by URL: {url}")
-                  res = gdown.download_folder(url=url, output=stock_dir, quiet=False, use_cookies=False, remaining_ok=True)
+                  res = gdown.download_folder(url=url, output=stock_dir, quiet=False, use_cookies=False)
                   if res:
                       success = True
+                  else:
+                      print("[*] gdown folder download by URL returned no files", file=sys.stderr)
               except Exception as exc:
                   print(f"[*] gdown folder download by URL failed: {exc}", file=sys.stderr)
 
           if not success and folder_id:
               try:
                   print("[*] Attempting file download in case URL is a single archive...")
-                  res = gdown.download(id=folder_id, output=os.path.join(stock_dir, "stock_images.zip"), quiet=False, fuzzy=True)
+                  res = gdown.download(id=folder_id, output=os.path.join(stock_dir, "stock_images.zip"), quiet=False)
                   if res:
                       success = True
               except Exception as exc:
                   print(f"[*] gdown file download failed: {exc}", file=sys.stderr)
+
+          if not success:
+              print(
+                  "::error::Unable to download the Google Drive stock images. "
+                  "Check that the 'hyperosimgs' secret contains the folder link and the folder is shared as "
+                  "'Anyone with the link - Viewer'.",
+                  file=sys.stderr,
+              )
+              sys.exit(1)
           PY
 
           # Extract any downloaded zip archives if present
-          for z in $(find "$STOCK_DIR" -type f -name "*.zip" 2>/dev/null); do
+          while IFS= read -r -d '' z; do
             echo "[*] Extracting downloaded archive: $z"
-            unzip -q -o "$z" -d "$STOCK_DIR" || true
-          done
+            if ! unzip -q -o "$z" -d "$STOCK_DIR"; then
+              echo "::error::Failed to extract downloaded archive: $z"
+              exit 1
+            fi
+          done < <(find "$STOCK_DIR" -type f -name "*.zip" -print0 2>/dev/null)
 
           # Locate and flatten required stock images
           for img in boot.img vendor_boot.img dtbo.img; do
             count=$(find "$STOCK_DIR" -type f -name "$img" 2>/dev/null | wc -l)
-            if [ "$count" -lt 1 ]; then
-              echo "::error::Required stock image '$img' was NOT found in downloaded Google Drive files!"
+            if [ "$count" -ne 1 ]; then
+              echo "::error::Expected exactly one '$img' in the Google Drive files, found $count."
               echo "Directory tree of $STOCK_DIR:"
               find "$STOCK_DIR" -maxdepth 3 -ls || true
               exit 1
@@ -343,9 +347,9 @@ jobs:
           MSG=$(printf '🚀 <b>EXTREME++ HyperOS 4 Flashable Images</b> [Build #%s]\n\n📱 <b>Device:</b> POCO F4 (munch)\n🏎️ <b>Edition:</b> BMW Edition [BETA]\n\n📦 Download partitioned flashable images (<b>boot.img</b>, <b>vendor_boot.img</b>, <b>dtbo.img</b>, <b>SHA256SUMS.txt</b>) from the workflow artifact:\n👉 %s\n\n📁 <b>Artifact Name:</b> EXTREME++_BMW_Edition_BETA_%s' \
             "${GITHUB_RUN_NUMBER}" "${ARTIFACT_URL}" "${GITHUB_RUN_NUMBER}")
           curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage" \
-            -d chat_id="${TELEGRAM_DM_ID}" \
-            -d parse_mode="HTML" \
-            -d text="${MSG}" >/dev/null || true
+            --data-urlencode "chat_id=${TELEGRAM_DM_ID}" \
+            --data-urlencode "parse_mode=HTML" \
+            --data-urlencode "text=${MSG}" >/dev/null || true
 
       - name: "📢 Telegram: Official Release Broadcast"
         if: success()
