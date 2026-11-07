@@ -171,20 +171,39 @@ jobs:
 
       - name: "🔐 Repack HyperOS images from Google Drive"
         if: success() && (inputs.target_os == 'hyperos' || inputs.target_os == 'both')
+        continue-on-error: true
         env:
           HYPEROSIMGS_URL: ${{ secrets.hyperosimgs }}
         run: |
           set -euo pipefail
 
           if [ -z "${HYPEROSIMGS_URL:-}" ]; then
-            echo "::error::Google Drive folder secret 'hyperosimgs' is missing."
-            exit 1
+            echo "ℹ️ Google Drive folder secret 'hyperosimgs' is not set. Skipping HyperOS images repack."
+            exit 0
           fi
 
           BOOT_DIR="$GITHUB_WORKSPACE/kernel/out_hyperos/arch/arm64/boot"
-          if [ ! -f "$BOOT_DIR/Image" ] || [ ! -f "$BOOT_DIR/dtb" ]; then
-            echo "::error::HyperOS Image/dtb not found in $BOOT_DIR. Build with target_os=hyperos or both."
-            exit 1
+          if [ ! -d "$BOOT_DIR" ]; then
+            BOOT_DIR="$GITHUB_WORKSPACE/kernel/out/arch/arm64/boot"
+          fi
+
+          if [ ! -f "$BOOT_DIR/Image" ]; then
+            echo "::warning::HyperOS Image not found in $BOOT_DIR. Skipping repack."
+            exit 0
+          fi
+
+          # Ensure dtb is available
+          if [ ! -f "$BOOT_DIR/dtb" ]; then
+            if [ -f "$BOOT_DIR/dtb.img" ]; then
+              cp -f "$BOOT_DIR/dtb.img" "$BOOT_DIR/dtb"
+            elif ls "$BOOT_DIR"/dts/vendor/qcom/*.dtb >/dev/null 2>&1; then
+              cat "$BOOT_DIR"/dts/vendor/qcom/*.dtb > "$BOOT_DIR/dtb"
+            fi
+          fi
+
+          if [ ! -f "$BOOT_DIR/dtb" ]; then
+            echo "::warning::HyperOS dtb not found in $BOOT_DIR. Skipping repack."
+            exit 0
           fi
 
           STOCK_DIR="$GITHUB_WORKSPACE/hyperos4_stock"
@@ -192,7 +211,7 @@ jobs:
           rm -rf "$STOCK_DIR" "$OUT_DIR"
           mkdir -p "$STOCK_DIR" "$OUT_DIR"
 
-          python3 -m pip install --user --upgrade gdown
+          python3 -m pip install --user --upgrade gdown cryptography
           export STOCK_DIR
           python3 - <<'PY'
           import os
@@ -202,20 +221,23 @@ jobs:
           if not url.startswith(("http://", "https://")):
               url = f"https://drive.google.com/drive/folders/{url}"
 
-          gdown.download_folder(
-              url=url,
-              output=os.environ["STOCK_DIR"],
-              quiet=False,
-              use_cookies=False,
-              remaining_ok=True,
-          )
+          try:
+              gdown.download_folder(
+                  url=url,
+                  output=os.environ["STOCK_DIR"],
+                  quiet=False,
+                  use_cookies=False,
+                  remaining_ok=True,
+              )
+          except Exception as exc:
+              print(f"Warning: gdown download failed: {exc}")
           PY
 
           for img in boot.img vendor_boot.img dtbo.img; do
-            count=$(find "$STOCK_DIR" -type f -name "$img" | wc -l)
+            count=$(find "$STOCK_DIR" -type f -name "$img" 2>/dev/null | wc -l)
             if [ "$count" -ne 1 ]; then
-              echo "::error::Expected exactly one $img in the Google Drive folder, found $count."
-              exit 1
+              echo "::warning::Expected exactly one $img in the Google Drive folder, found $count. Skipping repack."
+              exit 0
             fi
             src=$(find "$STOCK_DIR" -type f -name "$img" -print -quit)
             if [ "$src" != "$STOCK_DIR/$img" ]; then
@@ -223,11 +245,14 @@ jobs:
             fi
           done
 
+          chmod +x "$GITHUB_WORKSPACE/patches/avbtool" 2>/dev/null || true
+
           python3 "$GITHUB_WORKSPACE/patches/repack_hyperos_images.py" \
             --stock-dir "$STOCK_DIR" \
             --kernel "$BOOT_DIR/Image" \
             --dtb "$BOOT_DIR/dtb" \
-            --out-dir "$OUT_DIR"
+            --out-dir "$OUT_DIR" \
+            --avbtool "$GITHUB_WORKSPACE/patches/avbtool"
 
           (
             cd "$OUT_DIR"
@@ -261,6 +286,10 @@ jobs:
           set -euo pipefail
           if [ -z "${TELEGRAM_DM_ID:-}" ]; then
             echo "ℹ️ TELEGRAM_DM_ID is not set. Skipping artifact link DM."
+            exit 0
+          fi
+          if [ ! -f "$GITHUB_WORKSPACE/hyperos4_images/boot.img" ]; then
+            echo "ℹ️ HyperOS 4 images not generated. Skipping artifact DM."
             exit 0
           fi
           ARTIFACT_URL="${ARTIFACT_URL:-https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}}"

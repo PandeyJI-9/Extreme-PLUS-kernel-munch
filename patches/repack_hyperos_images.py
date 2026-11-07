@@ -175,12 +175,15 @@ def repack_vendor_boot(
 
 
 def main() -> int:
+    local_avbtool = Path(__file__).resolve().parent / "avbtool"
+    default_avbtool = str(local_avbtool) if local_avbtool.is_file() else (shutil.which("avbtool") or "avbtool")
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--stock-dir", required=True, type=Path)
     parser.add_argument("--kernel", required=True, type=Path)
     parser.add_argument("--dtb", required=True, type=Path)
     parser.add_argument("--out-dir", required=True, type=Path)
-    parser.add_argument("--avbtool", default="avbtool")
+    parser.add_argument("--avbtool", default=default_avbtool)
     args = parser.parse_args()
 
     for name in ("boot.img", "vendor_boot.img", "dtbo.img"):
