@@ -205,6 +205,25 @@ else:
 '
 
 # ------------------------------------------
+# 5b. ZRAM ZSTD + EXTREME++ Kernel Identity
+# ------------------------------------------
+echo "[*] Switching ZRAM to ZSTD level 3 (with runtime compression-level tunable)..."
+if [ -f "apply-zram-zstd.py" ]; then
+    python3 apply-zram-zstd.py
+else
+    echo "❌ [ERROR] apply-zram-zstd.py is missing."
+    exit 1
+fi
+
+echo "[*] Restoring EXTREME++ kernel identity (uname -v / /proc/version / dmesg)..."
+if [ -f "apply-extreme-branding.py" ]; then
+    python3 apply-extreme-branding.py
+else
+    echo "❌ [ERROR] apply-extreme-branding.py is missing."
+    exit 1
+fi
+
+# ------------------------------------------
 # 6. Apply Charging Patch & Harden SuSFS Build
 # ------------------------------------------
 if [ -f "apply-fastcharge-bypass.py" ]; then
@@ -322,6 +341,22 @@ build_target_os() {
         -d CPU_FREQ_DEFAULT_GOV_SCHEDUTIL \
         -e BUILD_ARM64_DT_OVERLAY
 
+    # 1b. ZRAM uses ZSTD level 3 instead of the legacy LZO default.
+    #     LZO stays compiled because stock vendor modules may import its
+    #     symbols; it is simply not the ZRAM default anymore.
+    scripts/config --file "${OUT_DIR}/.config" \
+        -e ZRAM \
+        -e CRYPTO_ZSTD \
+        -e ZSTD_COMMON \
+        -e ZSTD_COMPRESS \
+        -e ZSTD_DECOMPRESS \
+        -e ZRAM_DEF_COMP_ZSTD \
+        -d ZRAM_DEF_COMP_LZO \
+        -d ZRAM_DEF_COMP_LZORLE \
+        -d ZRAM_DEF_COMP_LZ4 \
+        -d ZRAM_DEF_COMP_LZ4HC \
+        -d ZRAM_DEF_COMP_842
+
     # 6. Root Configuration (ksu_susfs vs ksu_no_susfs vs noroot)
     if [ "$ENABLE_KSU" -eq 1 ]; then
         if [ "$ENABLE_SUSFS" -eq 1 ]; then
@@ -385,15 +420,16 @@ build_target_os() {
     if [ "$OS" == "hyperos" ]; then
         echo "[*] Keeping the stock HyperOS 4 / MIUI kernel configuration..."
         LOCALVER="-zyndong-perf"
-        TITLE="Extreme++Gaming BMW Edition [HyperOS] | POCO F4 (munch)"
+        TITLE="EXTREME++ BMW Edition [HyperOS] | POCO F4 (munch)"
         ZIP_BASE="EXTREME++Gaming_BMW_Edition_HyperOS"
         OS_BADGE="HyperOS 4 / HyperOS (Android 13–17)"
 
         # munch_stock-defconfig already contains the complete stock HyperOS
-        # subsystem set (MIHW, MILLET, MIGT, MI_RECLAIM, LZO ZRAM, SF_BINDER,
-        # BINDER_OPT, TASK_IO_ACCOUNTING, SCHEDSTATS, etc.). Do not override it.
-        # Keep the exact stock release string so the stock vendor modules keep
-        # loading: 4.19.325-zyndong-perf-g7e817c4ca270.
+        # subsystem set (MIHW, MILLET, MIGT, MI_RECLAIM, SF_BINDER, BINDER_OPT,
+        # TASK_IO_ACCOUNTING, SCHEDSTATS, etc.). Do not override it.
+        # ZRAM is switched to ZSTD separately; the exact stock release string is
+        # kept so vendor modules keep loading: 4.19.325-zyndong-perf-g7e817c4ca270.
+        # EXTREME++ branding lives in UTS_VERSION (/proc/version, uname -v).
         local STOCK_SCM_HASH
         STOCK_SCM_HASH=$(git rev-parse --short=12 HEAD 2>/dev/null || echo "7e817c4ca270")
         printf '%s' "-g${STOCK_SCM_HASH}" > .scmversion
@@ -401,7 +437,7 @@ build_target_os() {
     else
         echo "[*] Injecting Clean AOSP Subsystems (Android 16 & 17 Tested & Verified)..."
         LOCALVER="-Extreme++Gaming-AOSP-BMW"
-        TITLE="Extreme++Gaming BMW Edition [AOSP A16/A17] | POCO F4 (munch)"
+        TITLE="EXTREME++ BMW Edition [AOSP A16/A17] | POCO F4 (munch)"
         ZIP_BASE="EXTREME++Gaming_BMW_Edition_AOSP"
         OS_BADGE="AOSP Custom ROMs (Android 13–17 / A16 & A17 Tested)"
 
@@ -432,6 +468,40 @@ build_target_os() {
         exit 1
     fi
 
+    # ZRAM must use ZSTD, not the legacy LZO/LZO-RLE default. LZO symbols
+    # remain available only for stock vendor-module ABI compatibility.
+    if ! grep -q '^CONFIG_ZRAM=y' "${OUT_DIR}/.config"; then
+        echo "❌ [ERROR] CONFIG_ZRAM=y is missing."
+        exit 1
+    fi
+    if ! grep -q '^CONFIG_CRYPTO_ZSTD=y' "${OUT_DIR}/.config" ||
+       ! grep -q '^CONFIG_ZSTD_COMPRESS=y' "${OUT_DIR}/.config" ||
+       ! grep -q '^CONFIG_ZSTD_DECOMPRESS=y' "${OUT_DIR}/.config"; then
+        echo "❌ [ERROR] ZSTD compression support was not enabled."
+        grep '^CONFIG_\(CRYPTO_ZSTD\|ZSTD_\)' "${OUT_DIR}/.config" || true
+        exit 1
+    fi
+    if ! grep -q '^CONFIG_ZRAM_DEF_COMP_ZSTD=y' "${OUT_DIR}/.config"; then
+        echo "❌ [ERROR] ZRAM default compressor is not ZSTD."
+        grep '^CONFIG_ZRAM_DEF_COMP' "${OUT_DIR}/.config" || true
+        exit 1
+    fi
+    if grep -q '^CONFIG_ZRAM_DEF_COMP_\(LZO\|LZORLE\|LZ4\|LZ4HC\|842\)=y' "${OUT_DIR}/.config"; then
+        echo "❌ [ERROR] A legacy ZRAM compressor is still selected as default."
+        grep '^CONFIG_ZRAM_DEF_COMP' "${OUT_DIR}/.config" || true
+        exit 1
+    fi
+
+    if ! grep -q 'EXTREME++' scripts/mkcompile_h ||
+       ! grep -q 'EXTREME++ %s version %s' init/version.c; then
+        echo "❌ [ERROR] EXTREME++ kernel identity patch was not applied."
+        exit 1
+    fi
+    if ! grep -q 'compression_level' crypto/zstd.c; then
+        echo "❌ [ERROR] ZSTD compression_level tunable was not applied."
+        exit 1
+    fi
+
     if [ "$OS" == "hyperos" ]; then
         local CFG="${OUT_DIR}/.config"
 
@@ -451,27 +521,8 @@ build_target_os() {
             fi
         done
 
-        if ! grep -q '^CONFIG_CRYPTO_LZO=y' "${CFG}"; then
-            echo "❌ [ERROR] HyperOS stock LZO compression support is missing."
-            exit 1
-        fi
-
-        # ZSTD/LZ4 are not stock for HyperOS ZRAM. Keep the stock LZO/LZO-RLE
-        # compressor: ZSTD costs more CPU during camera bursts and does not
-        # fix the vendor-module/DTB mismatch that caused the camera black screen.
-        if grep -q '^CONFIG_ZRAM_DEF_COMP_\(LZ4\|LZ4HC\|ZSTD\)=y' "${CFG}"; then
-            echo "❌ [ERROR] Non-stock ZRAM compressor selected (LZ4/ZSTD)."
-            grep '^CONFIG_ZRAM_DEF_COMP' "${CFG}" || true
-            exit 1
-        fi
-
-        if ! grep -q '^CONFIG_ZRAM_DEF_COMP_\(LZO\|LZORLE\)=y' "${CFG}"; then
-            echo "⚠️ [WARN] Explicit LZO/LZO-RLE choice not present; checking stock default."
-            grep '^CONFIG_ZRAM_DEF_COMP' "${CFG}" || true
-        fi
-
         echo "[*] HyperOS ZRAM compressor config:"
-        grep '^CONFIG_ZRAM_DEF_COMP' "${CFG}" || echo "    (Kconfig default: LZO/LZO-RLE)"
+        grep '^CONFIG_\(CRYPTO_ZSTD\|ZRAM_DEF_COMP\)' "${CFG}" || true
     fi
 
     # 8. Build the device tree blobs and create the vendor_boot DTB table.
@@ -642,10 +693,11 @@ ui_print "\\____//_/|_| \\__//_/    \\___//_/ /_/ / \\___/   ";
 ui_print "                 [ + + ]                       ";
 ui_print " ══════════════════════════════════════════════";
 ui_print "  🏎️  EDITION : BMW Gaming Edition (${OS_UPPER}) ";
-ui_print "  👑  AUTHOR  : Extreme++ by @pandey_ji_8      ";
+ui_print "  👑  AUTHOR  : EXTREME++ by @pandey_ji_8      ";
 ui_print "  📱  DEVICE  : POCO F4 (munch) | ${OS_UPPER}  ";
 ui_print "  ⚡  CLOCK   : 3.19 GHz Unlocked Monster Peak ";
 ui_print "  🚀  PROFILES: In-Kernel Dynamic Switcher     ";
+ui_print "  🧠  ZRAM    : ZSTD Level 3 (Tuned Ratio)     ";
 ui_print "  🛡️  ROOT    : ${ROOT_BANNER} ";
 ui_print " ══════════════════════════════════════════════";
 ui_print " ";
@@ -700,7 +752,7 @@ ui_print "  [4/4] ✨ Preserving OEM Display Calibrations & Finalizing...";
 sleep 1;
 ui_print " ";
 ui_print " ══════════════════════════════════════════════";
-ui_print "  🎉 Extreme++ Kernel (${OS_UPPER}) Flashed!  ";
+ui_print "  🎉 EXTREME++ Kernel (${OS_UPPER}) Flashed!  ";
 ui_print "  🏎️ BMW Gaming Edition is Ready to Race!     ";
 ui_print "  ⚡ 3.19 GHz Monster Peak Unlocked!           ";
 ui_print "  🚀 Reboot and enjoy maximum smoothness!      ";
