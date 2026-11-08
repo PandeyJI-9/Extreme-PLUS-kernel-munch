@@ -1,13 +1,11 @@
 #!/usr/bin/env python3
 # PROJECT EXTREME++ | Maintainer: PandeyJI-9
 """
-Keep the EXTREME++ identity visible without changing the stock HyperOS
-UTS_RELEASE string.
+Keep the EXTREME++ identity visible in every kernel-side version surface:
+UTS_RELEASE (uname -r), UTS_VERSION (uname -v, dmesg), and /proc/version.
 
-Android vendor modules are matched against UTS_RELEASE (the kernel release),
-so changing it is what caused the previous vendor-module/camera mismatch.
-The EXTREME++ name is therefore injected into UTS_VERSION (uname -v, dmesg)
-and linux_proc_banner (/proc/version) instead.
+The separate apply-extreme-vermagic.py patch pins the vendor-module vermagic
+to the stock release so stock modules can still load.
 """
 
 from pathlib import Path

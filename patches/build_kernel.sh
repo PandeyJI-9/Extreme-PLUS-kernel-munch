@@ -48,6 +48,9 @@ case "$TARGET_OS" in
 esac
 
 KERNEL_DIR="$(pwd)"
+STOCK_SCM_HASH=$(git rev-parse --short=12 HEAD 2>/dev/null || echo "7e817c4ca270")
+EXTREME_VENDOR_RELEASE="${EXTREME_VENDOR_RELEASE:-4.19.325-zyndong-perf-g7e817c4ca270}"
+export EXTREME_VENDOR_RELEASE
 TOOLCHAIN_BIN="$HOME/zyc-clang/bin"
 
 export PATH="${TOOLCHAIN_BIN}:${PATH}"
@@ -118,7 +121,7 @@ if apk_sign_path:
             !strcmp(pkg_buf, "com.sukisu.ultra") ||
             !strcmp(pkg_buf, "com.kowx712.supermanager") ||
             !strcmp(pkg_buf, "com.resukisu")) {
-            pr_info("PROJECT EXTREME+: Manager recognized by known package name: %s\\n", pkg_buf);
+            pr_info("PROJECT EXTREME++: Manager recognized by known package name: %s\\n", pkg_buf);
             *signature_index = 0;
             return true;
         }
@@ -153,9 +156,9 @@ EOF
 echo "[+] kona-v2.1-gpu.dtsi set to pure FakeDreamer chipid override"
 
 # ------------------------------------------
-# 5. Inject EXTREME+ Governor (Stock schedutil + EKM profiles)
+# 5. Inject EXTREME++ Governor (Stock schedutil + EKM profiles)
 # ------------------------------------------
-echo "[*] Injecting stock-schedutil-based EXTREME+ Governor into kernel/sched/..."
+echo "[*] Injecting stock-schedutil-based EXTREME++ Governor into kernel/sched/..."
 if [ -f "cpufreq_extreme_plus.c" ]; then
     cp -f cpufreq_extreme_plus.c kernel/sched/cpufreq_extreme_plus.c
     echo "[+] Copied cpufreq_extreme_plus.c to kernel/sched/"
@@ -199,9 +202,9 @@ if "CPU_FREQ_GOV_EXTREME_PLUS" not in text:
     text = text.replace("config CPU_FREQ_GOV_SCHEDUTIL", gov_def + "\nconfig CPU_FREQ_GOV_SCHEDUTIL")
     with open(path_kconfig, "w") as f:
         f.write(text)
-    print("✅ Injected EXTREME+ governor definitions into drivers/cpufreq/Kconfig")
+    print("✅ Injected EXTREME++ governor definitions into drivers/cpufreq/Kconfig")
 else:
-    print("ℹ️ EXTREME+ governor already in drivers/cpufreq/Kconfig")
+    print("ℹ️ EXTREME++ governor already in drivers/cpufreq/Kconfig")
 '
 
 # ------------------------------------------
@@ -215,11 +218,19 @@ else
     exit 1
 fi
 
-echo "[*] Restoring EXTREME++ kernel identity (uname -v / /proc/version / dmesg)..."
+echo "[*] Restoring EXTREME++ kernel identity (uname -r / -v / /proc/version / dmesg)..."
 if [ -f "apply-extreme-branding.py" ]; then
     python3 apply-extreme-branding.py
 else
     echo "❌ [ERROR] apply-extreme-branding.py is missing."
+    exit 1
+fi
+
+echo "[*] Pinning stock vendor-module vermagic while keeping branded uname -r..."
+if [ -f "apply-extreme-vermagic.py" ]; then
+    python3 apply-extreme-vermagic.py
+else
+    echo "❌ [ERROR] apply-extreme-vermagic.py is missing."
     exit 1
 fi
 
@@ -419,7 +430,7 @@ build_target_os() {
 
     if [ "$OS" == "hyperos" ]; then
         echo "[*] Keeping the stock HyperOS 4 / MIUI kernel configuration..."
-        LOCALVER="-zyndong-perf"
+        LOCALVER="-Extreme++Gaming-HyperOS-BMW"
         TITLE="EXTREME++ BMW Edition [HyperOS] | POCO F4 (munch)"
         ZIP_BASE="EXTREME++Gaming_BMW_Edition_HyperOS"
         OS_BADGE="HyperOS 4 / HyperOS (Android 13–17)"
@@ -427,11 +438,10 @@ build_target_os() {
         # munch_stock-defconfig already contains the complete stock HyperOS
         # subsystem set (MIHW, MILLET, MIGT, MI_RECLAIM, SF_BINDER, BINDER_OPT,
         # TASK_IO_ACCOUNTING, SCHEDSTATS, etc.). Do not override it.
-        # ZRAM is switched to ZSTD separately; the exact stock release string is
-        # kept so vendor modules keep loading: 4.19.325-zyndong-perf-g7e817c4ca270.
-        # EXTREME++ branding lives in UTS_VERSION (/proc/version, uname -v).
-        local STOCK_SCM_HASH
-        STOCK_SCM_HASH=$(git rev-parse --short=12 HEAD 2>/dev/null || echo "7e817c4ca270")
+        # Branded release (uname -r):
+        #   4.19.325-Extreme++Gaming-HyperOS-BMW-g<stock commit>
+        # Vendor modules still see the stock vermagic pinned by
+        # apply-extreme-vermagic.py, so the camera/display module path stays safe.
         printf '%s' "-g${STOCK_SCM_HASH}" > .scmversion
         scripts/config --file "${OUT_DIR}/.config" -e LOCALVERSION_AUTO
     else
@@ -464,7 +474,7 @@ build_target_os() {
 
     if ! grep -q '^CONFIG_CPU_FREQ_GOV_EXTREME_PLUS=y' "${OUT_DIR}/.config" ||
        ! grep -q '^CONFIG_CPU_FREQ_DEFAULT_GOV_EXTREME_PLUS=y' "${OUT_DIR}/.config"; then
-        echo "❌ [ERROR] EXTREME+ governor was not selected as the default governor."
+        echo "❌ [ERROR] EXTREME++ governor was not selected as the default governor."
         exit 1
     fi
 
@@ -495,6 +505,10 @@ build_target_os() {
     if ! grep -q 'EXTREME++' scripts/mkcompile_h ||
        ! grep -q 'EXTREME++ %s version %s' init/version.c; then
         echo "❌ [ERROR] EXTREME++ kernel identity patch was not applied."
+        exit 1
+    fi
+    if ! grep -q 'EXTREME_VENDOR_UTS_RELEASE' include/linux/vermagic.h; then
+        echo "❌ [ERROR] Stock vendor-module vermagic pin was not applied."
         exit 1
     fi
     if ! grep -q 'compression_level' crypto/zstd.c; then
@@ -603,15 +617,21 @@ build_target_os() {
 
     if [ "$OS" == "hyperos" ]; then
         local ACTUAL_RELEASE
+        local EXPECTED_RELEASE="4.19.325-Extreme++Gaming-HyperOS-BMW-g${STOCK_SCM_HASH}"
         ACTUAL_RELEASE=$(cat "${OUT_DIR}/include/config/kernel.release" 2>/dev/null || true)
-        if [ "${ACTUAL_RELEASE}" != "4.19.325-zyndong-perf-g7e817c4ca270" ]; then
-            echo "❌ [ERROR] HyperOS kernel release mismatch."
-            echo "   Expected: 4.19.325-zyndong-perf-g7e817c4ca270"
+        if [ "${ACTUAL_RELEASE}" != "${EXPECTED_RELEASE}" ]; then
+            echo "❌ [ERROR] HyperOS EXTREME++ release mismatch."
+            echo "   Expected: ${EXPECTED_RELEASE}"
             echo "   Actual:   ${ACTUAL_RELEASE:-<missing>}"
-            echo "   Stock vendor modules require the exact stock release string."
             exit 1
         fi
-        echo "✅ [SUCCESS] HyperOS stock release preserved: ${ACTUAL_RELEASE}"
+        case "${ACTUAL_RELEASE}" in
+            *cip135-st19*|*zyndong-perf*)
+                echo "❌ [ERROR] Legacy release token found in uname -r: ${ACTUAL_RELEASE}"
+                exit 1
+                ;;
+        esac
+        echo "✅ [SUCCESS] HyperOS EXTREME++ release active: ${ACTUAL_RELEASE}"
     fi
 
     # 10. AnyKernel3 Packaging for Target
