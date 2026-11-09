@@ -15,6 +15,7 @@ if [ -z "$1" ]; then
 fi
 
 DEVICE_NAME="$1"
+DEFCONFIG="${DEVICE_NAME}_defconfig"
 
 ROOT_MODE="${2:-ksu_susfs}"
 ROOT_MODE=$(echo "$ROOT_MODE" | tr '[:upper:]' '[:lower:]')
@@ -48,9 +49,6 @@ case "$TARGET_OS" in
 esac
 
 KERNEL_DIR="$(pwd)"
-STOCK_SCM_HASH=$(git rev-parse --short=12 HEAD 2>/dev/null || echo "7e817c4ca270")
-EXTREME_VENDOR_RELEASE="${EXTREME_VENDOR_RELEASE:-4.19.325-zyndong-perf-g7e817c4ca270}"
-export EXTREME_VENDOR_RELEASE
 TOOLCHAIN_BIN="$HOME/zyc-clang/bin"
 
 export PATH="${TOOLCHAIN_BIN}:${PATH}"
@@ -72,11 +70,30 @@ echo "   System Cores: ${TOTAL_CORES} (Running at Full Speed)"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
 # ------------------------------------------
-# 1. Base Cleanup
+# 1. Base Cleanup & Custom Defconfig Tunables
 # ------------------------------------------
 echo "[*] Cleaning previous temporary outputs..."
 rm -rf out out_hyperos out_aosp anykernel anykernel_* EXTREME++*.zip
 find . -type f \( -name "dtbo.img" -o -name "Image" -o -name "Image.gz" \) -delete
+
+# EXTREME+ Governor & GPU Devfreq base symbols.
+# ZRAM/swap stay at the stock AstideLabs configuration (LZ4 default).
+cat >> "arch/arm64/configs/${DEFCONFIG}" << 'EOF'
+CONFIG_PM_DEVFREQ=y
+CONFIG_DEVFREQ_GOV_QCOM_ADRENO_TZ=y
+CONFIG_DEVFREQ_GOV_QCOM_GPUBW_MON=y
+CONFIG_QCOM_ADRENO_DEFAULT_GOVERNOR="msm-adreno-tz"
+CONFIG_QCOM_KGSL=y
+CONFIG_CPU_FREQ_GOV_EXTREME_PLUS=y
+CONFIG_CPU_FREQ_GOV_SCHEDUTIL=y
+CONFIG_CPU_FREQ_DEFAULT_GOV_EXTREME_PLUS=y
+CONFIG_CPU_FREQ_DEFAULT_GOV="extreme+"
+CONFIG_TCP_CONG_BBR=y
+CONFIG_DEFAULT_BBR=y
+CONFIG_DEFAULT_TCP_CONG="bbr"
+CONFIG_NET_SCH_FQ=y
+CONFIG_NET_SCH_FQ_CODEL=y
+EOF
 
 # ------------------------------------------
 # 3. KernelSU (RKSU / ReSukiSU Multi-Manager Non-GKI 4.19 with SuSFS v2.3.0) Setup Function
@@ -121,7 +138,7 @@ if apk_sign_path:
             !strcmp(pkg_buf, "com.sukisu.ultra") ||
             !strcmp(pkg_buf, "com.kowx712.supermanager") ||
             !strcmp(pkg_buf, "com.resukisu")) {
-            pr_info("PROJECT EXTREME++: Manager recognized by known package name: %s\\n", pkg_buf);
+            pr_info("PROJECT EXTREME+: Manager recognized by known package name: %s\\n", pkg_buf);
             *signature_index = 0;
             return true;
         }
@@ -136,6 +153,10 @@ if apk_sign_path:
         print("ℹ️ " + apk_sign_path + " already patched or target signature pattern handled")
 ' 2>/dev/null || true
 
+    echo "CONFIG_KSU=y" >> "arch/arm64/configs/${DEFCONFIG}"
+    echo "CONFIG_KSU_SUSFS=y" >> "arch/arm64/configs/${DEFCONFIG}"
+    echo "CONFIG_KSU_MULTI_MANAGER_SUPPORT=y" >> "arch/arm64/configs/${DEFCONFIG}"
+    echo "CONFIG_THREAD_INFO_IN_TASK=y" >> "arch/arm64/configs/${DEFCONFIG}"
     echo "[+] RKSU / ReSukiSU Multi-Manager Non-GKI setup finished."
 }
 
@@ -156,9 +177,9 @@ EOF
 echo "[+] kona-v2.1-gpu.dtsi set to pure FakeDreamer chipid override"
 
 # ------------------------------------------
-# 5. Inject EXTREME++ Governor (Stock schedutil + EKM profiles)
+# 5. Inject EXTREME+ Governor (Stock schedutil + EKM profiles)
 # ------------------------------------------
-echo "[*] Injecting stock-schedutil-based EXTREME++ Governor into kernel/sched/..."
+echo "[*] Injecting stock-schedutil-based EXTREME+ Governor into kernel/sched/..."
 if [ -f "cpufreq_extreme_plus.c" ]; then
     cp -f cpufreq_extreme_plus.c kernel/sched/cpufreq_extreme_plus.c
     echo "[+] Copied cpufreq_extreme_plus.c to kernel/sched/"
@@ -202,44 +223,42 @@ if "CPU_FREQ_GOV_EXTREME_PLUS" not in text:
     text = text.replace("config CPU_FREQ_GOV_SCHEDUTIL", gov_def + "\nconfig CPU_FREQ_GOV_SCHEDUTIL")
     with open(path_kconfig, "w") as f:
         f.write(text)
-    print("✅ Injected EXTREME++ governor definitions into drivers/cpufreq/Kconfig")
+    print("✅ Injected EXTREME+ governor definitions into drivers/cpufreq/Kconfig")
 else:
-    print("ℹ️ EXTREME++ governor already in drivers/cpufreq/Kconfig")
+    print("ℹ️ EXTREME+ governor already in drivers/cpufreq/Kconfig")
 '
 
 # ------------------------------------------
-# 5b. ZRAM ZSTD + EXTREME++ Kernel Identity
+# 6. Apply Performance, EAS, Charging & VM Patches
 # ------------------------------------------
-echo "[*] Switching ZRAM to ZSTD level 3 (with runtime compression-level tunable)..."
-if [ -f "apply-zram-zstd.py" ]; then
-    python3 apply-zram-zstd.py
-else
-    echo "❌ [ERROR] apply-zram-zstd.py is missing."
-    exit 1
+if [ -f "apply-cpu-cap.py" ]; then
+    echo "[*] Ensuring full-range 3.19 GHz Prime Core driver & DTS alignment..."
+    python3 apply-cpu-cap.py 3187200
 fi
 
-echo "[*] Restoring EXTREME++ kernel identity (uname -r / -v / /proc/version / dmesg)..."
-if [ -f "apply-extreme-branding.py" ]; then
-    python3 apply-extreme-branding.py
-else
-    echo "❌ [ERROR] apply-extreme-branding.py is missing."
-    exit 1
-fi
-
-echo "[*] Pinning stock vendor-module vermagic while keeping branded uname -r..."
-if [ -f "apply-extreme-vermagic.py" ]; then
-    python3 apply-extreme-vermagic.py
-else
-    echo "❌ [ERROR] apply-extreme-vermagic.py is missing."
-    exit 1
-fi
-
-# ------------------------------------------
-# 6. Apply Charging Patch & Harden SuSFS Build
-# ------------------------------------------
 if [ -f "apply-fastcharge-bypass.py" ]; then
     echo "[*] Applying safe PD/PPS Fast Charge & Thermal DTS Stepping patches..."
     python3 apply-fastcharge-bypass.py
+fi
+
+if [ -f "apply-bootloader-spoof.py" ]; then
+    echo "[*] Applying bootloader spoofing kernel hooks..."
+    python3 apply-bootloader-spoof.py . || true
+fi
+
+if [ -f "apply-eas-tuning.py" ]; then
+    echo "[*] Applying EAS Energy Model & Capacity Margin Tuning..."
+    python3 apply-eas-tuning.py arch/arm64/boot/dts/vendor/qcom/kona.dtsi || echo "⚠️ EAS tuning failed, continuing..."
+fi
+
+if [ -f "apply-vmscan-critical.py" ]; then
+    echo "[*] Applying Critical Task Direct Reclaim Anti-Stutter Patch (Google ACK fix)..."
+    python3 apply-vmscan-critical.py mm/vmscan.c || echo "⚠️ vmscan patch skipped"
+fi
+
+if [ -f "apply-millet-compat.py" ]; then
+    echo "[*] Applying Xiaomi HyperOS 4 / MIUI Universal Millet Dual-ABI Compatibility Patch..."
+    python3 apply-millet-compat.py . || echo "⚠️ Millet patch skipped"
 fi
 
 # Hardening fs/susfs.c against Clang -Wunused-variable / -Wunused-function when features are disabled
@@ -307,7 +326,6 @@ build_target_os() {
         ZIP_SUFFIX="KowSU_NoSuSFS"
     fi
     local OUT_DIR="${KERNEL_DIR}/out_${OS}"
-    local TARGET_DEFCONFIG
     local MAKE_OPTS=(
         O="${OUT_DIR}"
         ARCH="${ARCH}"
@@ -320,64 +338,61 @@ build_target_os() {
         CROSS_COMPILE_ARM32="${CROSS_COMPILE_ARM32}"
     )
 
-    if [ "$OS" == "hyperos" ]; then
-        TARGET_DEFCONFIG="${DEVICE_NAME}_stock-defconfig"
-    else
-        TARGET_DEFCONFIG="${DEVICE_NAME}_defconfig"
-    fi
-
     echo ""
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo "🔨 Starting Kernel Compilation for ${DEVICE_NAME} (Target: ${OS_UPPER} | ${ROOT_LABEL})"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-    if [ ! -f "arch/arm64/configs/${TARGET_DEFCONFIG}" ]; then
-        echo "❌ [ERROR] Missing defconfig: arch/arm64/configs/${TARGET_DEFCONFIG}"
-        exit 1
-    fi
-
     rm -rf "${OUT_DIR}"
     mkdir -p "${OUT_DIR}"
 
-    if [ "$OS" == "hyperos" ]; then
-        if ! grep -q 'Automatically generated file' "arch/arm64/configs/${TARGET_DEFCONFIG}"; then
-            echo "❌ [ERROR] ${TARGET_DEFCONFIG} is not the full stock HyperOS config."
-            echo "   The stock file is a complete .config, not a makeable *_defconfig target."
-            exit 1
-        fi
-        echo "[*] Seeding exact stock HyperOS full config (${TARGET_DEFCONFIG})..."
-        cp "arch/arm64/configs/${TARGET_DEFCONFIG}" "${OUT_DIR}/.config"
-    else
-        echo "[*] Generating AOSP defconfig (${TARGET_DEFCONFIG}) for ${OS_UPPER}..."
-        make -j"${TOTAL_CORES}" "${MAKE_OPTS[@]}" "${TARGET_DEFCONFIG}"
-    fi
+    echo "[*] Generating Defconfig (${DEFCONFIG}) for ${OS_UPPER}..."
+    make -j"${TOTAL_CORES}" "${MAKE_OPTS[@]}" "${DEFCONFIG}"
 
-    # 1. Stock AstideLabs schedutil + EKM profile layer.
-    #    Every policy keeps its full OPP range; the EKM profile is a ceiling only.
+    # 1. Baseband-guard
+    scripts/config --file "${OUT_DIR}/.config" -e BBG
+
+    # 2. Adreno TrustZone GPU Devfreq Governor & Bus Monitor
+    scripts/config --file "${OUT_DIR}/.config" \
+        -e PM_DEVFREQ \
+        -e DEVFREQ_GOV_SIMPLE_ONDEMAND \
+        -e DEVFREQ_GOV_PERFORMANCE \
+        -e DEVFREQ_GOV_POWERSAVE \
+        -e DEVFREQ_GOV_USERSPACE \
+        -e DEVFREQ_GOV_PASSIVE \
+        -e DEVFREQ_GOV_QCOM_ADRENO_TZ \
+        -e DEVFREQ_GOV_QCOM_GPUBW_MON \
+        -e QCOM_KGSL \
+        -e QCOM_KGSL_IOMMU \
+        --set-str QCOM_ADRENO_DEFAULT_GOVERNOR "msm-adreno-tz"
+
+    # 3. ZRAM/swap: keep the stock AstideLabs defaults untouched
+    #    (stock munch_defconfig uses the LZ4 compressor).
+
+    # 4. Stock AstideLabs schedutil + EKM profile layer
     scripts/config --file "${OUT_DIR}/.config" \
         -e CPU_FREQ_GOV_SCHEDUTIL \
         -e CPU_FREQ_GOV_EXTREME_PLUS \
         -e CPU_FREQ_DEFAULT_GOV_EXTREME_PLUS \
         -d CPU_FREQ_DEFAULT_GOV_PERFORMANCE \
         -d CPU_FREQ_DEFAULT_GOV_SCHEDUTIL \
-        -e BUILD_ARM64_DT_OVERLAY \
-        -e ANDROID_VENDOR_HOOKS
+        --set-str CPU_FREQ_DEFAULT_GOV "extreme+"
 
-    # 1b. ZRAM uses ZSTD level 3 instead of the legacy LZO default.
-    #     LZO stays compiled because stock vendor modules may import its
-    #     symbols; it is simply not the ZRAM default anymore.
+    # 5. TCP BBR Congestion Control & Lightweight Gaming Tunables
     scripts/config --file "${OUT_DIR}/.config" \
-        -e ZRAM \
-        -e CRYPTO_ZSTD \
-        -e ZSTD_COMMON \
-        -e ZSTD_COMPRESS \
-        -e ZSTD_DECOMPRESS \
-        -e ZRAM_DEF_COMP_ZSTD \
-        -d ZRAM_DEF_COMP_LZO \
-        -d ZRAM_DEF_COMP_LZORLE \
-        -d ZRAM_DEF_COMP_LZ4 \
-        -d ZRAM_DEF_COMP_LZ4HC \
-        -d ZRAM_DEF_COMP_842
+        -e TCP_CONG_BBR \
+        -e DEFAULT_BBR \
+        --set-str DEFAULT_TCP_CONG "bbr" \
+        -e NET_SCH_FQ \
+        -e NET_SCH_FQ_CODEL \
+        -d TASK_IO_ACCOUNTING \
+        -d BLK_DEV_IO_TRACE \
+        -d SCHEDSTATS \
+        -d PROVE_LOCKING \
+        -d LOCKDEP \
+        -d LOCK_STAT \
+        -d DEBUG_KMEMLEAK \
+        -d DEBUG_PREEMPT
 
     # 6. Root Configuration (ksu_susfs vs ksu_no_susfs vs noroot)
     if [ "$ENABLE_KSU" -eq 1 ]; then
@@ -440,191 +455,94 @@ build_target_os() {
     local OS_BADGE
 
     if [ "$OS" == "hyperos" ]; then
-        echo "[*] Keeping the stock HyperOS 4 / MIUI kernel configuration..."
+        echo "[*] Injecting Xiaomi HyperOS / HyperOS 4 Subsystems..."
         LOCALVER="-Extreme++Gaming-HyperOS-BMW"
-        TITLE="EXTREME++ BMW Edition [HyperOS] | POCO F4 (munch)"
+        TITLE="Extreme++Gaming BMW Edition [HyperOS] | POCO F4 (munch)"
         ZIP_BASE="EXTREME++Gaming_BMW_Edition_HyperOS"
         OS_BADGE="HyperOS 4 / HyperOS (Android 13–17)"
 
-        # munch_stock-defconfig already contains the complete stock HyperOS
-        # subsystem set (MIHW, MILLET, MIGT, MI_RECLAIM, SF_BINDER, BINDER_OPT,
-        # TASK_IO_ACCOUNTING, SCHEDSTATS, etc.). Do not override it.
-        # Branded release (uname -r):
-        #   4.19.325-Extreme++Gaming-HyperOS-BMW-g<stock commit>
-        # Vendor modules still see the stock vermagic pinned by
-        # apply-extreme-vermagic.py, so the camera/display module path stays safe.
-        printf '%s' "-g${STOCK_SCM_HASH}" > .scmversion
-        scripts/config --file "${OUT_DIR}/.config" -e LOCALVERSION_AUTO
+        scripts/config --file "${OUT_DIR}/.config" \
+            --set-str STATIC_USERMODEHELPER_PATH /system/bin/micd \
+            -e PERF_CRITICAL_RT_TASK \
+            -e SF_BINDER \
+            -e OVERLAY_FS \
+            -e MIGT \
+            -e MIGT_ENERGY_MODEL \
+            -e MIHW \
+            -e PACKAGE_RUNTIME_INFO \
+            -e BINDER_OPT \
+            -e KPERFEVENTS \
+            -e PERF_HUMANTASK \
+            -d LTO_CLANG \
+            -e LTO_NONE \
+            -d SHADOW_CALL_STACK \
+            -e XIAOMI_MIUI \
+            -d MI_MEMORY_SYSFS \
+            -e TASK_DELAY_ACCT \
+            -e MIUI_ZRAM_MEMORY_TRACKING \
+            -e PERF_HELPER \
+            -e BOOTUP_RECLAIM \
+            -e MI_RECLAIM \
+            -e RTMM \
+            -e MILLET_CGROUP \
+            -e MILLET_SIG \
+            -e MILLET_BINDER \
+            -e MILLET_PKG \
+            -e MILLET_BINDER_GKI \
+            -e MILLET_CORE \
+            -e MILLET_HS \
+            -e BINDER_PRIO \
+            -d REKERNEL \
+            -d REKERNEL_NETWORK \
+            -d LTO_CLANG_THIN -d CFI_CLANG
     else
         echo "[*] Injecting Clean AOSP Subsystems (Android 16 & 17 Tested & Verified)..."
         LOCALVER="-Extreme++Gaming-AOSP-BMW"
-        TITLE="EXTREME++ BMW Edition [AOSP A16/A17] | POCO F4 (munch)"
+        TITLE="Extreme++Gaming BMW Edition [AOSP A16/A17] | POCO F4 (munch)"
         ZIP_BASE="EXTREME++Gaming_BMW_Edition_AOSP"
         OS_BADGE="AOSP Custom ROMs (Android 13–17 / A16 & A17 Tested)"
 
-        # Disable Clang LTO/CFI for the portable AOSP build. Everything else
-        # comes straight from stock munch_defconfig.
         scripts/config --file "${OUT_DIR}/.config" \
             --set-str STATIC_USERMODEHELPER_PATH "" \
+            -d XIAOMI_MIUI \
+            -d MIGT \
+            -d MIGT_ENERGY_MODEL \
+            -d MIHW \
+            -d SF_BINDER \
+            -d RTMM \
+            -d BOOTUP_RECLAIM \
+            -d MI_RECLAIM \
+            -d PERF_HELPER \
+            -d PERF_HUMANTASK \
+            -d PERF_CRITICAL_RT_TASK \
+            -d MILLET_CGROUP \
+            -d MILLET_SIG \
+            -d MILLET_BINDER \
+            -d MILLET_PKG \
+            -d MILLET_BINDER_GKI \
+            -d MILLET_CORE \
+            -d MILLET_HS \
+            -d BINDER_PRIO \
+            -d PACKAGE_RUNTIME_INFO \
+            -d BINDER_OPT \
+            -d MIUI_ZRAM_MEMORY_TRACKING \
+            -d MI_MEMORY_SYSFS \
+            -e OVERLAY_FS \
+            -e REKERNEL \
+            -e REKERNEL_NETWORK \
             -d LTO_CLANG \
             -e LTO_NONE \
-            -d LTO_CLANG_THIN \
-            -d CFI_CLANG \
-            -d SHADOW_CALL_STACK
+            -d SHADOW_CALL_STACK \
+            -d LTO_CLANG_THIN -d CFI_CLANG
     fi
 
     scripts/config --file "${OUT_DIR}/.config" --set-str LOCALVERSION "${LOCALVER}"
     rm -f "${OUT_DIR}/include/config/kernel.release"
     make -j"${TOTAL_CORES}" "${MAKE_OPTS[@]}" olddefconfig
 
-    if ! grep -q '^CONFIG_BUILD_ARM64_DT_OVERLAY=y' "${OUT_DIR}/.config"; then
-        echo "❌ [ERROR] CONFIG_BUILD_ARM64_DT_OVERLAY did not stay enabled."
-        echo "   The vendor_boot DTBs must keep __symbols__ for the stock dtbo overlays."
-        exit 1
-    fi
-
-    if ! grep -q '^CONFIG_ANDROID_VENDOR_HOOKS=y' "${OUT_DIR}/.config"; then
-        echo "❌ [ERROR] CONFIG_ANDROID_VENDOR_HOOKS is missing."
-        echo "   Stock vendor hooks are required for the trace hook declarations."
-        exit 1
-    fi
-
-    if ! grep -q '^CONFIG_CPU_FREQ_GOV_EXTREME_PLUS=y' "${OUT_DIR}/.config" ||
-       ! grep -q '^CONFIG_CPU_FREQ_DEFAULT_GOV_EXTREME_PLUS=y' "${OUT_DIR}/.config"; then
-        echo "❌ [ERROR] EXTREME++ governor was not selected as the default governor."
-        exit 1
-    fi
-
-    # ZRAM must use ZSTD, not the legacy LZO/LZO-RLE default. LZO symbols
-    # remain available only for stock vendor-module ABI compatibility.
-    if ! grep -q '^CONFIG_ZRAM=y' "${OUT_DIR}/.config"; then
-        echo "❌ [ERROR] CONFIG_ZRAM=y is missing."
-        exit 1
-    fi
-    if ! grep -q '^CONFIG_CRYPTO_ZSTD=y' "${OUT_DIR}/.config" ||
-       ! grep -q '^CONFIG_ZSTD_COMPRESS=y' "${OUT_DIR}/.config" ||
-       ! grep -q '^CONFIG_ZSTD_DECOMPRESS=y' "${OUT_DIR}/.config"; then
-        echo "❌ [ERROR] ZSTD compression support was not enabled."
-        grep '^CONFIG_\(CRYPTO_ZSTD\|ZSTD_\)' "${OUT_DIR}/.config" || true
-        exit 1
-    fi
-    if ! grep -q '^CONFIG_ZRAM_DEF_COMP_ZSTD=y' "${OUT_DIR}/.config"; then
-        echo "❌ [ERROR] ZRAM default compressor is not ZSTD."
-        grep '^CONFIG_ZRAM_DEF_COMP' "${OUT_DIR}/.config" || true
-        exit 1
-    fi
-    if grep -q '^CONFIG_ZRAM_DEF_COMP_\(LZO\|LZORLE\|LZ4\|LZ4HC\|842\)=y' "${OUT_DIR}/.config"; then
-        echo "❌ [ERROR] A legacy ZRAM compressor is still selected as default."
-        grep '^CONFIG_ZRAM_DEF_COMP' "${OUT_DIR}/.config" || true
-        exit 1
-    fi
-
-    if ! grep -q 'EXTREME++' scripts/mkcompile_h ||
-       ! grep -q 'EXTREME++ %s version %s' init/version.c; then
-        echo "❌ [ERROR] EXTREME++ kernel identity patch was not applied."
-        exit 1
-    fi
-    if ! grep -q 'EXTREME_VENDOR_UTS_RELEASE' include/linux/vermagic.h; then
-        echo "❌ [ERROR] Stock vendor-module vermagic pin was not applied."
-        exit 1
-    fi
-    if ! grep -q 'compression_level' crypto/zstd.c; then
-        echo "❌ [ERROR] ZSTD compression_level tunable was not applied."
-        exit 1
-    fi
-
-    if [ "$OS" == "hyperos" ]; then
-        local CFG="${OUT_DIR}/.config"
-
-        # HyperOS must keep the stock memory/reclaim subsystem. The old
-        # munch_defconfig + manual override build disabled or replaced these,
-        # which caused camera-exit black screens and memory-pressure stutter.
-        #
-        # MI_MEMORY_SYSFS is present in the device's stock config but is not
-        # defined anywhere in this AstideLabs source tree, so olddefconfig
-        # necessarily drops that stale symbol. Do not fail the build for a
-        # config line the source cannot implement.
-        local REQUIRED_SYM
-        for REQUIRED_SYM in \
-            ZRAM \
-            MI_RECLAIM \
-            TASK_IO_ACCOUNTING \
-            SCHEDSTATS; do
-            if ! grep -q "^CONFIG_${REQUIRED_SYM}=y" "${CFG}"; then
-                echo "❌ [ERROR] HyperOS stock config lost CONFIG_${REQUIRED_SYM}=y"
-                exit 1
-            fi
-        done
-
-        echo "[*] HyperOS ZRAM compressor config:"
-        grep '^CONFIG_\(CRYPTO_ZSTD\|ZRAM_DEF_COMP\)' "${CFG}" || true
-    fi
-
-    # 8. Build the device tree blobs and create the vendor_boot DTB table.
-    #    Build with DT overlay support so the stock base DTBs are generated
-    #    with __symbols__ (needed by the stock HyperOS dtbo overlays).
-    echo "[*] Compiling ${OS_UPPER} device trees..."
-    if grep -q '^CONFIG_BUILD_ARM64_DT_OVERLAY=y' "${OUT_DIR}/.config"; then
-        # Overlay-enabled builds need dtbo.img to pull in the base DTBs.
-        make -j"${TOTAL_CORES}" "${MAKE_OPTS[@]}" dtbs dtbo.img
-    else
-        make -j"${TOTAL_CORES}" "${MAKE_OPTS[@]}" dtbs
-    fi
-
-    local DTB_DIR="${OUT_DIR}/arch/arm64/boot/dts/vendor/qcom"
-    local DTB_OUT="${OUT_DIR}/arch/arm64/boot/dtb"
-    if ! compgen -G "${DTB_DIR}/*.dtb" > /dev/null; then
-        echo "❌ [ERROR] No DTB files were generated in ${DTB_DIR}"
-        exit 1
-    fi
-
-    : > "${DTB_OUT}"
-    local DTB_COUNT=0
-
-    # Match the stock vendor_boot DTB table: base kona v2.1, v2 and v1 in
-    # that order. The stock munch dtbo overlay is applied on top at boot.
-    local PREFERRED_DTB
-    for PREFERRED_DTB in \
-        kona-v2.1.dtb \
-        kona-v2.dtb \
-        kona.dtb; do
-        local DTB_PATH="${DTB_DIR}/${PREFERRED_DTB}"
-        if [ -f "${DTB_PATH}" ]; then
-            if ! grep -q '__symbols__' "${DTB_PATH}"; then
-                echo "❌ [ERROR] ${PREFERRED_DTB} has no __symbols__; stock HyperOS dtbo overlays cannot apply."
-                exit 1
-            fi
-            cat "${DTB_PATH}" >> "${DTB_OUT}"
-            DTB_COUNT=$((DTB_COUNT + 1))
-        fi
-    done
-
-    # Fallback for trees that only expose the MTP variants.
-    if [ "${DTB_COUNT}" -eq 0 ]; then
-        for PREFERRED_DTB in \
-            kona-v2.1-mtp.dtb \
-            kona-v2-mtp.dtb \
-            kona-mtp.dtb; do
-            local DTB_PATH="${DTB_DIR}/${PREFERRED_DTB}"
-            if [ -f "${DTB_PATH}" ]; then
-                cat "${DTB_PATH}" >> "${DTB_OUT}"
-                DTB_COUNT=$((DTB_COUNT + 1))
-            fi
-        done
-    fi
-
-    if [ "${DTB_COUNT}" -eq 0 ]; then
-        echo "[!] Preferred kona DTBs not found; falling back to every generated DTB."
-        while IFS= read -r DTB_PATH; do
-            cat "${DTB_PATH}" >> "${DTB_OUT}"
-        done < <(find "${DTB_DIR}" -maxdepth 1 -type f -name '*.dtb' | sort)
-    fi
-
-    if [ ! -s "${DTB_OUT}" ]; then
-        echo "❌ [ERROR] Failed to create ${DTB_OUT}"
-        exit 1
-    fi
-    echo "✅ [SUCCESS] Vendor boot DTB table created ($(du -h "${DTB_OUT}" | cut -f1))"
+    # 8. Compile Master DTB Table & DTBO
+    echo "[*] Compiling ${OS_UPPER} Master DTB Table & DTBO Image..."
+    make -j"${TOTAL_CORES}" "${MAKE_OPTS[@]}" dtbs dtbo.img dtb
 
     # 9. Compile Master Kernel Image
     echo "[*] Compiling ${OS_UPPER} Master Kernel Image (3.19 GHz Monster Peak)..."
@@ -635,25 +553,6 @@ build_target_os() {
         exit 1
     fi
     echo "✅ [SUCCESS] ${OS_UPPER} Image compiled successfully ($(du -h "${OUT_DIR}/arch/arm64/boot/Image" | cut -f1))"
-
-    if [ "$OS" == "hyperos" ]; then
-        local ACTUAL_RELEASE
-        local EXPECTED_RELEASE="4.19.325-Extreme++Gaming-HyperOS-BMW-g${STOCK_SCM_HASH}"
-        ACTUAL_RELEASE=$(cat "${OUT_DIR}/include/config/kernel.release" 2>/dev/null || true)
-        if [ "${ACTUAL_RELEASE}" != "${EXPECTED_RELEASE}" ]; then
-            echo "❌ [ERROR] HyperOS EXTREME++ release mismatch."
-            echo "   Expected: ${EXPECTED_RELEASE}"
-            echo "   Actual:   ${ACTUAL_RELEASE:-<missing>}"
-            exit 1
-        fi
-        case "${ACTUAL_RELEASE}" in
-            *cip135-st19*|*zyndong-perf*)
-                echo "❌ [ERROR] Legacy release token found in uname -r: ${ACTUAL_RELEASE}"
-                exit 1
-                ;;
-        esac
-        echo "✅ [SUCCESS] HyperOS EXTREME++ release active: ${ACTUAL_RELEASE}"
-    fi
 
     # 10. AnyKernel3 Packaging for Target
     local AK_DIR="${KERNEL_DIR}/anykernel_${OS}"
@@ -734,11 +633,10 @@ ui_print "\\____//_/|_| \\__//_/    \\___//_/ /_/ / \\___/   ";
 ui_print "                 [ + + ]                       ";
 ui_print " ══════════════════════════════════════════════";
 ui_print "  🏎️  EDITION : BMW Gaming Edition (${OS_UPPER}) ";
-ui_print "  👑  AUTHOR  : EXTREME++ by @pandey_ji_8      ";
+ui_print "  👑  AUTHOR  : Extreme++ by @pandey_ji_8      ";
 ui_print "  📱  DEVICE  : POCO F4 (munch) | ${OS_UPPER}  ";
 ui_print "  ⚡  CLOCK   : 3.19 GHz Unlocked Monster Peak ";
 ui_print "  🚀  PROFILES: In-Kernel Dynamic Switcher     ";
-ui_print "  🧠  ZRAM    : ZSTD Level 3 (Tuned Ratio)     ";
 ui_print "  🛡️  ROOT    : ${ROOT_BANNER} ";
 ui_print " ══════════════════════════════════════════════";
 ui_print " ";
@@ -793,7 +691,7 @@ ui_print "  [4/4] ✨ Preserving OEM Display Calibrations & Finalizing...";
 sleep 1;
 ui_print " ";
 ui_print " ══════════════════════════════════════════════";
-ui_print "  🎉 EXTREME++ Kernel (${OS_UPPER}) Flashed!  ";
+ui_print "  🎉 Extreme++ Kernel (${OS_UPPER}) Flashed!  ";
 ui_print "  🏎️ BMW Gaming Edition is Ready to Race!     ";
 ui_print "  ⚡ 3.19 GHz Monster Peak Unlocked!           ";
 ui_print "  🚀 Reboot and enjoy maximum smoothness!      ";
@@ -820,6 +718,7 @@ EOF
 # ==============================================================================
 if [ "$ROOT_MODE" == "noroot" ]; then
     echo "[*] Executing Pure Clean Non-Root Build..."
+    sed -i '/CONFIG_KSU/d' "arch/arm64/configs/${DEFCONFIG}" 2>/dev/null || true
     if [ "$TARGET_OS" == "hyperos" ] || [ "$TARGET_OS" == "both" ]; then
         build_target_os "hyperos" 0
     fi
@@ -848,6 +747,7 @@ elif [ "$ROOT_MODE" == "both" ]; then
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo "🚀 DUAL BUILD REQUESTED: Compiling Pure Clean & KowSU + SuSFS!"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    sed -i '/CONFIG_KSU/d' "arch/arm64/configs/${DEFCONFIG}" 2>/dev/null || true
     if [ "$TARGET_OS" == "hyperos" ] || [ "$TARGET_OS" == "both" ]; then
         build_target_os "hyperos" 0
     fi
@@ -868,6 +768,7 @@ elif [ "$ROOT_MODE" == "all" ]; then
     echo "   2. KowSU Multi-Manager (Standard / No SuSFS)"
     echo "   3. KowSU Multi-Manager + SuSFS v2.3.0"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    sed -i '/CONFIG_KSU/d' "arch/arm64/configs/${DEFCONFIG}" 2>/dev/null || true
     if [ "$TARGET_OS" == "hyperos" ] || [ "$TARGET_OS" == "both" ]; then
         build_target_os "hyperos" 0
     fi

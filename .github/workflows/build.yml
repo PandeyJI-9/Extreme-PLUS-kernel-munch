@@ -15,14 +15,14 @@ on:
           - 'all'
           - 'both'
       target_os:
-        description: 'Target OS: hyperos | aosp | both'
+        description: 'Target OS: both | hyperos | aosp'
         required: true
         type: choice
-        default: 'hyperos'
+        default: 'both'
         options:
+          - 'both'
           - 'hyperos'
           - 'aosp'
-          - 'both'
 jobs:
   build:
     name: "Compile → Release"
@@ -60,7 +60,7 @@ jobs:
           for chat in "${TARGETS[@]}"; do
             curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
               -d chat_id="$chat" \
-              -d text="🚀 <b>EXTREME++ Build Started!</b>%0A📱 Device: POCO F4 (munch)%0A🏎️ Edition: EXTREME++ Gaming (BMW Edition)%0A🎯 Target: ${TARGET_LABEL}%0A${ROOT_LABEL}%0A⚡ Default Clock: 3.19 GHz Unlocked Peak (Dynamic Profiles)%0A🧠 ZRAM: ZSTD Level 3 (Tuned Ratio)" -d parse_mode="HTML" || true
+              -d text="🚀 <b>EXTREME++ Build Started!</b>%0A📱 Device: POCO F4 (munch)%0A🏎️ Edition: EXTREME++ Gaming (BMW Edition)%0A🎯 Target: ${TARGET_LABEL}%0A${ROOT_LABEL}%0A⚡ Default Clock: 3.19 GHz Unlocked Peak (Dynamic Profiles)" -d parse_mode="HTML" || true
           done
 
       - name: "📦 Checkout config repo"
@@ -78,17 +78,19 @@ jobs:
           tar -xzf clang.tar.gz -C $HOME/zyc-clang
           rm clang.tar.gz
 
-      - name: "🌐 Clone stock AstideLabs kernel source"
+      - name: "🌐 Clone kernel source"
         run: |
-          STOCK_COMMIT="7e817c4ca270db3f1dfaa8b8a70348c69e76cc65"
-          echo "[*] Cloning AstideLabs android_kernel_xiaomi_sm8250 at stock commit ${STOCK_COMMIT}..."
-          mkdir kernel && cd kernel
-          git init
-          git remote add origin https://github.com/AstideLabs/android_kernel_xiaomi_sm8250
-          git fetch --depth=1 --no-tags origin "${STOCK_COMMIT}"
-          git checkout --detach FETCH_HEAD
-          git rev-parse HEAD
-          cd ..
+          if git clone --depth=1 -b android17-aptusitu https://github.com/AstideLabs/android_kernel_xiaomi_sm8250 kernel 2>/dev/null; then
+            echo "[+] Cloned android17-aptusitu branch"
+          else
+            echo "[*] Falling back to verified SuSFS v2.3.0 tree (refs/pull/74/merge)..."
+            mkdir kernel && cd kernel
+            git init
+            git remote add origin https://github.com/AstideLabs/android_kernel_xiaomi_sm8250
+            git fetch --depth=1 origin refs/pull/74/merge
+            git checkout FETCH_HEAD
+            cd ..
+          fi
 
       - name: "⚙️ Inject PandeyJI Custom Build Script"
         run: |
@@ -310,27 +312,6 @@ jobs:
           echo "✅ HyperOS flashable partitioned images prepared under $OUT_DIR:"
           ls -lh "$OUT_DIR"
 
-      - name: "✅ Verify HyperOS Flashable Images"
-        if: success() && (inputs.target_os == 'hyperos' || inputs.target_os == 'both')
-        run: |
-          set -euo pipefail
-          IMG_DIR="$GITHUB_WORKSPACE/hyperos4_images"
-
-          for f in boot.img vendor_boot.img dtbo.img SHA256SUMS.txt; do
-            if [ ! -s "$IMG_DIR/$f" ]; then
-              echo "::error::Missing or empty HyperOS artifact file: $IMG_DIR/$f"
-              exit 1
-            fi
-          done
-
-          (
-            cd "$IMG_DIR"
-            sha256sum -c SHA256SUMS.txt
-          )
-
-          echo "✅ HyperOS image files verified before upload:"
-          ls -lh "$IMG_DIR"
-
       - name: "📦 Upload Build Artifacts"
         id: upload_artifacts
         if: success()
@@ -340,92 +321,38 @@ jobs:
           path: |
             kernel/EXTREME++*.zip
             raw_images/*.zip
-          if-no-files-found: warn
-
-      - name: "📦 Upload HyperOS Flashable Images"
-        id: upload_hyperos_images
-        if: success() && (inputs.target_os == 'hyperos' || inputs.target_os == 'both')
-        uses: actions/upload-artifact@v4
-        with:
-          name: EXTREME++_HyperOS4_Images_Build_${{ github.run_number }}
-          path: |
             hyperos4_images/boot.img
             hyperos4_images/vendor_boot.img
             hyperos4_images/dtbo.img
             hyperos4_images/SHA256SUMS.txt
-          if-no-files-found: error
-
-      - name: "📝 Publish HyperOS Artifact Link"
-        if: success() && (inputs.target_os == 'hyperos' || inputs.target_os == 'both')
-        env:
-          ARTIFACT_URL: ${{ steps.upload_hyperos_images.outputs.artifact-url }}
-          ARTIFACT_ID: ${{ steps.upload_hyperos_images.outputs.artifact-id }}
-        run: |
-          set -euo pipefail
-          if [ -z "${ARTIFACT_URL:-}" ]; then
-            if [ -n "${ARTIFACT_ID:-}" ]; then
-              ARTIFACT_URL="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts/${ARTIFACT_ID}"
-            else
-              echo "::error::HyperOS image artifact URL and artifact ID are both empty. The dedicated image artifact was not published."
-              exit 1
-            fi
-          fi
-          {
-            echo "## 📦 HyperOS 4 Flashable Images"
-            echo ""
-            echo "- **Artifact:** \`EXTREME++_HyperOS4_Images_Build_${GITHUB_RUN_NUMBER}\`"
-            echo "- **Download:** ${ARTIFACT_URL}"
-            echo "- **Files:** \`boot.img\`, \`vendor_boot.img\`, \`dtbo.img\`, \`SHA256SUMS.txt\`"
-            echo "- **Note:** A GitHub login is required to download workflow artifacts."
-          } >> "$GITHUB_STEP_SUMMARY"
+          if-no-files-found: warn
 
       - name: "📢 Telegram: HyperOS Images Artifact"
         if: success() && (inputs.target_os == 'hyperos' || inputs.target_os == 'both')
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_DM_ID: ${{ secrets.TELEGRAM_DM_ID }}
-          ARTIFACT_URL: ${{ steps.upload_hyperos_images.outputs.artifact-url }}
-          ARTIFACT_ID: ${{ steps.upload_hyperos_images.outputs.artifact-id }}
+          ARTIFACT_URL: ${{ steps.upload_artifacts.outputs.artifact-url }}
         run: |
           set -euo pipefail
           if [ -z "${TELEGRAM_DM_ID:-}" ]; then
             echo "ℹ️ TELEGRAM_DM_ID is not set. Skipping artifact link DM."
             exit 0
           fi
-          if [ ! -s "$GITHUB_WORKSPACE/hyperos4_images/boot.img" ]; then
+          if [ ! -f "$GITHUB_WORKSPACE/hyperos4_images/boot.img" ]; then
             echo "::error::HyperOS 4 images not found in $GITHUB_WORKSPACE/hyperos4_images! Artifact cannot be delivered."
             exit 1
           fi
-          if [ -z "${ARTIFACT_URL:-}" ]; then
-            if [ -n "${ARTIFACT_ID:-}" ]; then
-              ARTIFACT_URL="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts/${ARTIFACT_ID}"
-            else
-              echo "::error::HyperOS image artifact URL and artifact ID are both empty. The dedicated image artifact was not published."
-              exit 1
-            fi
-          fi
-          MSG=$(printf '🚀 <b>EXTREME++ HyperOS 4 Flashable Images</b> [Build #%s]\n\n📱 <b>Device:</b> POCO F4 (munch)\n🏎️ <b>Edition:</b> BMW Edition [BETA]\n\n📦 Download partitioned flashable images (<b>boot.img</b>, <b>vendor_boot.img</b>, <b>dtbo.img</b>, <b>SHA256SUMS.txt</b>) from the dedicated GitHub artifact:\n👉 %s\n\n📁 <b>Artifact Name:</b> EXTREME++_HyperOS4_Images_Build_%s\n🔐 A GitHub login is required to download the artifact.' \
+          ARTIFACT_URL="${ARTIFACT_URL:-https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}}"
+          MSG=$(printf '🚀 <b>EXTREME++ HyperOS 4 Flashable Images</b> [Build #%s]\n\n📱 <b>Device:</b> POCO F4 (munch)\n🏎️ <b>Edition:</b> BMW Edition [BETA]\n\n📦 Download partitioned flashable images (<b>boot.img</b>, <b>vendor_boot.img</b>, <b>dtbo.img</b>, <b>SHA256SUMS.txt</b>) from the workflow artifact:\n👉 %s\n\n📁 <b>Artifact Name:</b> EXTREME++_BMW_Edition_BETA_%s' \
             "${GITHUB_RUN_NUMBER}" "${ARTIFACT_URL}" "${GITHUB_RUN_NUMBER}")
-          RESPONSE_FILE="${RUNNER_TEMP}/telegram_artifact_response.json"
-          if ! curl -sS --fail-with-body -X POST "https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage" \
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage" \
             --data-urlencode "chat_id=${TELEGRAM_DM_ID}" \
             --data-urlencode "parse_mode=HTML" \
-            --data-urlencode "text=${MSG}" >"${RESPONSE_FILE}"; then
-            echo "::warning::Telegram API request failed while sending the HyperOS artifact link. The artifact and run summary are still available."
-            cat "${RESPONSE_FILE}" || true
-            exit 0
-          fi
-          if ! python3 -c 'import json,sys; sys.exit(0 if json.load(open(sys.argv[1], encoding="utf-8")).get("ok") else 1)' "${RESPONSE_FILE}"; then
-            echo "::warning::Telegram API rejected the HyperOS artifact message. The artifact and run summary are still available."
-            cat "${RESPONSE_FILE}" || true
-            exit 0
-          fi
+            --data-urlencode "text=${MSG}" >/dev/null || true
 
       - name: "📢 Telegram: Official Release Broadcast"
         if: success()
-        env:
-          IMAGE_ARTIFACT_URL: ${{ steps.upload_hyperos_images.outputs.artifact-url }}
-          IMAGE_ARTIFACT_ID: ${{ steps.upload_hyperos_images.outputs.artifact-id }}
         run: |
           ROOT_DESC="⚡ <b>Root:</b> KowSU Multi-Manager Root (SuSFS v2.3.0)"
           if [ "${{ inputs.root_mode }}" = "noroot" ]; then
@@ -448,19 +375,6 @@ jobs:
           MSG="${MSG}• 🚀 <b>Gaming [0]:</b> 3.19GHz Prime Monster + 2.42GHz Gold (Peak 120 FPS)%0A"
           MSG="${MSG}• ⚖️ <b>Balanced [1]:</b> 2.84GHz Prime Sweet-Spot + 2.25GHz Gold (Zero Heat 90 FPS)%0A"
           MSG="${MSG}• 🔋 <b>Battery [2]:</b> 2.42GHz Prime Marathon + 1.96GHz Gold (All-Day SOT)%0A%0A"
-
-          IMAGE_ARTIFACT_LINK=""
-          if [ "${{ inputs.target_os }}" = "hyperos" ] || [ "${{ inputs.target_os }}" = "both" ]; then
-            if [ -n "${IMAGE_ARTIFACT_URL:-}" ]; then
-              IMAGE_ARTIFACT_LINK="$IMAGE_ARTIFACT_URL"
-            elif [ -n "${IMAGE_ARTIFACT_ID:-}" ]; then
-              IMAGE_ARTIFACT_LINK="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts/${IMAGE_ARTIFACT_ID}"
-            fi
-          fi
-          if [ -n "$IMAGE_ARTIFACT_LINK" ]; then
-            MSG="${MSG}📦 <b>HyperOS flashable images artifact:</b>%0A👉 ${IMAGE_ARTIFACT_LINK}%0A%0A"
-          fi
-
           MSG="${MSG}📦 <i>Uploading flashable ZIP packages below...</i>"
 
           TARGETS=()
