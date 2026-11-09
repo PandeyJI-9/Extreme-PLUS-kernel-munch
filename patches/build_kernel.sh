@@ -579,8 +579,10 @@ build_target_os() {
         grep '^CONFIG_ZRAM_DEF_COMP' "${OUT_DIR}/.config" || true
         exit 1
     fi
-    if ! grep -q 'compression_level' crypto/zstd.c; then
-        echo "❌ [ERROR] ZSTD compression_level tunable was not applied."
+    if ! grep -q 'compression_level' crypto/zstd.c ||
+       ! grep -q 'ZSTD_MAX_SAFE_LEVEL' crypto/zstd.c ||
+       ! grep -q 'ZSTD_DEF_LEVEL[[:space:]]*3' crypto/zstd.c; then
+        echo "❌ [ERROR] ZSTD level-3 tunable or max-level workspace guard was not applied."
         exit 1
     fi
 
