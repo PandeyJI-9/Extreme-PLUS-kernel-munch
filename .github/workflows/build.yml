@@ -78,19 +78,15 @@ jobs:
           tar -xzf clang.tar.gz -C $HOME/zyc-clang
           rm clang.tar.gz
 
-      - name: "🌐 Clone kernel source"
+      - name: "🌐 Clone kernel source (Build #125 pinned base)"
         run: |
-          if git clone --depth=1 -b android17-aptusitu https://github.com/AstideLabs/android_kernel_xiaomi_sm8250 kernel 2>/dev/null; then
-            echo "[+] Cloned android17-aptusitu branch"
-          else
-            echo "[*] Falling back to verified SuSFS v2.3.0 tree (refs/pull/74/merge)..."
-            mkdir kernel && cd kernel
-            git init
-            git remote add origin https://github.com/AstideLabs/android_kernel_xiaomi_sm8250
-            git fetch --depth=1 origin refs/pull/74/merge
-            git checkout FETCH_HEAD
-            cd ..
-          fi
+          mkdir kernel && cd kernel
+          git init
+          git remote add origin https://github.com/AstideLabs/android_kernel_xiaomi_sm8250
+          git fetch --depth=1 origin refs/pull/74/merge
+          git checkout --detach FETCH_HEAD
+          test "$(git rev-parse HEAD)" = "fcf366797808bcc938a7248cded079cf6ea2e26d"
+          cd ..
 
       - name: "⚙️ Inject PandeyJI Custom Build Script"
         run: |

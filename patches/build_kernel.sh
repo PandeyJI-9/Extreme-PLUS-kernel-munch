@@ -229,6 +229,17 @@ else:
 '
 
 # ------------------------------------------
+# 5b. ZRAM ZSTD level 3
+# ------------------------------------------
+echo "[*] Switching ZRAM to ZSTD level 3 (LZO remains as vendor-ABI fallback)..."
+if [ -f "apply-zram-zstd.py" ]; then
+    python3 apply-zram-zstd.py
+else
+    echo "❌ [ERROR] apply-zram-zstd.py is missing."
+    exit 1
+fi
+
+# ------------------------------------------
 # 6. Apply Performance, EAS, Charging & VM Patches
 # ------------------------------------------
 if [ -f "apply-cpu-cap.py" ]; then
@@ -366,8 +377,20 @@ build_target_os() {
         -e QCOM_KGSL_IOMMU \
         --set-str QCOM_ADRENO_DEFAULT_GOVERNOR "msm-adreno-tz"
 
-    # 3. ZRAM/swap: keep the stock AstideLabs defaults untouched
-    #    (stock munch_defconfig uses the LZ4 compressor).
+    # 3. ZRAM/swap: ZSTD level 3 is the default. LZO/LZO-RLE stay
+    #    compiled only as vendor-module ABI fallbacks, never as the default.
+    scripts/config --file "${OUT_DIR}/.config" \
+        -e ZRAM \
+        -e CRYPTO_ZSTD \
+        -e ZSTD_COMMON \
+        -e ZSTD_COMPRESS \
+        -e ZSTD_DECOMPRESS \
+        -e ZRAM_DEF_COMP_ZSTD \
+        -d ZRAM_DEF_COMP_LZO \
+        -d ZRAM_DEF_COMP_LZORLE \
+        -d ZRAM_DEF_COMP_LZ4 \
+        -d ZRAM_DEF_COMP_LZ4HC \
+        -d ZRAM_DEF_COMP_842
 
     # 4. Stock AstideLabs schedutil + EKM profile layer
     scripts/config --file "${OUT_DIR}/.config" \
@@ -539,6 +562,27 @@ build_target_os() {
     scripts/config --file "${OUT_DIR}/.config" --set-str LOCALVERSION "${LOCALVER}"
     rm -f "${OUT_DIR}/include/config/kernel.release"
     make -j"${TOTAL_CORES}" "${MAKE_OPTS[@]}" olddefconfig
+
+    # ZRAM must use ZSTD, not the legacy LZO/LZO-RLE default. LZO symbols
+    # remain available only for stock vendor-module ABI compatibility.
+    if ! grep -q '^CONFIG_ZRAM=y' "${OUT_DIR}/.config" ||
+       ! grep -q '^CONFIG_CRYPTO_ZSTD=y' "${OUT_DIR}/.config" ||
+       ! grep -q '^CONFIG_ZSTD_COMPRESS=y' "${OUT_DIR}/.config" ||
+       ! grep -q '^CONFIG_ZSTD_DECOMPRESS=y' "${OUT_DIR}/.config" ||
+       ! grep -q '^CONFIG_ZRAM_DEF_COMP_ZSTD=y' "${OUT_DIR}/.config"; then
+        echo "❌ [ERROR] ZSTD ZRAM support was not enabled."
+        grep '^CONFIG_\(CRYPTO_ZSTD\|ZSTD_\|ZRAM_DEF_COMP\)' "${OUT_DIR}/.config" || true
+        exit 1
+    fi
+    if grep -q '^CONFIG_ZRAM_DEF_COMP_\(LZO\|LZORLE\|LZ4\|LZ4HC\|842\)=y' "${OUT_DIR}/.config"; then
+        echo "❌ [ERROR] A legacy ZRAM compressor is still selected as default."
+        grep '^CONFIG_ZRAM_DEF_COMP' "${OUT_DIR}/.config" || true
+        exit 1
+    fi
+    if ! grep -q 'compression_level' crypto/zstd.c; then
+        echo "❌ [ERROR] ZSTD compression_level tunable was not applied."
+        exit 1
+    fi
 
     # 8. Compile Master DTB Table & DTBO
     echo "[*] Compiling ${OS_UPPER} Master DTB Table & DTBO Image..."
