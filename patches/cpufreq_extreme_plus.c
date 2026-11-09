@@ -190,7 +190,7 @@ static int extreme_policy_notifier(struct notifier_block *nb,
 	if (!policy)
 		return NOTIFY_DONE;
 
-	if (event != CPUFREQ_ADJUST && event != CPUFREQ_NOTIFY)
+	if (event != CPUFREQ_ADJUST)
 		return NOTIFY_DONE;
 
 	cap = extreme_profile_cap(policy);
@@ -333,6 +333,10 @@ static void sugov_track_cycles(struct sugov_policy *sg_policy,
 		return;
 
 	upto = min(upto, next_ws);
+	/* Underflow guard: prevent a backwards step from wrapping u64 */
+	if (upto <= sg_policy->last_cyc_update_time)
+		return;
+
 	/* Track cycles in current window */
 	delta_ns = upto - sg_policy->last_cyc_update_time;
 	delta_ns *= prev_freq;
@@ -351,8 +355,8 @@ static void sugov_calc_avg_cap(struct sugov_policy *sg_policy, u64 curr_ws,
 	if (use_pelt())
 		return;
 
-	BUG_ON(curr_ws < last_ws);
-	if (curr_ws <= last_ws)
+	/* Guard against clock skew or CPU hotplug window anomalies */
+	if (WARN_ON_ONCE(curr_ws < last_ws) || curr_ws <= last_ws)
 		return;
 
 	/* If we skipped some windows */

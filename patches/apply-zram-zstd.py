@@ -46,12 +46,15 @@ def patch_zstd_driver() -> None:
         "}\n"
     )
     new = f"""/* {MARK}: level 3 is the default ratio/speed sweet spot.
- * The level is exposed as
- * /sys/module/zstd/parameters/compression_level for runtime tuning.
+ * The level is exposed as /sys/module/zstd/parameters/compression_level (1-3).
+ * Allocating the workspace for maximum level 3 guarantees that runtime
+ * level adjustments (1, 2, or 3) will never cause workspace buffer exhaustion
+ * or kernel freeze/memory allocation errors during ZRAM swap.
  */
+#define ZSTD_MAX_SAFE_LEVEL 3
 static int zstd_level = ZSTD_DEF_LEVEL;
 module_param_named(compression_level, zstd_level, int, 0644);
-MODULE_PARM_DESC(compression_level, "ZSTD compression level (1-22)");
+MODULE_PARM_DESC(compression_level, "ZSTD compression level (1-3)");
 
 static zstd_parameters zstd_params(void)
 {{
@@ -59,8 +62,8 @@ static zstd_parameters zstd_params(void)
 
 \tif (level < 1)
 \t\tlevel = 1;
-\telse if (level > 22)
-\t\tlevel = 22;
+\telse if (level > ZSTD_MAX_SAFE_LEVEL)
+\t\tlevel = ZSTD_MAX_SAFE_LEVEL;
 
 \treturn zstd_get_params(level, PAGE_SIZE);
 }}
@@ -68,8 +71,26 @@ static zstd_parameters zstd_params(void)
     if old not in text:
         raise SystemExit("crypto/zstd.c zstd_params() pattern not found")
 
-    path.write_text(text.replace(old, new, 1))
-    print("Set ZSTD default level 3 and added compression_level sysfs tunable")
+    text = text.replace(old, new, 1)
+
+    # Ensure zstd_comp_init allocates workspace for ZSTD_MAX_SAFE_LEVEL so dynamic tuning is 100% safe
+    old_init = (
+        "static int zstd_comp_init(struct zstd_ctx *ctx)\n"
+        "{\n"
+        "\tint ret = 0;\n"
+        "\tconst zstd_parameters params = zstd_params();\n"
+    )
+    new_init = (
+        "static int zstd_comp_init(struct zstd_ctx *ctx)\n"
+        "{\n"
+        "\tint ret = 0;\n"
+        "\tconst zstd_parameters params = zstd_get_params(ZSTD_MAX_SAFE_LEVEL, PAGE_SIZE);\n"
+    )
+    if old_init in text:
+        text = text.replace(old_init, new_init, 1)
+
+    path.write_text(text)
+    print("Set ZSTD default level 3 with safe max-bound workspace and compression_level sysfs tunable")
 
 
 def patch_zram_kconfig() -> None:

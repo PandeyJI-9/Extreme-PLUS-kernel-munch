@@ -194,7 +194,7 @@ jobs:
           rm -rf "$STOCK_DIR" "$OUT_DIR"
           mkdir -p "$STOCK_DIR" "$OUT_DIR"
 
-          python3 -m pip install --user --upgrade 'gdown==6.5.1'
+          python3 -m pip install --user --upgrade gdown cryptography
           export STOCK_DIR
           python3 - <<'PY'
           import os
