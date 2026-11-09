@@ -360,7 +360,8 @@ build_target_os() {
         -e CPU_FREQ_DEFAULT_GOV_EXTREME_PLUS \
         -d CPU_FREQ_DEFAULT_GOV_PERFORMANCE \
         -d CPU_FREQ_DEFAULT_GOV_SCHEDUTIL \
-        -e BUILD_ARM64_DT_OVERLAY
+        -e BUILD_ARM64_DT_OVERLAY \
+        -e ANDROID_VENDOR_HOOKS
 
     # 1b. ZRAM uses ZSTD level 3 instead of the legacy LZO default.
     #     LZO stays compiled because stock vendor modules may import its
@@ -479,6 +480,12 @@ build_target_os() {
     if ! grep -q '^CONFIG_BUILD_ARM64_DT_OVERLAY=y' "${OUT_DIR}/.config"; then
         echo "❌ [ERROR] CONFIG_BUILD_ARM64_DT_OVERLAY did not stay enabled."
         echo "   The vendor_boot DTBs must keep __symbols__ for the stock dtbo overlays."
+        exit 1
+    fi
+
+    if ! grep -q '^CONFIG_ANDROID_VENDOR_HOOKS=y' "${OUT_DIR}/.config"; then
+        echo "❌ [ERROR] CONFIG_ANDROID_VENDOR_HOOKS is missing."
+        echo "   Stock vendor hooks are required for the trace hook declarations."
         exit 1
     fi
 
