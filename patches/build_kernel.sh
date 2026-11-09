@@ -532,10 +532,14 @@ build_target_os() {
         # HyperOS must keep the stock memory/reclaim subsystem. The old
         # munch_defconfig + manual override build disabled or replaced these,
         # which caused camera-exit black screens and memory-pressure stutter.
+        #
+        # MI_MEMORY_SYSFS is present in the device's stock config but is not
+        # defined anywhere in this AstideLabs source tree, so olddefconfig
+        # necessarily drops that stale symbol. Do not fail the build for a
+        # config line the source cannot implement.
         local REQUIRED_SYM
         for REQUIRED_SYM in \
             ZRAM \
-            MI_MEMORY_SYSFS \
             MI_RECLAIM \
             TASK_IO_ACCOUNTING \
             SCHEDSTATS; do
