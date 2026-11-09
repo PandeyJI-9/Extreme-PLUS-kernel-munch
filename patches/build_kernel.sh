@@ -339,8 +339,18 @@ build_target_os() {
     rm -rf "${OUT_DIR}"
     mkdir -p "${OUT_DIR}"
 
-    echo "[*] Generating stock defconfig (${TARGET_DEFCONFIG}) for ${OS_UPPER}..."
-    make -j"${TOTAL_CORES}" "${MAKE_OPTS[@]}" "${TARGET_DEFCONFIG}"
+    if [ "$OS" == "hyperos" ]; then
+        if ! grep -q 'Automatically generated file' "arch/arm64/configs/${TARGET_DEFCONFIG}"; then
+            echo "❌ [ERROR] ${TARGET_DEFCONFIG} is not the full stock HyperOS config."
+            echo "   The stock file is a complete .config, not a makeable *_defconfig target."
+            exit 1
+        fi
+        echo "[*] Seeding exact stock HyperOS full config (${TARGET_DEFCONFIG})..."
+        cp "arch/arm64/configs/${TARGET_DEFCONFIG}" "${OUT_DIR}/.config"
+    else
+        echo "[*] Generating AOSP defconfig (${TARGET_DEFCONFIG}) for ${OS_UPPER}..."
+        make -j"${TOTAL_CORES}" "${MAKE_OPTS[@]}" "${TARGET_DEFCONFIG}"
+    fi
 
     # 1. Stock AstideLabs schedutil + EKM profile layer.
     #    Every policy keeps its full OPP range; the EKM profile is a ceiling only.
