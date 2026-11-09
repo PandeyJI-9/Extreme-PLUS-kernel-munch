@@ -174,7 +174,7 @@ static unsigned int extreme_profile_cap(const struct cpufreq_policy *policy)
 }
 
 /*
- * Enforce the EKM ceiling in the standard CPUFREQ_ADJUST/NOTIFY path.
+ * Enforce the EKM ceiling in the standard CPUFREQ_ADJUST path.
  * Userspace (EKM/FKM/HyperOS thermal) can still request a lower maximum;
  * this notifier only prevents the ceiling from being raised above the
  * selected profile.
@@ -355,8 +355,12 @@ static void sugov_calc_avg_cap(struct sugov_policy *sg_policy, u64 curr_ws,
 	if (use_pelt())
 		return;
 
-	/* Guard against clock skew or CPU hotplug window anomalies */
-	if (WARN_ON_ONCE(curr_ws < last_ws) || curr_ws <= last_ws)
+	/*
+	 * Guard against clock skew or CPU hotplug window anomalies.
+	 * Do not use WARN_ON_ONCE here because panic_on_warn=1 can turn
+	 * warnings into hard kernel panics on some Android builds.
+	 */
+	if (unlikely(curr_ws <= last_ws))
 		return;
 
 	/* If we skipped some windows */

@@ -86,8 +86,9 @@ static zstd_parameters zstd_params(void)
         "\tint ret = 0;\n"
         "\tconst zstd_parameters params = zstd_get_params(ZSTD_MAX_SAFE_LEVEL, PAGE_SIZE);\n"
     )
-    if old_init in text:
-        text = text.replace(old_init, new_init, 1)
+    if old_init not in text:
+        raise SystemExit("crypto/zstd.c zstd_comp_init() pattern not found")
+    text = text.replace(old_init, new_init, 1)
 
     path.write_text(text)
     print("Set ZSTD default level 3 with safe max-bound workspace and compression_level sysfs tunable")
