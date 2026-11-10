@@ -587,9 +587,10 @@ build_target_os() {
     fi
 
     # EXTREME+ must always be the active default governor on boot.
+    # 4.19 selects the default through this Kconfig choice; it does not
+    # define a CONFIG_CPU_FREQ_DEFAULT_GOV string.
     if ! grep -q '^CONFIG_CPU_FREQ_GOV_EXTREME_PLUS=y' "${OUT_DIR}/.config" ||
-       ! grep -q '^CONFIG_CPU_FREQ_DEFAULT_GOV_EXTREME_PLUS=y' "${OUT_DIR}/.config" ||
-       ! grep -q '^CONFIG_CPU_FREQ_DEFAULT_GOV="extreme+"' "${OUT_DIR}/.config"; then
+       ! grep -q '^CONFIG_CPU_FREQ_DEFAULT_GOV_EXTREME_PLUS=y' "${OUT_DIR}/.config"; then
         echo "❌ [ERROR] EXTREME+ is not configured as the active default governor on boot."
         grep '^CONFIG_CPU_FREQ_DEFAULT_GOV' "${OUT_DIR}/.config" || true
         exit 1
