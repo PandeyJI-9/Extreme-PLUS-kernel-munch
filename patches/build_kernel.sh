@@ -76,10 +76,8 @@ echo "[*] Cleaning previous temporary outputs..."
 rm -rf out out_hyperos out_aosp anykernel anykernel_* EXTREME++*.zip
 find . -type f \( -name "dtbo.img" -o -name "Image" -o -name "Image.gz" \) -delete
 
-# EXTREME+ governor and GPU devfreq base symbols.
-# EXTREME+ remains selectable, but schedutil is the built-in boot default so
-# a governor initialization problem can never prevent boot. ZSTD is applied
-# by apply-zram-zstd.py; LZO stays only as the vendor-ABI fallback.
+# EXTREME+ Governor & GPU Devfreq base symbols.
+# ZRAM/swap stay at the stock AstideLabs configuration (LZ4 default).
 cat >> "arch/arm64/configs/${DEFCONFIG}" << 'EOF'
 CONFIG_PM_DEVFREQ=y
 CONFIG_DEVFREQ_GOV_QCOM_ADRENO_TZ=y
@@ -88,8 +86,8 @@ CONFIG_QCOM_ADRENO_DEFAULT_GOVERNOR="msm-adreno-tz"
 CONFIG_QCOM_KGSL=y
 CONFIG_CPU_FREQ_GOV_EXTREME_PLUS=y
 CONFIG_CPU_FREQ_GOV_SCHEDUTIL=y
-CONFIG_CPU_FREQ_DEFAULT_GOV_SCHEDUTIL=y
-CONFIG_CPU_FREQ_DEFAULT_GOV="schedutil"
+CONFIG_CPU_FREQ_DEFAULT_GOV_EXTREME_PLUS=y
+CONFIG_CPU_FREQ_DEFAULT_GOV="extreme+"
 CONFIG_TCP_CONG_BBR=y
 CONFIG_DEFAULT_BBR=y
 CONFIG_DEFAULT_TCP_CONG="bbr"
@@ -203,9 +201,9 @@ gov_choice = """config CPU_FREQ_DEFAULT_GOV_EXTREME_PLUS
 \tselect CPU_FREQ_GOV_EXTREME_PLUS
 \tselect CPU_FREQ_GOV_PERFORMANCE
 \thelp
-\t  Select the "extreme+" CPUFreq governor as the built-in default.
-\t  The build leaves this disabled and boots with schedutil; enable it
-\t  only for manual experiments because it keeps the EKM profile layer.
+\t  Use the "extreme+" CPUFreq governor by default. It keeps the
+\t  AstideLabs CAF/WALT schedutil algorithm and adds the EKM profile
+\t  ceiling to all three clusters.
 """
 
 gov_def = """config CPU_FREQ_GOV_EXTREME_PLUS
@@ -394,14 +392,14 @@ build_target_os() {
         -d ZRAM_DEF_COMP_LZ4HC \
         -d ZRAM_DEF_COMP_842
 
-    # 4. Schedutil is the boot default; EXTREME+ remains manually selectable.
+    # 4. Stock AstideLabs schedutil + EKM profile layer
     scripts/config --file "${OUT_DIR}/.config" \
         -e CPU_FREQ_GOV_SCHEDUTIL \
         -e CPU_FREQ_GOV_EXTREME_PLUS \
-        -e CPU_FREQ_DEFAULT_GOV_SCHEDUTIL \
-        -d CPU_FREQ_DEFAULT_GOV_EXTREME_PLUS \
+        -e CPU_FREQ_DEFAULT_GOV_EXTREME_PLUS \
         -d CPU_FREQ_DEFAULT_GOV_PERFORMANCE \
-        --set-str CPU_FREQ_DEFAULT_GOV "schedutil"
+        -d CPU_FREQ_DEFAULT_GOV_SCHEDUTIL \
+        --set-str CPU_FREQ_DEFAULT_GOV "extreme+"
 
     # 5. TCP BBR Congestion Control & Lightweight Gaming Tunables
     scripts/config --file "${OUT_DIR}/.config" \
@@ -588,13 +586,11 @@ build_target_os() {
         exit 1
     fi
 
-    # Boot must always use schedutil. EXTREME+ remains available for manual
-    # selection, but it must never become the built-in default again.
+    # EXTREME+ must always be the active default governor on boot.
     if ! grep -q '^CONFIG_CPU_FREQ_GOV_EXTREME_PLUS=y' "${OUT_DIR}/.config" ||
-       ! grep -q '^CONFIG_CPU_FREQ_DEFAULT_GOV_SCHEDUTIL=y' "${OUT_DIR}/.config" ||
-       ! grep -q '^CONFIG_CPU_FREQ_DEFAULT_GOV="schedutil"' "${OUT_DIR}/.config" ||
-       grep -q '^CONFIG_CPU_FREQ_DEFAULT_GOV_EXTREME_PLUS=y' "${OUT_DIR}/.config"; then
-        echo "❌ [ERROR] CPUFreq boot default is not schedutil."
+       ! grep -q '^CONFIG_CPU_FREQ_DEFAULT_GOV_EXTREME_PLUS=y' "${OUT_DIR}/.config" ||
+       ! grep -q '^CONFIG_CPU_FREQ_DEFAULT_GOV="extreme+"' "${OUT_DIR}/.config"; then
+        echo "❌ [ERROR] EXTREME+ is not configured as the active default governor on boot."
         grep '^CONFIG_CPU_FREQ_DEFAULT_GOV' "${OUT_DIR}/.config" || true
         exit 1
     fi
