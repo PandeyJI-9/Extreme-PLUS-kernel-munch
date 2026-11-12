@@ -5,6 +5,18 @@ Device codename: munch
 Target ROM: Xiaomi HyperOS
 Kernel maintainer: @pandey_ji_8
 
+==========12/11/2026 (Build #132)==========
+* fix(ci): drop invalid 4.19 default-governor string guard
+* revert: restore EXTREME+ as active default governor on boot
+* Boot with schedutil; keep EXTREME+ manually selectable
+* Add ZSTD build guard for level-3 workspace patch
+* fix(governor,zram): remove WARN_ON_ONCE to prevent panic_on_warn and enforce strict zstd_comp_init patch check
+* fix(zram,governor,ci): harden ZSTD workspace allocation, prevent governor panics, and fix gdown pip install
+* Restore Build #125 base and add ZSTD ZRAM
+* Revert stock-base rebuild to working Build #125
+* enable stock Android vendor hooks
+* allow olddefconfig to drop unsupported MI symbol
+
 ==========27/10/2026 (Build #111 - BMW Edition)==========
 * fix(governor): allow Gold cores (4-6) to drop cleanly to idle (710 MHz) by restricting active floors to busy/render states
 * fix(governor): remove recursive cpufreq_update_policy during governor init and CPU hotplug, eliminating Prime core deadlock on profile switch
