@@ -6,6 +6,10 @@ Target ROM: Xiaomi HyperOS
 Kernel maintainer: @pandey_ji_8
 
 ==========12/11/2026 (Build #132)==========
+* Fixed the Extreme+ Governor and optimize for performance 
+* Add EKM (Extreme+ kernel manager) support on kernel 
+* added The AOSP support 
+* add some improvement 
 * fix(ci): drop invalid 4.19 default-governor string guard
 * revert: restore EXTREME+ as active default governor on boot
 * Boot with schedutil; keep EXTREME+ manually selectable
