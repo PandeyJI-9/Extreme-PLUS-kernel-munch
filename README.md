@@ -275,7 +275,7 @@ cat /sys/class/kgsl/kgsl-3d0/gpu_available_frequencies
 
 ## 🏆 Credits & Acknowledgments
 
-* **AYUSH PANDEY** — Lead architect, developer, and maintainer of PROJECT EXTREME++.
+* **Ayush Pandey** — Lead architect, developer, and maintainer of PROJECT EXTREME++.
 * **AstideLabs** — Solid SM8250 Linux 4.19 kernel source foundation.
 * **FakeDreamer / re-noroi** — Adreno 650 RPMh voltage stepping and undervolt tables.
 * **ReSukiSU, KowSU & KOWX712** — Non-GKI multi-manager root and SuSFS v2.3.0 stealth implementation.
