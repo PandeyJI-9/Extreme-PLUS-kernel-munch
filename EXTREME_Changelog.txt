@@ -5,6 +5,18 @@ Device codename: munch
 Target ROM: Xiaomi HyperOS
 Kernel maintainer: @pandey_ji_8
 
+==========15/11/2026 (Build #133)==========
+* feat(ci): automate GitHub Releases, dynamic variant notes, and EKM attachment with Telegram newline fixes
+* Correctly and perfectly  2.0
+* Correctly and perfectly
+* docs: revamp README for stable release with BMW Edition & EKM integration
+* Update EXTREME_Changelog.txt now perfect
+* fix(ci): drop invalid 4.19 default-governor string guard
+* revert: restore EXTREME+ as active default governor on boot
+* Boot with schedutil; keep EXTREME+ manually selectable
+* Add ZSTD build guard for level-3 workspace patch
+* fix(governor,zram): remove WARN_ON_ONCE to prevent panic_on_warn and enforce strict zstd_comp_init patch check
+
 ==========12/11/2026 (Build #132)==========
 * Fixed the Extreme+ Governor and optimize for performance 
 * Add EKM (Extreme+ kernel manager) support on kernel 
