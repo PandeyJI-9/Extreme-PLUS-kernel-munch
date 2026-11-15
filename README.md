@@ -266,7 +266,7 @@ cat /sys/class/kgsl/kgsl-3d0/gpu_available_frequencies
 ## 🤝 Community & Support
 
 * 💬 **Official Telegram Community:** [@Extremeplus_Support](https://t.me/Extremeplus_Support) *(Join for chat, instant help, ROM feedback & discussions)*
-* 👨‍💻 **Lead Developer & Maintainer:** **Ayush Pandey JI** ([@pandey_ji_8](https://t.me/pandey_ji_8))
+* 👨‍💻 **Lead Developer & Maintainer:** **Ayush Pandey** ([@pandey_ji_8](https://t.me/pandey_ji_8))
 * 🐞 **Bug Reports & Issues:**
   * 🚀 **Telegram Group (Fastest & Easiest):** Seedha [@Extremeplus_Support](https://t.me/Extremeplus_Support) me issue ya kernel log drop karo — koi GitHub account banane ki jhanjhat nahi!
   * 🌐 **GitHub Issues:** [Create an Issue](https://github.com/PandeyJI-9/Extreme-PLUS-kernel-munch/issues) agar structured developer-level tracking chahiye.
