@@ -38,6 +38,7 @@ jobs:
           TARGETS=()
           [ -n "${{ secrets.TELEGRAM_CHAT_ID }}" ] && TARGETS+=("${{ secrets.TELEGRAM_CHAT_ID }}")
           [ -n "${{ secrets.TELEGRAM_DM_ID }}" ] && TARGETS+=("${{ secrets.TELEGRAM_DM_ID }}")
+          TELEGRAM_THREAD_ID="${{ vars.TELEGRAM_THREAD_ID }}"
 
           ROOT_LABEL="⚡ Root: KowSU Multi-Manager Root (SuSFS v2.3.0)"
           if [ "${{ inputs.root_mode }}" = "noroot" ]; then
@@ -60,8 +61,10 @@ jobs:
           START_MSG=$(printf '🚀 <b>EXTREME++ Build Started!</b>\n📱 <b>Device:</b> POCO F4 (munch)\n🏎️ <b>Edition:</b> EXTREME++ Gaming (BMW Edition)\n🎯 <b>Target:</b> %s\n%s\n⚡ <b>Default Clock:</b> 3.19 GHz Unlocked Peak (Dynamic Profiles)\n👑 <b>Author:</b> Extreme++ by @pandey_ji_8' "${TARGET_LABEL}" "${ROOT_LABEL}")
 
           for chat in "${TARGETS[@]}"; do
+            THREAD=()
+            if [ "$chat" = "${{ secrets.TELEGRAM_CHAT_ID }}" ] && [ -n "$TELEGRAM_THREAD_ID" ]; then THREAD=(--data-urlencode "message_thread_id=$TELEGRAM_THREAD_ID"); fi
             curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
-              --data-urlencode "chat_id=$chat" \
+              --data-urlencode "chat_id=$chat" "${THREAD[@]}" \
               --data-urlencode "parse_mode=HTML" \
               --data-urlencode "text=$START_MSG" || true
           done
@@ -524,10 +527,13 @@ jobs:
           TARGETS=()
           [ -n "${{ secrets.TELEGRAM_CHAT_ID }}" ] && TARGETS+=("${{ secrets.TELEGRAM_CHAT_ID }}")
           [ -n "${{ secrets.TELEGRAM_DM_ID }}" ] && TARGETS+=("${{ secrets.TELEGRAM_DM_ID }}")
+          TELEGRAM_THREAD_ID="${{ vars.TELEGRAM_THREAD_ID }}"
 
           for chat in "${TARGETS[@]}"; do
+            THREAD=()
+            if [ "$chat" = "${{ secrets.TELEGRAM_CHAT_ID }}" ] && [ -n "$TELEGRAM_THREAD_ID" ]; then THREAD=(--data-urlencode "message_thread_id=$TELEGRAM_THREAD_ID"); fi
             curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
-              --data-urlencode "chat_id=$chat" \
+              --data-urlencode "chat_id=$chat" "${THREAD[@]}" \
               --data-urlencode "parse_mode=HTML" \
               --data-urlencode "text=$MSG" || true
           done
@@ -562,8 +568,10 @@ jobs:
             fi
 
             for chat in "${TARGETS[@]}"; do
+              THREAD=()
+              if [ "$chat" = "${{ secrets.TELEGRAM_CHAT_ID }}" ] && [ -n "$TELEGRAM_THREAD_ID" ]; then THREAD=(-F "message_thread_id=$TELEGRAM_THREAD_ID"); fi
               curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendDocument" \
-                -F "chat_id=$chat" \
+                -F "chat_id=$chat" "${THREAD[@]}" \
                 -F "document=@$z" \
                 -F "caption=$ZIP_CAPTION" \
                 -F "parse_mode=HTML" || true
@@ -576,8 +584,10 @@ jobs:
             ANAME=$(basename "$apk")
             APK_CAPTION=$(printf '📱 <b>%s</b>\n🏎️ Extreme Kernel Manager (EKM) Official Companion App\n🎛️ Live In-Kernel Profile Switcher (Gaming / Balanced / Battery)\n🌙 POCO F4 Munch AMOLED DC Dimming + QS Tile\n👑 Extreme++ BMW Edition by @pandey_ji_8' "${ANAME}")
             for chat in "${TARGETS[@]}"; do
+              THREAD=()
+              if [ "$chat" = "${{ secrets.TELEGRAM_CHAT_ID }}" ] && [ -n "$TELEGRAM_THREAD_ID" ]; then THREAD=(-F "message_thread_id=$TELEGRAM_THREAD_ID"); fi
               curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendDocument" \
-                -F "chat_id=$chat" \
+                -F "chat_id=$chat" "${THREAD[@]}" \
                 -F "document=@$apk" \
                 -F "caption=$APK_CAPTION" \
                 -F "parse_mode=HTML" || true
@@ -591,12 +601,15 @@ jobs:
           [ -n "${{ secrets.TELEGRAM_CHAT_ID }}" ] && TARGETS+=("${{ secrets.TELEGRAM_CHAT_ID }}")
           [ -n "${{ secrets.TELEGRAM_DM_ID }}" ] && TARGETS+=("${{ secrets.TELEGRAM_DM_ID }}")
 
+          TELEGRAM_THREAD_ID="${{ vars.TELEGRAM_THREAD_ID }}"
           FAIL_MSG=$(printf '❌ <b>EXTREME++ Build #%s FAILED!</b>\nPlease check GitHub Actions workflow logs.' "${{ github.run_number }}")
           # Dedupe: DM_ID and CHAT_ID are often the same value.
           mapfile -t TARGETS < <(printf '%s\n' "${TARGETS[@]}" | awk 'NF && !seen[$0]++')
           for chat in "${TARGETS[@]}"; do
+            THREAD=()
+            if [ "$chat" = "${{ secrets.TELEGRAM_CHAT_ID }}" ] && [ -n "$TELEGRAM_THREAD_ID" ]; then THREAD=(--data-urlencode "message_thread_id=$TELEGRAM_THREAD_ID"); fi
             RESP=$(curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
-              --data-urlencode "chat_id=$chat" \
+              --data-urlencode "chat_id=$chat" "${THREAD[@]}" \
               --data-urlencode "parse_mode=HTML" \
               --data-urlencode "text=$FAIL_MSG" || true)
             if ! grep -q '"ok":true' <<<"$RESP"; then

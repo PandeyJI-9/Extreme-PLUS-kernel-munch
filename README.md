@@ -228,6 +228,10 @@ Run the **Build & Release** workflow (Actions → Build → Run workflow).
 - If neither is configured, the repack step is skipped with a warning — the
   build does not fail and the kernel ZIP release still goes out.
 
+Telegram notifications post to the group in `TELEGRAM_CHAT_ID`; if that group is
+a forum, set the **variable** `TELEGRAM_THREAD_ID` to the topic id so messages
+land in the right topic instead of failing with `TOPIC_CLOSED`.
+
 ## 📲 Installation Guide
 
 ### Via Custom Recovery (OrangeFox / TWRP)
