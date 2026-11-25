@@ -214,6 +214,20 @@ The official open-source companion app designed exclusively for EXTREME++ on POC
 
 ---
 
+## 🏗️ Building (GitHub Actions)
+
+Run the **Build & Release** workflow (Actions → Build → Run workflow).
+
+- The kernel ZIPs are always built and released.
+- The **flashable HyperOS partition images** additionally need the stock
+  `boot.img` / `vendor_boot.img` / `dtbo.img`. Provide them either as:
+  - a repository **variable** `HYPEROS_STOCK_URL` (Settings → Secrets and
+    variables → Actions → **Variables**) pointing at a shared Google Drive
+    folder/archive, or
+  - a **secret** `hyperosimgs` with the same value.
+- If neither is configured, the repack step is skipped with a warning — the
+  build does not fail and the kernel ZIP release still goes out.
+
 ## 📲 Installation Guide
 
 ### Via Custom Recovery (OrangeFox / TWRP)

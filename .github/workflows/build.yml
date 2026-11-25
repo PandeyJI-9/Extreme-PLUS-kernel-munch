@@ -169,15 +169,20 @@ jobs:
           fi
 
       - name: "🔐 Repack HyperOS images from Google Drive"
+        id: repack
         if: success() && (inputs.target_os == 'hyperos' || inputs.target_os == 'both')
         env:
-          HYPEROSIMGS_URL: ${{ secrets.hyperosimgs || secrets.HYPEROSIMGS }}
+          # Any of these works. A repo *variable* is enough (no secret needed):
+          # Settings → Variables → HYPEROS_STOCK_URL, or Secrets → hyperosimgs.
+          HYPEROSIMGS_URL: ${{ secrets.hyperosimgs || secrets.HYPEROSIMGS || secrets.HYPEROS_IMGS || secrets.HYPEROS_IMAGES || vars.HYPEROS_STOCK_URL }}
         run: |
           set -euo pipefail
 
           if [ -z "${HYPEROSIMGS_URL:-}" ]; then
-            echo "::error::Google Drive secret 'hyperosimgs' is not set! Required to repack flashable HyperOS 4 images."
-            exit 1
+            echo "::warning::Stock HyperOS images are not configured (secret 'hyperosimgs' / variable 'HYPEROS_STOCK_URL' unset)."
+            echo "::warning::Skipping the flashable repack; the kernel ZIPs are still built and released."
+            echo "produced=false" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
 
           BOOT_DIR="$GITHUB_WORKSPACE/kernel/out_hyperos/arch/arm64/boot"
@@ -310,6 +315,7 @@ jobs:
 
           echo "✅ HyperOS flashable partitioned images prepared under $OUT_DIR:"
           ls -lh "$OUT_DIR"
+          echo "produced=true" >> "$GITHUB_OUTPUT"
 
       - name: "📦 Upload Build Artifacts"
         id: upload_artifacts
@@ -327,7 +333,7 @@ jobs:
           if-no-files-found: warn
 
       - name: "📢 Telegram: HyperOS Images Artifact"
-        if: success() && (inputs.target_os == 'hyperos' || inputs.target_os == 'both')
+        if: success() && steps.repack.outputs.produced == 'true' && (inputs.target_os == 'hyperos' || inputs.target_os == 'both')
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_DM_ID: ${{ secrets.TELEGRAM_DM_ID }}
@@ -339,8 +345,8 @@ jobs:
             exit 0
           fi
           if [ ! -f "$GITHUB_WORKSPACE/hyperos4_images/boot.img" ]; then
-            echo "::error::HyperOS 4 images not found in $GITHUB_WORKSPACE/hyperos4_images! Artifact cannot be delivered."
-            exit 1
+            echo "ℹ️ HyperOS flashable images were not produced; skipping artifact DM."
+            exit 0
           fi
           ARTIFACT_URL="${ARTIFACT_URL:-https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}}"
           MSG=$(printf '🚀 <b>EXTREME++ HyperOS 4 Flashable Images</b> [Build #%s]\n\n📱 <b>Device:</b> POCO F4 (munch)\n🏎️ <b>Edition:</b> BMW Edition [Official Stable]\n\n📦 Download partitioned flashable images (<b>boot.img</b>, <b>vendor_boot.img</b>, <b>dtbo.img</b>, <b>SHA256SUMS.txt</b>) from the workflow artifact:\n👉 %s\n\n📁 <b>Artifact Name:</b> EXTREME++_BMW_Edition_%s' \
@@ -586,9 +592,15 @@ jobs:
           [ -n "${{ secrets.TELEGRAM_DM_ID }}" ] && TARGETS+=("${{ secrets.TELEGRAM_DM_ID }}")
 
           FAIL_MSG=$(printf '❌ <b>EXTREME++ Build #%s FAILED!</b>\nPlease check GitHub Actions workflow logs.' "${{ github.run_number }}")
+          # Dedupe: DM_ID and CHAT_ID are often the same value.
+          mapfile -t TARGETS < <(printf '%s\n' "${TARGETS[@]}" | awk 'NF && !seen[$0]++')
           for chat in "${TARGETS[@]}"; do
-            curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
+            RESP=$(curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
               --data-urlencode "chat_id=$chat" \
               --data-urlencode "parse_mode=HTML" \
-              --data-urlencode "text=$FAIL_MSG" || true
+              --data-urlencode "text=$FAIL_MSG" || true)
+            if ! grep -q '"ok":true' <<<"$RESP"; then
+              DESC=$(python3 -c 'import json,sys;print(json.load(sys.stdin).get("description","unknown error"))' <<<"$RESP" 2>/dev/null || echo "unreachable")
+              echo "::warning::Telegram failure notice to $chat not delivered: $DESC"
+            fi
           done
