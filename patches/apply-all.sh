@@ -51,6 +51,10 @@ echo "━━━ [8/8] Patching Xiaomi HyperOS 4 / MIUI Universal Millet Compatib
 python3 "${SCRIPT_DIR}/apply-millet-compat.py" "${KERNEL_SRC}" || fail "millet compat"
 echo ""
 
+echo "━━━ [9/9] Enabling Double-Tap-To-Wake by default ━━━"
+python3 "${SCRIPT_DIR}/apply-dt2w-default.py" "${KERNEL_SRC}" || fail "dt2w default"
+echo ""
+
 if [ "$FAILS" -ne 0 ]; then
   echo "❌ $FAILS patch step(s) failed — refusing to continue."
   exit 1
