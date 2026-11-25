@@ -53,6 +53,11 @@ echo ""
 
 echo "━━━ [9/9] Enabling Double-Tap-To-Wake by default ━━━"
 python3 "${SCRIPT_DIR}/apply-dt2w-default.py" "${KERNEL_SRC}" || fail "dt2w default"
+
+echo ""
+
+echo "━━━ [10/10] Porting KernelSU Manual Hooks (susfs-free variant) ━━━"
+python3 "${SCRIPT_DIR}/apply-ksu-manual-hooks.py" "${KERNEL_SRC}" || fail "ksu manual hooks"
 echo ""
 
 if [ "$FAILS" -ne 0 ]; then

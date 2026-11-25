@@ -167,7 +167,7 @@ Our GPU architecture integrates the renowned **FakeDreamer Adreno 650 OPP table*
 * **Bootloader Command-Line Spoofing:** Patches `/proc/cmdline` for normal post-boot processes (`androidboot.verifiedbootstate=green`, `androidboot.flash.locked=1`) while providing genuine cmdline to PID 1 (`init`) and `ueventd` for safe AVB partition mounting.
 * **Available Root Flavors:**
   * `ksu_susfs` — KowSU / ReSukiSU + SuSFS v2.3.0 (Maximum root & stealth)
-  * `ksu_no_susfs` — Standard KernelSU with every SuSFS feature disabled. The SuSFS core stays linked because ReSukiSU only supports the SuSFS inline hook on 4.19 non-GKI (the tracepoint hook requires GKI 2.0 and the manual hooks are not integrated in this base), so `ksu_no_susfs` kernels still report `SuSFS v2.3.0` while all `CONFIG_KSU_SUSFS_*` features are off.
+  * `ksu_no_susfs` — genuine susfs-free KernelSU: `CONFIG_KSU_SUSFS=n` and the manual hook (`CONFIG_KSU_MANUAL_HOOK=y`) is ported into `fs/stat.c`, `fs/open.c`, `fs/exec.c` and `kernel/reboot.c`, so the kernel carries no SuSFS code and does not report `SuSFS v2.3.0`. (ReSukiSU only supports the SuSFS inline hook or the manual hook on 4.19 non-GKI; the tracepoint hook requires GKI 2.0.)
   * `noroot` — Pure Clean Non-Root Kernel (Ideal for banking apps / zero root)
 
 ---
