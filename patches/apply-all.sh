@@ -5,18 +5,20 @@
 # Master Patch Application Suite
 # ==============================================================================
 KERNEL_SRC="${1:-.}"
+FAILS=0
+fail() { echo "❌ [FAIL] $1"; FAILS=$((FAILS + 1)); }
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 echo "━━━ [1/7] Patching GPU OPP Table (Adreno 650) ━━━"
-python3 "${SCRIPT_DIR}/apply-gpu-opp.py" "${KERNEL_SRC}/arch/arm64/boot/dts/vendor/qcom/kona-gpu.dtsi" || echo "⚠️ GPU Script issue, continuing build..."
+python3 "${SCRIPT_DIR}/apply-gpu-opp.py" "${KERNEL_SRC}/arch/arm64/boot/dts/vendor/qcom/kona-gpu.dtsi" || fail "GPU OPP table"
 echo ""
 
 echo "━━━ [2/7] Patching CPU Prime Core Driver & DTS (3.19 GHz Full Peak) ━━━"
-python3 "${SCRIPT_DIR}/apply-cpu-cap.py" "${KERNEL_SRC}/arch/arm64/boot/dts/vendor/qcom/kona.dtsi" "${KERNEL_SRC}/drivers/cpufreq/qcom-cpufreq-hw.c" 3187200 || echo "⚠️ CPU Script issue, continuing build..."
+python3 "${SCRIPT_DIR}/apply-cpu-cap.py" "${KERNEL_SRC}/arch/arm64/boot/dts/vendor/qcom/kona.dtsi" "${KERNEL_SRC}/drivers/cpufreq/qcom-cpufreq-hw.c" 3187200 || fail "CPU clamp"
 echo ""
 
 echo "━━━ [3/7] Patching EAS Energy Model ━━━"
-python3 "${SCRIPT_DIR}/apply-eas-tuning.py" "${KERNEL_SRC}/arch/arm64/boot/dts/vendor/qcom/kona.dtsi" 3187200 || echo "⚠️ EAS Script issue, continuing build..."
+python3 "${SCRIPT_DIR}/apply-eas-tuning.py" "${KERNEL_SRC}/arch/arm64/boot/dts/vendor/qcom/kona.dtsi" 3187200 || fail "EAS tuning"
 echo ""
 
 echo "━━━ [4/7] Setting EXTREME++ Kernel Name & Pure Clean Base in ALL munch configs ━━━"
@@ -34,20 +36,33 @@ echo "✅ Kernel name set in all munch defconfigs!"
 echo ""
 
 echo "━━━ [5/7] Patching Kernel for Bootloader Spoofing (Play Integrity) ━━━"
-python3 "${SCRIPT_DIR}/apply-bootloader-spoof.py" "${KERNEL_SRC}" || echo "⚠️ Spoofing Script issue, continuing build..."
+python3 "${SCRIPT_DIR}/apply-bootloader-spoof.py" "${KERNEL_SRC}" || fail "bootloader spoof"
 echo ""
 
 echo "━━━ [6/7] Patching Safe PD/PPS Fast Charging & Thermal DTS Stepping ━━━"
-(cd "${KERNEL_SRC}" && python3 "${SCRIPT_DIR}/apply-fastcharge-bypass.py") || echo "⚠️ Fast charging script issue, continuing build..."
+(cd "${KERNEL_SRC}" && python3 "${SCRIPT_DIR}/apply-fastcharge-bypass.py") || fail "fast charging"
 echo ""
 
 echo "━━━ [7/8] Patching Critical Tasks Direct Reclaim Anti-Stutter (Google ACK fix) ━━━"
-python3 "${SCRIPT_DIR}/apply-vmscan-critical.py" "${KERNEL_SRC}/mm/vmscan.c" || echo "⚠️ vmscan script issue, continuing build..."
+python3 "${SCRIPT_DIR}/apply-vmscan-critical.py" "${KERNEL_SRC}/mm/vmscan.c" || fail "vmscan anti-stutter"
 echo ""
 
 echo "━━━ [8/8] Patching Xiaomi HyperOS 4 / MIUI Universal Millet Compatibility ━━━"
-python3 "${SCRIPT_DIR}/apply-millet-compat.py" "${KERNEL_SRC}" || echo "⚠️ Millet script issue, continuing build..."
+python3 "${SCRIPT_DIR}/apply-millet-compat.py" "${KERNEL_SRC}" || fail "millet compat"
 echo ""
 
+echo "━━━ [9/9] Enabling Double-Tap-To-Wake by default ━━━"
+python3 "${SCRIPT_DIR}/apply-dt2w-default.py" "${KERNEL_SRC}" || fail "dt2w default"
+
+echo ""
+
+echo "━━━ [10/10] Porting KernelSU Manual Hooks (susfs-free variant) ━━━"
+python3 "${SCRIPT_DIR}/apply-ksu-manual-hooks.py" "${KERNEL_SRC}" || fail "ksu manual hooks"
+echo ""
+
+if [ "$FAILS" -ne 0 ]; then
+  echo "❌ $FAILS patch step(s) failed — refusing to continue."
+  exit 1
+fi
 echo "✅ ALL PATCHES APPLIED SUCCESSFULLY!"
 exit 0

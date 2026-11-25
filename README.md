@@ -167,7 +167,7 @@ Our GPU architecture integrates the renowned **FakeDreamer Adreno 650 OPP table*
 * **Bootloader Command-Line Spoofing:** Patches `/proc/cmdline` for normal post-boot processes (`androidboot.verifiedbootstate=green`, `androidboot.flash.locked=1`) while providing genuine cmdline to PID 1 (`init`) and `ueventd` for safe AVB partition mounting.
 * **Available Root Flavors:**
   * `ksu_susfs` — KowSU / ReSukiSU + SuSFS v2.3.0 (Maximum root & stealth)
-  * `ksu_no_susfs` — Standard Clean KernelSU (No SuSFS stealth hooks)
+  * `ksu_no_susfs` — genuine susfs-free KernelSU: `CONFIG_KSU_SUSFS=n` and the manual hook (`CONFIG_KSU_MANUAL_HOOK=y`) is ported into `fs/stat.c`, `fs/open.c`, `fs/exec.c` and `kernel/reboot.c`, so the kernel carries no SuSFS code and does not report `SuSFS v2.3.0`. (ReSukiSU only supports the SuSFS inline hook or the manual hook on 4.19 non-GKI; the tracepoint hook requires GKI 2.0.)
   * `noroot` — Pure Clean Non-Root Kernel (Ideal for banking apps / zero root)
 
 ---
@@ -213,6 +213,24 @@ The official open-source companion app designed exclusively for EXTREME++ on POC
 | **Latest Stable Tag (v2.1.0)** | 🏷️ **[EKM v2.1.0 Release Notes](https://github.com/PandeyJI-9/extreme-kernel-manager/releases/tag/v2.1.0)** | BMW M-Power UI, Munch AMOLED DC Dimming, R8 optimized |
 
 ---
+
+## 🏗️ Building (GitHub Actions)
+
+Run the **Build & Release** workflow (Actions → Build → Run workflow).
+
+- The kernel ZIPs are always built and released.
+- The **flashable HyperOS partition images** additionally need the stock
+  `boot.img` / `vendor_boot.img` / `dtbo.img`. Provide them either as:
+  - a repository **variable** `HYPEROS_STOCK_URL` (Settings → Secrets and
+    variables → Actions → **Variables**) pointing at a shared Google Drive
+    folder/archive, or
+  - a **secret** `hyperosimgs` with the same value.
+- If neither is configured, the repack step is skipped with a warning — the
+  build does not fail and the kernel ZIP release still goes out.
+
+Telegram notifications post to the group in `TELEGRAM_CHAT_ID`; if that group is
+a forum, set the **variable** `TELEGRAM_THREAD_ID` to the topic id so messages
+land in the right topic instead of failing with `TOPIC_CLOSED`.
 
 ## 📲 Installation Guide
 

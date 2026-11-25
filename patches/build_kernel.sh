@@ -254,22 +254,32 @@ fi
 
 if [ -f "apply-bootloader-spoof.py" ]; then
     echo "[*] Applying bootloader spoofing kernel hooks..."
-    python3 apply-bootloader-spoof.py . || true
+    python3 apply-bootloader-spoof.py .
 fi
 
 if [ -f "apply-eas-tuning.py" ]; then
     echo "[*] Applying EAS Energy Model & Capacity Margin Tuning..."
-    python3 apply-eas-tuning.py arch/arm64/boot/dts/vendor/qcom/kona.dtsi || echo "⚠️ EAS tuning failed, continuing..."
+    python3 apply-eas-tuning.py arch/arm64/boot/dts/vendor/qcom/kona.dtsi
 fi
 
 if [ -f "apply-vmscan-critical.py" ]; then
     echo "[*] Applying Critical Task Direct Reclaim Anti-Stutter Patch (Google ACK fix)..."
-    python3 apply-vmscan-critical.py mm/vmscan.c || echo "⚠️ vmscan patch skipped"
+    python3 apply-vmscan-critical.py mm/vmscan.c
 fi
 
 if [ -f "apply-millet-compat.py" ]; then
     echo "[*] Applying Xiaomi HyperOS 4 / MIUI Universal Millet Dual-ABI Compatibility Patch..."
-    python3 apply-millet-compat.py . || echo "⚠️ Millet patch skipped"
+    python3 apply-millet-compat.py .
+fi
+
+if [ -f "apply-dt2w-default.py" ]; then
+    echo "[*] Enabling double-tap-to-wake by default (FTS_GESTURE_EN=1)..."
+    python3 apply-dt2w-default.py .
+fi
+
+if [ -f "apply-ksu-manual-hooks.py" ]; then
+    echo "[*] Porting KernelSU manual-hook call sites (susfs-free variant)..."
+    python3 apply-ksu-manual-hooks.py .
 fi
 
 # Hardening fs/susfs.c against Clang -Wunused-variable / -Wunused-function when features are disabled
@@ -292,6 +302,35 @@ if [ -f "fs/Makefile" ] && ! grep -q "CFLAGS_susfs.o" fs/Makefile; then
     echo "[+] Added CFLAGS_susfs.o warning overrides to fs/Makefile"
 fi
 
+
+# ------------------------------------------
+# 6b. Patch verification (fail loudly, never ship a half-patched kernel)
+# ------------------------------------------
+# Every user-facing feature lives in one of these patches.  A pattern drift
+# must stop the build here instead of silently producing a zip that is
+# missing the charging/anti-stutter/spoofing/MI-compat code users rely on.
+PATCH_ERRORS=""
+
+check_marker() {
+    if ! grep -rq "$2" "$1" 2>/dev/null; then
+        echo "❌ [PATCH MISSING] $3 (expected marker '$2' under $1)"
+        PATCH_ERRORS="${PATCH_ERRORS}\n  - $3"
+    fi
+}
+
+check_marker "mm/vmscan.c"                 "task_is_critical"                            "vmscan critical-task anti-stutter"
+check_marker "fs/proc/cmdline.c"           "EXTREME++: Bounded, buffer-safe cmdline"     "bootloader spoof / cmdline rewrite"
+check_marker "drivers"                     "EXTREME_MILLET_UNIVERSAL_COMPAT_V1"          "HyperOS millet dual-ABI compat"
+check_marker "drivers/power/supply"        "BYPASS_VOTER"                               "true bypass charging"
+check_marker "drivers/input/touchscreen"    "EXTREME++ DT2W"                             "double-tap-to-wake default"
+check_marker "fs/exec.c"                 "EXTREME++ KSU MANUAL HOOK"                  "KernelSU manual-hook port"
+check_marker "drivers/power/supply/ti"     "min_adapter_volt_required.*8500"            "PPS fast-charge unlock"
+
+if [ -n "${PATCH_ERRORS}" ]; then
+    echo -e "❌ [ERROR] Required kernel patches did not apply:${PATCH_ERRORS}"
+    exit 1
+fi
+echo "✅ [PATCHES] All required patches verified in the kernel tree."
 
 # ------------------------------------------
 # 7. Clone AnyKernel3 Base Template (Clean AstideLabs / re-noroi / osm0sis)
@@ -333,7 +372,7 @@ build_target_os() {
         ENABLE_KSU=1
         ENABLE_SUSFS=0
         ROOT_LABEL="KowSU Multi-Manager (No SuSFS)"
-        ROOT_BANNER="KowSU Multi-Manager (Clean / No SuSFS)"
+        ROOT_BANNER="KowSU Multi-Manager (No SuSFS - Manual Hook)"
         ZIP_SUFFIX="KowSU_NoSuSFS"
     fi
     local OUT_DIR="${KERNEL_DIR}/out_${OS}"
@@ -443,9 +482,9 @@ build_target_os() {
             echo "[*] Injecting KowSU Multi-Manager (Standard / No SuSFS Features) Configuration into ${OS_UPPER} .config..."
             scripts/config --file "${OUT_DIR}/.config" \
                 -e KSU \
-                -e KSU_SUSFS \
+                -d KSU_SUSFS \
                 -d KSU_TRACEPOINT_HOOK \
-                -d KSU_MANUAL_HOOK \
+                -e KSU_MANUAL_HOOK \
                 -e KSU_MULTI_MANAGER_SUPPORT \
                 -e THREAD_INFO_IN_TASK \
                 -d KSU_SUSFS_SUS_PATH \
@@ -593,6 +632,38 @@ build_target_os() {
        ! grep -q '^CONFIG_CPU_FREQ_DEFAULT_GOV_EXTREME_PLUS=y' "${OUT_DIR}/.config"; then
         echo "❌ [ERROR] EXTREME+ is not configured as the active default governor on boot."
         grep '^CONFIG_CPU_FREQ_DEFAULT_GOV' "${OUT_DIR}/.config" || true
+        exit 1
+    fi
+
+    # Root variant must match the zip label.  A NoSuSFS package that still
+    # reports "SuSFS v2.3.0" is reported by users as a wrong-kernel bug, so
+    # verify the built .config instead of trusting the label.
+    if [ "$ENABLE_KSU" -eq 1 ]; then
+        if ! grep -q '^CONFIG_KSU=y' "${OUT_DIR}/.config"; then
+            echo "❌ [ERROR] KernelSU is missing from a rooted build."
+            exit 1
+        fi
+        if [ "$ENABLE_SUSFS" -eq 1 ]; then
+            if ! grep -q '^CONFIG_KSU_SUSFS=y' "${OUT_DIR}/.config"; then
+                echo "❌ [ERROR] SuSFS variant built without CONFIG_KSU_SUSFS=y."
+                exit 1
+            fi
+        else
+            # The NoSuSFS variant is genuinely susfs-free: it uses the manual
+            # hook, so neither the susfs core nor any SUSFS feature may be on.
+            if grep -q '^CONFIG_KSU_SUSFS=y' "${OUT_DIR}/.config" ||
+               grep -q '^CONFIG_KSU_SUSFS_[A-Z_]*=y' "${OUT_DIR}/.config"; then
+                echo "❌ [ERROR] SuSFS leaked into the NoSuSFS variant."
+                grep '^CONFIG_KSU_SUSFS' "${OUT_DIR}/.config" || true
+                exit 1
+            fi
+            if ! grep -q '^CONFIG_KSU_MANUAL_HOOK=y' "${OUT_DIR}/.config"; then
+                echo "❌ [ERROR] NoSuSFS variant built without CONFIG_KSU_MANUAL_HOOK=y."
+                exit 1
+            fi
+        fi
+    elif grep -q '^CONFIG_KSU=y' "${OUT_DIR}/.config"; then
+        echo "❌ [ERROR] KernelSU leaked into the NoRoot variant."
         exit 1
     fi
 
