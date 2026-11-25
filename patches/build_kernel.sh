@@ -254,22 +254,22 @@ fi
 
 if [ -f "apply-bootloader-spoof.py" ]; then
     echo "[*] Applying bootloader spoofing kernel hooks..."
-    python3 apply-bootloader-spoof.py . || true
+    python3 apply-bootloader-spoof.py .
 fi
 
 if [ -f "apply-eas-tuning.py" ]; then
     echo "[*] Applying EAS Energy Model & Capacity Margin Tuning..."
-    python3 apply-eas-tuning.py arch/arm64/boot/dts/vendor/qcom/kona.dtsi || echo "⚠️ EAS tuning failed, continuing..."
+    python3 apply-eas-tuning.py arch/arm64/boot/dts/vendor/qcom/kona.dtsi
 fi
 
 if [ -f "apply-vmscan-critical.py" ]; then
     echo "[*] Applying Critical Task Direct Reclaim Anti-Stutter Patch (Google ACK fix)..."
-    python3 apply-vmscan-critical.py mm/vmscan.c || echo "⚠️ vmscan patch skipped"
+    python3 apply-vmscan-critical.py mm/vmscan.c
 fi
 
 if [ -f "apply-millet-compat.py" ]; then
     echo "[*] Applying Xiaomi HyperOS 4 / MIUI Universal Millet Dual-ABI Compatibility Patch..."
-    python3 apply-millet-compat.py . || echo "⚠️ Millet patch skipped"
+    python3 apply-millet-compat.py .
 fi
 
 # Hardening fs/susfs.c against Clang -Wunused-variable / -Wunused-function when features are disabled
@@ -292,6 +292,33 @@ if [ -f "fs/Makefile" ] && ! grep -q "CFLAGS_susfs.o" fs/Makefile; then
     echo "[+] Added CFLAGS_susfs.o warning overrides to fs/Makefile"
 fi
 
+
+# ------------------------------------------
+# 6b. Patch verification (fail loudly, never ship a half-patched kernel)
+# ------------------------------------------
+# Every user-facing feature lives in one of these patches.  A pattern drift
+# must stop the build here instead of silently producing a zip that is
+# missing the charging/anti-stutter/spoofing/MI-compat code users rely on.
+PATCH_ERRORS=""
+
+check_marker() {
+    if ! grep -rq "$2" "$1" 2>/dev/null; then
+        echo "❌ [PATCH MISSING] $3 (expected marker '$2' under $1)"
+        PATCH_ERRORS="${PATCH_ERRORS}\n  - $3"
+    fi
+}
+
+check_marker "mm/vmscan.c"                 "task_is_critical"                            "vmscan critical-task anti-stutter"
+check_marker "fs/proc/cmdline.c"           "EXTREME++: Bounded, buffer-safe cmdline"     "bootloader spoof / cmdline rewrite"
+check_marker "drivers"                     "EXTREME_MILLET_UNIVERSAL_COMPAT_V1"          "HyperOS millet dual-ABI compat"
+check_marker "drivers/power/supply"        "BYPASS_VOTER"                               "true bypass charging"
+check_marker "drivers/power/supply/ti"     "min_adapter_volt_required.*8500"            "PPS fast-charge unlock"
+
+if [ -n "${PATCH_ERRORS}" ]; then
+    echo -e "❌ [ERROR] Required kernel patches did not apply:${PATCH_ERRORS}"
+    exit 1
+fi
+echo "✅ [PATCHES] All required patches verified in the kernel tree."
 
 # ------------------------------------------
 # 7. Clone AnyKernel3 Base Template (Clean AstideLabs / re-noroi / osm0sis)
