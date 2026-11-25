@@ -366,7 +366,7 @@ build_target_os() {
         ENABLE_KSU=1
         ENABLE_SUSFS=0
         ROOT_LABEL="KowSU Multi-Manager (No SuSFS)"
-        ROOT_BANNER="KowSU Multi-Manager (Clean / No SuSFS)"
+        ROOT_BANNER="KowSU Multi-Manager (No SuSFS Features, Core Linked)"
         ZIP_SUFFIX="KowSU_NoSuSFS"
     fi
     local OUT_DIR="${KERNEL_DIR}/out_${OS}"
@@ -626,6 +626,35 @@ build_target_os() {
        ! grep -q '^CONFIG_CPU_FREQ_DEFAULT_GOV_EXTREME_PLUS=y' "${OUT_DIR}/.config"; then
         echo "❌ [ERROR] EXTREME+ is not configured as the active default governor on boot."
         grep '^CONFIG_CPU_FREQ_DEFAULT_GOV' "${OUT_DIR}/.config" || true
+        exit 1
+    fi
+
+    # Root variant must match the zip label.  A NoSuSFS package that still
+    # reports "SuSFS v2.3.0" is reported by users as a wrong-kernel bug, so
+    # verify the built .config instead of trusting the label.
+    if [ "$ENABLE_KSU" -eq 1 ]; then
+        if ! grep -q '^CONFIG_KSU=y' "${OUT_DIR}/.config"; then
+            echo "❌ [ERROR] KernelSU is missing from a rooted build."
+            exit 1
+        fi
+        if [ "$ENABLE_SUSFS" -eq 1 ]; then
+            if ! grep -q '^CONFIG_KSU_SUSFS=y' "${OUT_DIR}/.config"; then
+                echo "❌ [ERROR] SuSFS variant built without CONFIG_KSU_SUSFS=y."
+                exit 1
+            fi
+        else
+            # ReSukiSU only supports the SUSFS inline hook on 4.19 non-GKI
+            # (the tracepoint hook errors out above GKI 2.0 and the manual
+            # hooks are not integrated in this base), so the NoSuSFS variant
+            # keeps the core and must ship with every SUSFS feature disabled.
+            if grep -q '^CONFIG_KSU_SUSFS_[A-Z_]*=y' "${OUT_DIR}/.config"; then
+                echo "❌ [ERROR] A SUSFS feature is enabled in the NoSuSFS variant."
+                grep '^CONFIG_KSU_SUSFS' "${OUT_DIR}/.config" || true
+                exit 1
+            fi
+        fi
+    elif grep -q '^CONFIG_KSU=y' "${OUT_DIR}/.config"; then
+        echo "❌ [ERROR] KernelSU leaked into the NoRoot variant."
         exit 1
     fi
 
