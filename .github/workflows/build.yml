@@ -60,10 +60,14 @@ jobs:
           START_MSG=$(printf '🚀 <b>EXTREME++ Build Started!</b>\n📱 <b>Device:</b> POCO F4 (munch)\n🏎️ <b>Edition:</b> EXTREME++ Gaming (BMW Edition)\n🎯 <b>Target:</b> %s\n%s\n⚡ <b>Default Clock:</b> 3.19 GHz Unlocked Peak (Dynamic Profiles)\n👑 <b>Author:</b> Extreme++ by @pandey_ji_8' "${TARGET_LABEL}" "${ROOT_LABEL}")
 
           for chat in "${TARGETS[@]}"; do
-            curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
+            TARG=()
+            [ "$chat" = "${{ secrets.TELEGRAM_CHAT_ID }}" ] && [ -n "${{ secrets.TELEGRAM_THREAD_ID }}" ] && \
+              TARG=(--data-urlencode "message_thread_id=${{ secrets.TELEGRAM_THREAD_ID }}")
+            curl -sf -o /dev/null -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
               --data-urlencode "chat_id=$chat" \
               --data-urlencode "parse_mode=HTML" \
-              --data-urlencode "text=$START_MSG" || true
+              --data-urlencode "text=$START_MSG" "${TARG[@]}" \
+              || echo "::warning::Telegram build-started message failed for chat $chat"
           done
 
       - name: "📦 Checkout config repo"
@@ -316,16 +320,34 @@ jobs:
 
       - name: "🚀 Publish Official GitHub Release"
         if: success()
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: "BMW-Edition-Build-${{ github.run_number }}"
-          name: "EXTREME++ BMW Edition - Official Stable (Build #${{ github.run_number }})"
-          body_path: release_notes.md
-          files: |
-            kernel/EXTREME++*.zip
-            release_assets/EKM-*.apk
-          draft: false
-          prerelease: false
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          set -euo pipefail
+          TAG="BMW-Edition-Build-${RUN_NUMBER}"
+          TITLE="EXTREME++ BMW Edition - Official Stable (Build #${RUN_NUMBER})"
+
+          shopt -s nullglob
+          FILES=(kernel/EXTREME++*.zip release_assets/EKM-*.apk)
+          if [ ${#FILES[@]} -eq 0 ]; then
+            echo "::error::No release assets matched (kernel zip / EKM apk)."
+            exit 1
+          fi
+          printf 'Release asset: %s\n' "${FILES[@]}"
+
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "[*] Release $TAG already exists, uploading assets with --clobber"
+            gh release upload "$TAG" "${FILES[@]}" --clobber --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$TAG" "${FILES[@]}" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "$TITLE" \
+              --notes-file release_notes.md \
+              --latest
+          fi
+
+          echo "✅ Release $TAG published with ${#FILES[@]} asset(s)"
 
       - name: "📢 Telegram: Official Release Broadcast"
         if: success()
@@ -349,10 +371,14 @@ jobs:
           [ -n "${{ secrets.TELEGRAM_DM_ID }}" ] && TARGETS+=("${{ secrets.TELEGRAM_DM_ID }}")
 
           for chat in "${TARGETS[@]}"; do
-            curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
+            TARG=()
+            [ "$chat" = "${{ secrets.TELEGRAM_CHAT_ID }}" ] && [ -n "${{ secrets.TELEGRAM_THREAD_ID }}" ] && \
+              TARG=(--data-urlencode "message_thread_id=${{ secrets.TELEGRAM_THREAD_ID }}")
+            curl -sf -o /dev/null -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
               --data-urlencode "chat_id=$chat" \
               --data-urlencode "parse_mode=HTML" \
-              --data-urlencode "text=$MSG" || true
+              --data-urlencode "text=$MSG" "${TARG[@]}" \
+              || echo "::warning::Telegram release broadcast failed for chat $chat"
           done
 
           for z in $(find "$GITHUB_WORKSPACE/kernel" -maxdepth 1 -name "EXTREME++*.zip" | sort); do
@@ -385,11 +411,15 @@ jobs:
             fi
 
             for chat in "${TARGETS[@]}"; do
-              curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendDocument" \
+              TARGF=()
+              [ "$chat" = "${{ secrets.TELEGRAM_CHAT_ID }}" ] && [ -n "${{ secrets.TELEGRAM_THREAD_ID }}" ] && \
+                TARGF=(-F "message_thread_id=${{ secrets.TELEGRAM_THREAD_ID }}")
+              curl -sf -o /dev/null -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendDocument" \
                 -F "chat_id=$chat" \
                 -F "document=@$z" \
                 -F "caption=$ZIP_CAPTION" \
-                -F "parse_mode=HTML" || true
+                -F "parse_mode=HTML" "${TARGF[@]}" \
+                || echo "::warning::Telegram zip upload failed for chat $chat"
             done
           done
 
@@ -399,11 +429,15 @@ jobs:
             ANAME=$(basename "$apk")
             APK_CAPTION=$(printf '📱 <b>%s</b>\n🏎️ Extreme Kernel Manager (EKM) Official Companion App\n🎛️ Live In-Kernel Profile Switcher (Gaming / Balanced / Battery)\n🌙 POCO F4 Munch AMOLED DC Dimming + QS Tile\n👑 Extreme++ BMW Edition by @pandey_ji_8' "${ANAME}")
             for chat in "${TARGETS[@]}"; do
-              curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendDocument" \
+              TARGF=()
+              [ "$chat" = "${{ secrets.TELEGRAM_CHAT_ID }}" ] && [ -n "${{ secrets.TELEGRAM_THREAD_ID }}" ] && \
+                TARGF=(-F "message_thread_id=${{ secrets.TELEGRAM_THREAD_ID }}")
+              curl -sf -o /dev/null -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendDocument" \
                 -F "chat_id=$chat" \
                 -F "document=@$apk" \
                 -F "caption=$APK_CAPTION" \
-                -F "parse_mode=HTML" || true
+                -F "parse_mode=HTML" "${TARGF[@]}" \
+                || echo "::warning::Telegram APK upload failed for chat $chat"
             done
           done
 
@@ -414,10 +448,16 @@ jobs:
           [ -n "${{ secrets.TELEGRAM_CHAT_ID }}" ] && TARGETS+=("${{ secrets.TELEGRAM_CHAT_ID }}")
           [ -n "${{ secrets.TELEGRAM_DM_ID }}" ] && TARGETS+=("${{ secrets.TELEGRAM_DM_ID }}")
 
-          FAIL_MSG=$(printf '❌ <b>EXTREME++ Build #%s FAILED!</b>\nPlease check GitHub Actions workflow logs.' "${{ github.run_number }}")
+          FAIL_MSG=$(printf '❌ <b>EXTREME++ Build #%s FAILED!</b>\n🎯 Target: %s\n⚡ Root: %s\n📜 %s/%s/actions/runs/%s\nPlease check the workflow logs.' \
+            "${{ github.run_number }}" "${{ inputs.target_os }}" "${{ inputs.root_mode }}" \
+            "${{ github.server_url }}" "${{ github.repository }}" "${{ github.run_id }}")
           for chat in "${TARGETS[@]}"; do
-            curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
+            TARG=()
+            [ "$chat" = "${{ secrets.TELEGRAM_CHAT_ID }}" ] && [ -n "${{ secrets.TELEGRAM_THREAD_ID }}" ] && \
+              TARG=(--data-urlencode "message_thread_id=${{ secrets.TELEGRAM_THREAD_ID }}")
+            curl -sf -o /dev/null -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
               --data-urlencode "chat_id=$chat" \
               --data-urlencode "parse_mode=HTML" \
-              --data-urlencode "text=$FAIL_MSG" || true
+              --data-urlencode "text=$FAIL_MSG" "${TARG[@]}" \
+              || echo "::warning::Telegram failure notice could not be delivered to chat $chat"
           done
