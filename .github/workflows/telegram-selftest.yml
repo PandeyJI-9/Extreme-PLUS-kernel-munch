@@ -1,0 +1,31 @@
+name: Telegram selftest
+on:
+  workflow_dispatch:
+jobs:
+  ping:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Send one message to the configured chat/topic
+        env:
+          TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
+          THREAD: ${{ vars.TELEGRAM_THREAD_ID || secrets.TELEGRAM_THREAD_ID }}
+          DM: ${{ secrets.TELEGRAM_DM_ID }}
+        run: |
+          set -u
+          echo "token_set=$([ -n "${TOKEN:-}" ] && echo yes || echo no) chat_set=$([ -n "${CHAT:-}" ] && echo yes || echo no) thread=${THREAD:-unset} dm_set=$([ -n "${DM:-}" ] && echo yes || echo no)"
+          send() {  # label chat [thread]
+            local label=$1 chat=$2 thread=${3:-}
+            local args=(--data-urlencode "chat_id=${chat}" --data-urlencode "text=Sentinel selftest ✅ (${label})")
+            [ -n "$thread" ] && args+=(--data-urlencode "message_thread_id=${thread}")
+            RESP=$(curl -s -X POST "https://api.telegram.org/bot${TOKEN}/sendMessage" "${args[@]}")
+            echo "--- ${label}: ${RESP}"
+            grep -q '"ok":true' <<<"$RESP"
+          }
+          echo "=== group (thread) ==="
+          send group "$CHAT" "$THREAD" && exit 0
+          echo "=== group (no thread) ==="
+          send group-no-thread "$CHAT" && exit 0
+          echo "=== dm (no thread) ==="
+          send dm "$DM"
